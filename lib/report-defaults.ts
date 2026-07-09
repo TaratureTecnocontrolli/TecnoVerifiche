@@ -12,6 +12,7 @@ export type ReportDefaultsInput = {
   referenceSerial?: string | null;
   referenceInternalCode?: string | null;
   location?: string | null;
+  testDate?: string | null;
 };
 
 export type ReportTextDefaults = {
@@ -40,6 +41,24 @@ function instrumentDescription(input: ReportDefaultsInput) {
   ].filter(Boolean);
 
   return parts.join(" ");
+}
+
+function formatItalianLongDate(dateIso: string | null | undefined) {
+  if (!dateIso) {
+    return null;
+  }
+
+  const date = new Date(dateIso + "T00:00:00");
+
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  return new Intl.DateTimeFormat("it-IT", {
+    day: "numeric",
+    month: "long",
+    year: "numeric",
+  }).format(date);
 }
 
 function referenceDescription(input: ReportDefaultsInput) {
@@ -171,25 +190,33 @@ export function getTorqueReportDefaults(
 export function getFlowReportDefaults(
   input: ReportDefaultsInput
 ): ReportTextDefaults {
-  const instrument = instrumentDescription(input);
   const reference = referenceDescription(input);
+  const instrumentName = clean(input.instrumentName, "in verifica");
+  const dateText = formatItalianLongDate(input.testDate);
 
   return {
-    work_object: "Verifica taratura di " + instrument,
-    requested_tests: "Verifica taratura contalitri / strumento di misura volume-portata.",
+    work_object: "Verifica taratura di contalitri " + instrumentName,
+    requested_tests: "Verifica taratura contalitri " + instrumentName,
     premise_text: [
-      "Su incarico del Committente è stata eseguita la verifica della taratura dello strumento indicato nel presente rapporto.",
-      "La verifica riguarda esclusivamente lo strumento sottoposto a prova, nelle condizioni e nei punti di misura riportati nella sezione tecnica integrante del rapporto.",
-      "Strumento sottoposto a verifica: " + instrument + ".",
+      (dateText ? "Il giorno " + dateText + " " : "Nella data indicata nel presente rapporto ") +
+        "tecnici di questo Laboratorio tecnologico hanno sottoposto, presso la sede di " +
+        clean(input.customerName, "il Committente") +
+        ", un contalitri " +
+        instrumentName +
+        (input.instrumentSerial ? " (s/n " + input.instrumentSerial + ")" : "") +
+        (input.instrumentRange ? " con FS di " + input.instrumentRange : "") +
+        " a verifica di taratura.",
     ].join("\n"),
     scope_text: [
-      "Scopo della verifica è valutare la risposta metrologica del contalitri / strumento di misura volume-portata mediante confronto con idoneo strumento campione.",
-      "La verifica è eseguita confrontando il volume impostato sullo strumento in verifica con le letture rilevate sullo strumento campione, su tre cicli di misura.",
+      "La verifica di taratura del contalitri " +
+        instrumentName +
+        (input.instrumentSerial ? " (s/n " + input.instrumentSerial + ")" : "") +
+        " è stata eseguita con l'ausilio di un contalitri campione, comparando i risultati su tre cicli.",
+      "La temperatura e l'umidità sono state verificate con un termo-igrometro.",
     ].join("\n"),
     apparatus_description: [
-      "La verifica di taratura dello strumento è stata eseguita con l'ausilio dello strumento campione indicato nella sezione tecnica, comparando i risultati su tre cicli di misura.",
-      "La temperatura e l'umidità ambientale sono riportate, ove rilevate, nella sezione risultati del rapporto.",
-      "L'apparato utilizzato comprende: " + reference + ".",
+      "L'apparato utilizzato è stato: " + reference + " e un termo-igrometro per il rilievo delle condizioni ambientali.",
+      "Lo strumento campione utilizzato risulta identificato mediante codice interno, matricola, certificato e relativa scadenza, come riportato nello snapshot tecnico della verifica.",
     ].join("\n"),
     execution_method: [
       "La verifica viene eseguita impostando sullo strumento in prova i volumi nominali previsti e rilevando tre letture per ciascun punto.",
@@ -198,7 +225,7 @@ export function getFlowReportDefaults(
       "Errore % = Errore / Volume impostato x 100.",
     ].join("\n"),
     results_text: [
-      "I risultati della verifica sono riportati nella sezione tecnica integrante del presente rapporto.",
+      "I risultati della verifica sono riportati nella sezione tecnica integrante del presente rapporto, con la temperatura e l'umidità ambientale rilevate durante la prova.",
       "Per ciascun punto sono indicati volume nominale, volume impostato nello strumento in verifica, tre letture, media letture, errore ed errore percentuale.",
     ].join("\n"),
   };
@@ -207,26 +234,27 @@ export function getFlowReportDefaults(
 export function getSclerometricReportDefaults(
   input: ReportDefaultsInput
 ): ReportTextDefaults {
-  const instrument = instrumentDescription(input);
   const reference = referenceDescription(input);
+  const instrumentName = clean(input.instrumentName, "in verifica");
+  const dateText = formatItalianLongDate(input.testDate);
 
   return {
-    work_object: "Verifica della taratura di " + instrument,
-    requested_tests:
-      "Verifica della taratura di sclerometro / strumento di prova non distruttiva a rimbalzo.",
+    work_object: "Verifica della taratura di sclerometro " + instrumentName,
+    requested_tests: "Verifica della taratura sclerometro " + instrumentName,
     premise_text: [
-      "Su incarico del Committente è stata eseguita la verifica della taratura dello strumento indicato nel presente rapporto.",
-      "La verifica riguarda esclusivamente lo strumento sottoposto a prova, nelle condizioni riportate nella sezione tecnica integrante del rapporto.",
-      "Strumento sottoposto a verifica: " + instrument + ".",
+      (dateText ? "In data " + dateText + ", " : "Nella data indicata nel presente rapporto, ") +
+        "è pervenuto presso codesto laboratorio lo sclerometro " +
+        instrumentName +
+        (input.instrumentSerial ? " (s/n " + input.instrumentSerial + ")" : "") +
+        ", per essere sottoposto a verifica di taratura.",
     ].join("\n"),
     scope_text: [
-      "Scopo della verifica è valutare la risposta metrologica dello sclerometro mediante confronto con incudine di riferimento a valore nominale fisso.",
-      "La verifica è eseguita tramite battute ripetute sull'incudine di riferimento, rilevando tre letture per battuta e calcolando media, errore medio ed errore percentuale rispetto al valore nominale di riferimento.",
+      "La prova è stata eseguita inserendo lo sclerometro nella sede dell'incudine di taratura, rilevando il valore delle battute sclerometriche previste.",
+      "L'intervallo di valore di indice di rimbalzo entro il quale lo sclerometro risulta verificato è riportato nella sezione tecnica del presente rapporto.",
     ].join("\n"),
     apparatus_description: [
-      "L'apparato di verifica è costituito dall'incudine di riferimento indicata nella sezione tecnica del rapporto, a valore nominale certificato.",
+      "L'apparato utilizzato è costituito dall'incudine di taratura " + reference + ".",
       "L'incudine di riferimento utilizzata risulta identificata mediante codice interno, matricola, certificato e relativa scadenza, come riportato nello snapshot tecnico della verifica.",
-      "Strumento campione utilizzato: " + reference + ".",
     ].join("\n"),
     execution_method: [
       "La verifica viene eseguita effettuando un numero prestabilito di battute sull'incudine di riferimento e rilevando, per ciascuna battuta, tre letture consecutive dello strumento in prova.",
@@ -243,26 +271,31 @@ export function getSclerometricReportDefaults(
 export function getMassReportDefaults(
   input: ReportDefaultsInput
 ): ReportTextDefaults {
-  const instrument = instrumentDescription(input);
   const reference = referenceDescription(input);
+  const instrumentName = clean(input.instrumentName, "in verifica");
+  const dateText = formatItalianLongDate(input.testDate);
 
   return {
-    work_object: "Verifica della taratura di " + instrument,
-    requested_tests:
-      "Verifica della taratura di bilancia / strumento di misura della massa mediante prove di ripetibilità, eccentricità e linearità.",
+    work_object: "Verifica taratura di bilancia " + instrumentName,
+    requested_tests: "Verifica taratura bilancia " + instrumentName,
     premise_text: [
-      "Su incarico del Committente è stata eseguita la verifica della taratura dello strumento indicato nel presente rapporto.",
-      "La verifica riguarda esclusivamente lo strumento sottoposto a prova, nelle condizioni e nei punti di misura riportati nella sezione tecnica integrante del rapporto.",
-      "Strumento sottoposto a verifica: " + instrument + ".",
+      (dateText ? "Il giorno " + dateText + " " : "Nella data indicata nel presente rapporto ") +
+        "tecnici di questo Laboratorio tecnologico hanno sottoposto, presso la sede di " +
+        clean(input.customerName, "il Committente") +
+        ", una bilancia " +
+        instrumentName +
+        (input.instrumentRange ? " con FS di " + input.instrumentRange : "") +
+        " a verifica di taratura.",
     ].join("\n"),
     scope_text: [
-      "Scopo della verifica è valutare la risposta metrologica della bilancia mediante confronto con masse campione.",
-      "La verifica è eseguita tramite tre prove distinte: ripetibilità (letture ripetute su un unico punto), eccentricità (letture su più zone del piatto di pesata) e linearità (letture su più punti dell'intero campo di pesata).",
+      "La verifica di taratura della bilancia " +
+        instrumentName +
+        " è stata eseguita con l'ausilio di masse campione, effettuando le verifiche di ripetibilità, di eccentricità e di linearità.",
+      "Tutte le verifiche sono state effettuate su tre cicli. La temperatura e l'umidità sono state verificate con un termo-igrometro.",
     ].join("\n"),
     apparatus_description: [
-      "L'apparato di verifica è costituito dalle masse campione indicate nella sezione tecnica del rapporto.",
+      "L'apparato utilizzato è stato: " + reference + " e un termo-igrometro per il rilievo delle condizioni ambientali.",
       "Le masse campione utilizzate risultano identificate mediante codice interno, matricola, certificato e relativa scadenza, come riportato nello snapshot tecnico della verifica.",
-      "Strumento campione utilizzato: " + reference + ".",
     ].join("\n"),
     execution_method: [
       "La prova di ripetibilità viene eseguita rilevando tre letture su un unico punto di carico, calcolando media, errore ed errore di ripetibilità percentuale.",
@@ -271,7 +304,7 @@ export function getMassReportDefaults(
       "Le formule utilizzate sono riportate nella sezione di espressione dei risultati del presente rapporto.",
     ].join("\n"),
     results_text: [
-      "I risultati della verifica sono riportati nella sezione tecnica integrante del presente rapporto, distinti per prova di ripetibilità, eccentricità e linearità.",
+      "I risultati della verifica sono riportati nella sezione tecnica integrante del presente rapporto, distinti per prova di ripetibilità, eccentricità e linearità, con la temperatura e l'umidità ambientale rilevate durante la prova.",
       "Per ciascun punto sono indicati il peso nominale, il peso campione, le tre letture rilevate, la media, l'errore e la ripetibilità percentuale (l'errore percentuale rispetto al peso campione è indicato solo per la prova di linearità).",
     ].join("\n"),
   };
@@ -318,15 +351,19 @@ export function getTemperatureReportDefaults(
 ): ReportTextDefaults {
   const instrument = instrumentDescription(input);
   const reference = referenceDescription(input);
+  const instrumentName = clean(input.instrumentName, "in verifica");
+  const dateText = formatItalianLongDate(input.testDate);
 
   return {
     work_object: "Verifica della taratura di " + instrument,
     requested_tests:
       "Verifica della taratura di strumento di misura della temperatura mediante confronto con termometro/termostato di riferimento.",
     premise_text: [
-      "Su incarico del Committente è stata eseguita la verifica della taratura dello strumento indicato nel presente rapporto.",
-      "La verifica riguarda esclusivamente lo strumento sottoposto a prova, nelle condizioni riportate nella sezione tecnica integrante del rapporto.",
-      "Strumento sottoposto a verifica: " + instrument + ".",
+      (dateText ? "In data " + dateText + ", " : "Nella data indicata nel presente rapporto, ") +
+        "è pervenuto presso codesto laboratorio lo strumento " +
+        instrumentName +
+        (input.instrumentSerial ? " (s/n " + input.instrumentSerial + ")" : "") +
+        ", per essere sottoposto a verifica di taratura.",
     ].join("\n"),
     scope_text: [
       "Scopo della verifica è monitorare la temperatura rilevata dallo strumento in prova confrontandola, a orari prefissati, con la temperatura rilevata dal termometro/termostato di riferimento.",

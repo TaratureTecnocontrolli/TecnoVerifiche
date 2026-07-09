@@ -385,6 +385,7 @@ export default function SclerometricVerificationStarter({
         referenceSerial: selectedReferenceInstrument.serial_number,
         referenceInternalCode: selectedReferenceInstrument.internal_code,
         location,
+        testDate: verificationDate,
       });
 
       const { error: reportDetailsError } = await supabase
