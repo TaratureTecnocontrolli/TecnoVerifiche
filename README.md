@@ -2,7 +2,8 @@
 
 Gestionale interno per la gestione delle verifiche di taratura: anagrafica
 clienti e strumenti, strumenti campione con scadenze certificati, verifiche
-(compressione/trazione, pressione, chiavi dinamometriche, portata/contalitri),
+(compressione/trazione, pressione, chiavi dinamometriche, portata/contalitri,
+temperatura, dimensionale, massa/bilance, prove sclerometriche, pull-off),
 calcoli di errore e ripetibilità, rapporti di taratura e audit log.
 
 Applicazione [Next.js](https://nextjs.org) con [Supabase](https://supabase.com)
@@ -65,9 +66,11 @@ come backend (database + storage dei certificati/firme).
 | Pressione / manometri | Attivo |
 | Chiavi dinamometriche | Attivo |
 | Portata / contalitri | Attivo |
-| Temperatura | In sviluppo |
-| Dimensionale | In sviluppo |
-| Massa / bilance | In sviluppo |
+| Temperatura | Attivo |
+| Dimensionale | Attivo |
+| Massa / bilance | Attivo |
+| Prove sclerometriche | Attivo |
+| Pull-off | Attivo |
 
 ## Deploy
 
