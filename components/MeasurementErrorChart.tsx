@@ -27,6 +27,13 @@ function getXValue(measurement: MeasurementLike) {
   return measurement.applied_value ?? measurement.nominal_value ?? null;
 }
 
+export function hasValidChartMeasurements(measurements: MeasurementLike[]) {
+  return measurements.some(
+    (measurement) =>
+      getXValue(measurement) !== null && measurement.accuracy_error_percent !== null
+  );
+}
+
 export default function MeasurementErrorChart({
   measurements,
   title = "Grafico errore accuratezza %",

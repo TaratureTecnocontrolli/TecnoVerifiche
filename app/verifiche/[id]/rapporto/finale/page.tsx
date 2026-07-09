@@ -1,8 +1,11 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import MeasurementErrorChart, {
+  hasValidChartMeasurements,
   type MeasurementLike,
 } from "@/components/MeasurementErrorChart";
+import ReportPrintButton from "@/components/ReportPrintButton";
 import { supabase } from "@/lib/supabase";
 
 type PageProps = {
@@ -12,6 +15,34 @@ type PageProps = {
 };
 
 type GenericRecord = Record<string, any>;
+
+type SignatureRow = {
+  signature_role: string | null;
+  display_name: string | null;
+  signature_url_snapshot: string | null;
+  sort_order: number | null;
+};
+
+type ChartPageInfo = {
+  key: string;
+  title: string;
+  measurements: (MeasurementLike & { section: string | null })[];
+};
+
+type ScalePlan = {
+  scale: GenericRecord;
+  scaleMeasurements: GenericRecord[];
+  scaleReferenceSnapshot: GenericRecord;
+  chartPages: ChartPageInfo[];
+};
+
+type PageDescriptor =
+  | { type: "cover" }
+  | { type: "text" }
+  | { type: "formula" }
+  | { type: "technical"; plan: ScalePlan }
+  | { type: "chart"; chart: ChartPageInfo }
+  | { type: "signature" };
 
 const LETTERHEAD_IMAGE_SRC = "/carta_intestata_rev02.png";
 
@@ -155,18 +186,22 @@ function DataCell({
 
 function PageShell({
   children,
-  footer,
-  breakBefore,
+  pageNumber,
+  totalPages,
+  reportNumber,
+  reportDate,
 }: {
   children: React.ReactNode;
-  footer?: string;
-  breakBefore?: boolean;
+  pageNumber: number;
+  totalPages: number;
+  reportNumber: string;
+  reportDate: unknown;
 }) {
   return (
     <section
       className={
         "relative mx-auto min-h-[1123px] w-[794px] overflow-hidden bg-white shadow-lg print:shadow-none " +
-        (breakBefore ? "print:break-before-page" : "")
+        (pageNumber > 1 ? "print:break-before-page" : "")
       }
     >
       <img
@@ -179,11 +214,16 @@ function PageShell({
         {children}
       </div>
 
-      {footer && (
-        <div className="absolute bottom-[28px] left-[60px] right-[60px] z-10 border-t border-slate-300 pt-2 text-center text-[9px] text-slate-700">
-          {footer}
-        </div>
-      )}
+      <div className="absolute bottom-[28px] left-[60px] right-[60px] z-10 border-t border-slate-300 pt-2 text-center text-[9px] leading-tight text-slate-700">
+        <p>
+          Pagina {pageNumber} di {totalPages} del Rapporto di Prova{" "}
+          {reportNumber} del {formatDate(reportDate)}
+        </p>
+        <p>
+          È vietata la riproduzione del rapporto di prova o di singole parti
+          senza l&apos;approvazione del laboratorio Tecnocontrolli S.r.l.
+        </p>
+      </div>
     </section>
   );
 }
@@ -193,11 +233,17 @@ function CoverPage({
   details,
   customerSnapshot,
   reportNumber,
+  reportDate,
+  pageNumber,
+  totalPages,
 }: {
   record: GenericRecord;
   details: GenericRecord;
   customerSnapshot: GenericRecord;
   reportNumber: string;
+  reportDate: unknown;
+  pageNumber: number;
+  totalPages: number;
 }) {
   const customerNumber =
     details.customer_number ??
@@ -211,8 +257,6 @@ function CoverPage({
     customerSnapshot.business_name ??
     "-";
 
-  const reportDate = details.report_date ?? new Date().toISOString().slice(0, 10);
-
   const acceptance = [
     details.acceptance_number,
     details.acceptance_date ? "del " + formatDate(details.acceptance_date) : null,
@@ -222,12 +266,10 @@ function CoverPage({
 
   return (
     <PageShell
-      footer={
-        "Pagina 1 del Rapporto di Prova " +
-        reportNumber +
-        " del " +
-        formatDate(reportDate)
-      }
+      pageNumber={pageNumber}
+      totalPages={totalPages}
+      reportNumber={reportNumber}
+      reportDate={reportDate}
     >
       <div className="text-right text-[13px] font-semibold text-slate-950">
         Calderara di Reno, {formatDate(reportDate)}
@@ -310,8 +352,7 @@ function CoverPage({
       </table>
 
       <p className="mt-32 text-center text-[12px] font-bold">
-        (il presente rapporto di prova si compone delle pagine generate dal
-        sistema)
+        (il presente rapporto di prova si compone di n. {totalPages} pagine)
       </p>
     </PageShell>
   );
@@ -320,25 +361,24 @@ function CoverPage({
 function TextPage({
   record,
   details,
-  customerSnapshot,
   reportNumber,
+  reportDate,
+  pageNumber,
+  totalPages,
 }: {
   record: GenericRecord;
   details: GenericRecord;
-  customerSnapshot: GenericRecord;
   reportNumber: string;
+  reportDate: unknown;
+  pageNumber: number;
+  totalPages: number;
 }) {
-  const reportDate = details.report_date ?? new Date().toISOString().slice(0, 10);
-
   return (
     <PageShell
-      breakBefore
-      footer={
-        "Pagina testo del Rapporto di Prova " +
-        reportNumber +
-        " del " +
-        formatDate(reportDate)
-      }
+      pageNumber={pageNumber}
+      totalPages={totalPages}
+      reportNumber={reportNumber}
+      reportDate={reportDate}
     >
       <section className="space-y-6 text-[13px] leading-7 text-slate-950">
         <div>
@@ -349,17 +389,15 @@ function TextPage({
             </p>
           ))}
 
-          <div className="mx-auto mt-6 flex h-[260px] w-[470px] items-center justify-center border border-slate-200 text-slate-400">
-            {details.instrument_photo_url ? (
+          {details.instrument_photo_url && (
+            <div className="mx-auto mt-6 flex h-[260px] w-[470px] items-center justify-center border border-slate-200">
               <img
                 src={details.instrument_photo_url}
                 alt="Strumento in prova"
                 className="h-full w-full object-contain"
               />
-            ) : (
-              "Spazio foto strumento"
-            )}
-          </div>
+            </div>
+          )}
         </div>
 
         <div>
@@ -403,12 +441,17 @@ function FormulaPage({
   record,
   details,
   reportNumber,
+  reportDate,
+  pageNumber,
+  totalPages,
 }: {
   record: GenericRecord;
   details: GenericRecord;
   reportNumber: string;
+  reportDate: unknown;
+  pageNumber: number;
+  totalPages: number;
 }) {
-  const reportDate = details.report_date ?? new Date().toISOString().slice(0, 10);
   const isPressure =
     record.verification_module === "PRESSURE" || record.mode === "pressione";
   const isTorque =
@@ -503,13 +546,10 @@ function FormulaPage({
 
   return (
     <PageShell
-      breakBefore
-      footer={
-        "Pagina espressione risultati del Rapporto di Prova " +
-        reportNumber +
-        " del " +
-        formatDate(reportDate)
-      }
+      pageNumber={pageNumber}
+      totalPages={totalPages}
+      reportNumber={reportNumber}
+      reportDate={reportDate}
     >
       <section className="space-y-6 text-[13px] leading-7 text-slate-950">
         <div>
@@ -676,6 +716,9 @@ function TechnicalPage({
   referenceSnapshot,
   procedureSnapshot,
   reportNumber,
+  reportDate,
+  pageNumber,
+  totalPages,
 }: {
   record: GenericRecord;
   details: GenericRecord;
@@ -685,35 +728,14 @@ function TechnicalPage({
   referenceSnapshot: GenericRecord;
   procedureSnapshot: GenericRecord;
   reportNumber: string;
+  reportDate: unknown;
+  pageNumber: number;
+  totalPages: number;
 }) {
-  const reportDate = details.report_date ?? new Date().toISOString().slice(0, 10);
-  const isPressure =
-    record.verification_module === "PRESSURE" || record.mode === "pressione";
   const isFlow = record.verification_module === "FLOW" || record.mode === "portata";
   const isMass = record.verification_module === "MASS" || record.mode === "massa";
   const isDimensional =
     record.verification_module === "DIMENSIONAL" || record.mode === "dimensionale";
-  const isTemperature =
-    record.verification_module === "TEMPERATURE" || record.mode === "temperatura";
-  const chartMeasurements: (MeasurementLike & { section: string | null })[] =
-    measurements.map((measurement) => ({
-      id: String(measurement.id),
-      point_order: Number(measurement.point_order) || 0,
-      nominal_value:
-        measurement.nominal_value === null || measurement.nominal_value === undefined
-          ? null
-          : Number(measurement.nominal_value),
-      applied_value:
-        measurement.applied_value === null || measurement.applied_value === undefined
-          ? null
-          : Number(measurement.applied_value),
-      accuracy_error_percent:
-        measurement.accuracy_error_percent === null ||
-        measurement.accuracy_error_percent === undefined
-          ? null
-          : Number(measurement.accuracy_error_percent),
-      section: measurement.section ?? null,
-    }));
   const showNominalColumn = isFlow || isMass;
   const nominalLabel = isMass ? "Peso nominale" : "Volume nominale";
   const appliedLabel = isFlow
@@ -736,13 +758,10 @@ function TechnicalPage({
 
   return (
     <PageShell
-      breakBefore
-      footer={
-        "Sezione tecnica del Rapporto di Prova " +
-        reportNumber +
-        " del " +
-        formatDate(reportDate)
-      }
+      pageNumber={pageNumber}
+      totalPages={totalPages}
+      reportNumber={reportNumber}
+      reportDate={reportDate}
     >
       <div className="text-right text-[11px] font-semibold text-slate-900">
         Sezione tecnica integrante del Rapporto di Prova {reportNumber}
@@ -926,53 +945,101 @@ function TechnicalPage({
           appliedLabel={appliedLabel}
         />
       </div>
+    </PageShell>
+  );
+}
 
-      {!isTemperature &&
-        (isPressure ? (
-          <div className="mt-6 space-y-6 print:break-before-page">
-            <MeasurementErrorChart
-              measurements={chartMeasurements.filter(
-                (measurement) => measurement.section?.toLowerCase() !== "scarico"
-              )}
-              title="Grafico errore accuratezza % - Prova in carico"
-            />
-            <MeasurementErrorChart
-              measurements={chartMeasurements.filter(
-                (measurement) => measurement.section?.toLowerCase() === "scarico"
-              )}
-              title="Grafico errore accuratezza % - Prova in scarico"
-            />
-          </div>
-        ) : (
-          <div className="mt-6 print:break-before-page">
-            <MeasurementErrorChart
-              measurements={chartMeasurements}
-              title={"Grafico errore accuratezza % - " + textValue(scale.scale_name)}
-            />
+function ChartPage({
+  measurements,
+  title,
+  reportNumber,
+  reportDate,
+  pageNumber,
+  totalPages,
+}: {
+  measurements: MeasurementLike[];
+  title: string;
+  reportNumber: string;
+  reportDate: unknown;
+  pageNumber: number;
+  totalPages: number;
+}) {
+  return (
+    <PageShell
+      pageNumber={pageNumber}
+      totalPages={totalPages}
+      reportNumber={reportNumber}
+      reportDate={reportDate}
+    >
+      <div className="text-right text-[11px] font-semibold text-slate-900">
+        Sezione tecnica integrante del Rapporto di Prova {reportNumber}
+      </div>
+
+      <div className="mt-8">
+        <MeasurementErrorChart measurements={measurements} title={title} />
+      </div>
+    </PageShell>
+  );
+}
+
+function SignatureCell({
+  entries,
+  fallbackText,
+}: {
+  entries: SignatureRow[];
+  fallbackText: unknown;
+}) {
+  if (entries.length > 0) {
+    return (
+      <div className="flex h-[115px] flex-col items-center justify-center gap-2 px-2">
+        {entries.map((entry, index) => (
+          <div key={index} className="flex flex-col items-center">
+            {entry.signature_url_snapshot ? (
+              <img
+                src={entry.signature_url_snapshot}
+                alt={entry.display_name ?? "Firma"}
+                className="h-10 max-w-[150px] object-contain"
+              />
+            ) : null}
+            <span className="text-[10px]">{textValue(entry.display_name)}</span>
           </div>
         ))}
-    </PageShell>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex h-[115px] items-center justify-center">
+      {textValue(fallbackText)}
+    </div>
   );
 }
 
 function SignaturePage({
   details,
+  testingSignatures,
+  reviewerSignatures,
+  directorSignature,
   reportNumber,
+  reportDate,
+  pageNumber,
+  totalPages,
 }: {
   details: GenericRecord;
+  testingSignatures: SignatureRow[];
+  reviewerSignatures: SignatureRow[];
+  directorSignature: SignatureRow | null;
   reportNumber: string;
+  reportDate: unknown;
+  pageNumber: number;
+  totalPages: number;
 }) {
-  const reportDate = details.report_date ?? new Date().toISOString().slice(0, 10);
-
   return (
     <PageShell
-      breakBefore
-      footer={
-        "Pagina sottoscrizione del Rapporto di Prova " +
-        reportNumber +
-        " del " +
-        formatDate(reportDate)
-      }
+      pageNumber={pageNumber}
+      totalPages={totalPages}
+      reportNumber={reportNumber}
+      reportDate={reportDate}
     >
       <section className="text-[13px] leading-7 text-slate-950">
         <h2 className="mb-6 text-[15px] font-black uppercase">
@@ -991,27 +1058,30 @@ function SignaturePage({
             <div className="bg-slate-700 p-2 font-bold text-white">
               Il Tecnico addetto alle prove
             </div>
-            <div className="flex h-[115px] items-center justify-center">
-              {textValue(details.technician_name)}
-            </div>
+            <SignatureCell
+              entries={testingSignatures}
+              fallbackText={details.technician_name}
+            />
           </div>
 
           <div className="border border-slate-900">
             <div className="bg-slate-700 p-2 font-bold text-white">
               Redatto / verificato
             </div>
-            <div className="flex h-[115px] items-center justify-center">
-              {textValue(details.reviewer_name)}
-            </div>
+            <SignatureCell
+              entries={reviewerSignatures}
+              fallbackText={details.reviewer_name}
+            />
           </div>
 
           <div className="border border-slate-900">
             <div className="bg-slate-700 p-2 font-bold text-white">
               Il Direttore di laboratorio
             </div>
-            <div className="flex h-[115px] items-center justify-center">
-              {textValue(details.director_name)}
-            </div>
+            <SignatureCell
+              entries={directorSignature ? [directorSignature] : []}
+              fallbackText={details.director_name}
+            />
           </div>
         </div>
       </section>
@@ -1052,9 +1122,25 @@ export default async function FinalReportPage({ params }: PageProps) {
     .eq("calibration_record_id", id)
     .order("point_order", { ascending: true });
 
+  const { data: signaturesData } = await supabase
+    .from("calibration_report_signatures")
+    .select("signature_role, display_name, signature_url_snapshot, sort_order")
+    .eq("calibration_record_id", id)
+    .order("sort_order", { ascending: true });
+
   const details = asObject(detailsData);
   const scales = (scalesData ?? []) as GenericRecord[];
   const measurements = (measurementsData ?? []) as GenericRecord[];
+  const signatureRows = (signaturesData ?? []) as SignatureRow[];
+
+  const testingSignatures = signatureRows.filter(
+    (row) => row.signature_role === "testing_technician"
+  );
+  const reviewerSignatures = signatureRows.filter(
+    (row) => row.signature_role === "reviewer"
+  );
+  const directorSignature =
+    signatureRows.find((row) => row.signature_role === "director") ?? null;
 
   const customerSnapshot = asObject(record.customer_instrument_snapshot);
   const referenceSnapshot = asObject(record.reference_instrument_snapshot);
@@ -1065,56 +1151,214 @@ export default async function FinalReportPage({ params }: PageProps) {
     textValue(record.record_number, "") ||
     "SENZA NUMERO";
 
+  const reportDate = details.report_date ?? new Date().toISOString().slice(0, 10);
+
+  const isPressure =
+    record.verification_module === "PRESSURE" || record.mode === "pressione";
+  const isTemperature =
+    record.verification_module === "TEMPERATURE" || record.mode === "temperatura";
+
+  const scalePlans: ScalePlan[] = scales.map((scale) => {
+    const scaleMeasurements = measurements.filter(
+      (measurement) => measurement.scale_id === scale.id
+    );
+
+    const scaleReferenceSnapshot =
+      asObject(scale.reference_instrument_snapshot).name ||
+      asObject(scale.reference_instrument_snapshot).instrument_id
+        ? asObject(scale.reference_instrument_snapshot)
+        : referenceSnapshot;
+
+    const chartMeasurements: (MeasurementLike & { section: string | null })[] =
+      scaleMeasurements.map((measurement) => ({
+        id: String(measurement.id),
+        point_order: Number(measurement.point_order) || 0,
+        nominal_value:
+          measurement.nominal_value === null ||
+          measurement.nominal_value === undefined
+            ? null
+            : Number(measurement.nominal_value),
+        applied_value:
+          measurement.applied_value === null ||
+          measurement.applied_value === undefined
+            ? null
+            : Number(measurement.applied_value),
+        accuracy_error_percent:
+          measurement.accuracy_error_percent === null ||
+          measurement.accuracy_error_percent === undefined
+            ? null
+            : Number(measurement.accuracy_error_percent),
+        section: measurement.section ?? null,
+      }));
+
+    const chartPages: ChartPageInfo[] = [];
+
+    if (!isTemperature) {
+      if (isPressure) {
+        const carico = chartMeasurements.filter(
+          (measurement) => measurement.section?.toLowerCase() !== "scarico"
+        );
+        const scarico = chartMeasurements.filter(
+          (measurement) => measurement.section?.toLowerCase() === "scarico"
+        );
+
+        if (hasValidChartMeasurements(carico)) {
+          chartPages.push({
+            key: scale.id + "-carico",
+            title: "Grafico errore accuratezza % - Prova in carico",
+            measurements: carico,
+          });
+        }
+
+        if (hasValidChartMeasurements(scarico)) {
+          chartPages.push({
+            key: scale.id + "-scarico",
+            title: "Grafico errore accuratezza % - Prova in scarico",
+            measurements: scarico,
+          });
+        }
+      } else if (hasValidChartMeasurements(chartMeasurements)) {
+        chartPages.push({
+          key: scale.id + "-chart",
+          title:
+            "Grafico errore accuratezza % - " + textValue(scale.scale_name),
+          measurements: chartMeasurements,
+        });
+      }
+    }
+
+    return {
+      scale,
+      scaleMeasurements,
+      scaleReferenceSnapshot,
+      chartPages,
+    };
+  });
+
+  const pageDescriptors: PageDescriptor[] = [
+    { type: "cover" },
+    { type: "text" },
+    { type: "formula" },
+    ...scalePlans.flatMap((plan): PageDescriptor[] => [
+      { type: "technical", plan },
+      ...plan.chartPages.map(
+        (chart): PageDescriptor => ({ type: "chart", chart })
+      ),
+    ]),
+    { type: "signature" },
+  ];
+
+  const totalPages = pageDescriptors.length;
+
   return (
     <AppShell>
       <div className="space-y-8 bg-slate-100 p-6 print:bg-white print:p-0">
-        <CoverPage
-          record={record}
-          details={details}
-          customerSnapshot={customerSnapshot}
-          reportNumber={reportNumber}
-        />
+        <div className="print-hidden mb-2 flex flex-wrap items-center justify-between gap-3">
+          <Link
+            href={`/verifiche/${id}/rapporto`}
+            className="text-sm font-medium text-slate-500 hover:text-slate-950"
+          >
+            ← Torna ai dati rapporto
+          </Link>
 
-        <TextPage
-          record={record}
-          details={details}
-          customerSnapshot={customerSnapshot}
-          reportNumber={reportNumber}
-        />
+          <ReportPrintButton
+            fileName={"Rapporto di Prova " + reportNumber}
+          />
+        </div>
 
-        <FormulaPage
-          record={record}
-          details={details}
-          reportNumber={reportNumber}
-        />
+        {pageDescriptors.map((descriptor, index) => {
+          const pageNumber = index + 1;
 
-        {scales.map((scale) => {
-          const scaleMeasurements = measurements.filter(
-            (measurement) => measurement.scale_id === scale.id
-          );
+          if (descriptor.type === "cover") {
+            return (
+              <CoverPage
+                key="cover"
+                record={record}
+                details={details}
+                customerSnapshot={customerSnapshot}
+                reportNumber={reportNumber}
+                reportDate={reportDate}
+                pageNumber={pageNumber}
+                totalPages={totalPages}
+              />
+            );
+          }
 
-          const scaleReferenceSnapshot =
-            asObject(scale.reference_instrument_snapshot).name ||
-            asObject(scale.reference_instrument_snapshot).instrument_id
-              ? asObject(scale.reference_instrument_snapshot)
-              : referenceSnapshot;
+          if (descriptor.type === "text") {
+            return (
+              <TextPage
+                key="text"
+                record={record}
+                details={details}
+                reportNumber={reportNumber}
+                reportDate={reportDate}
+                pageNumber={pageNumber}
+                totalPages={totalPages}
+              />
+            );
+          }
+
+          if (descriptor.type === "formula") {
+            return (
+              <FormulaPage
+                key="formula"
+                record={record}
+                details={details}
+                reportNumber={reportNumber}
+                reportDate={reportDate}
+                pageNumber={pageNumber}
+                totalPages={totalPages}
+              />
+            );
+          }
+
+          if (descriptor.type === "technical") {
+            return (
+              <TechnicalPage
+                key={"technical-" + descriptor.plan.scale.id}
+                record={record}
+                details={details}
+                scale={descriptor.plan.scale}
+                measurements={descriptor.plan.scaleMeasurements}
+                customerSnapshot={customerSnapshot}
+                referenceSnapshot={descriptor.plan.scaleReferenceSnapshot}
+                procedureSnapshot={procedureSnapshot}
+                reportNumber={reportNumber}
+                reportDate={reportDate}
+                pageNumber={pageNumber}
+                totalPages={totalPages}
+              />
+            );
+          }
+
+          if (descriptor.type === "chart") {
+            return (
+              <ChartPage
+                key={"chart-" + descriptor.chart.key}
+                measurements={descriptor.chart.measurements}
+                title={descriptor.chart.title}
+                reportNumber={reportNumber}
+                reportDate={reportDate}
+                pageNumber={pageNumber}
+                totalPages={totalPages}
+              />
+            );
+          }
 
           return (
-            <TechnicalPage
-              key={scale.id}
-              record={record}
+            <SignaturePage
+              key="signature"
               details={details}
-              scale={scale}
-              measurements={scaleMeasurements}
-              customerSnapshot={customerSnapshot}
-              referenceSnapshot={scaleReferenceSnapshot}
-              procedureSnapshot={procedureSnapshot}
+              testingSignatures={testingSignatures}
+              reviewerSignatures={reviewerSignatures}
+              directorSignature={directorSignature}
               reportNumber={reportNumber}
+              reportDate={reportDate}
+              pageNumber={pageNumber}
+              totalPages={totalPages}
             />
           );
         })}
-
-        <SignaturePage details={details} reportNumber={reportNumber} />
       </div>
     </AppShell>
   );
