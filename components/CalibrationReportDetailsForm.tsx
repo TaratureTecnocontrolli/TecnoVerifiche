@@ -213,6 +213,10 @@ function buildAutoPremise(params: {
     return `Il giorno ${italianTestDate}, presso ${siteDescription}, è stato sottoposto a verifica di taratura lo strumento dimensionale ${instrumentLabel} (s/n ${params.serialNumber || "non indicato"}), per conto di ${customerName}. La strumentazione interessata dalla verifica presenta campo ${params.range || "non indicato"}.`;
   }
 
+  if (params.verificationModule === "TEMPERATURE") {
+    return `Il giorno ${italianTestDate}, presso ${siteDescription}, è stato sottoposto a monitoraggio della temperatura lo strumento ${instrumentLabel} (s/n ${params.serialNumber || "non indicato"}), per conto di ${customerName}.`;
+  }
+
   return `Il giorno ${italianTestDate} tecnici di questo Laboratorio tecnologico hanno sottoposto, per conto di ${customerName} presso la sede di ${siteDescription}, una ${instrumentLabel} (s/n ${params.serialNumber}) a verifica di taratura. La macchina ha un Fondo Scala di ${params.range}.`;
 }
 
@@ -239,6 +243,10 @@ function defaultRequestedTests(verificationModule?: string) {
 
   if (verificationModule === "DIMENSIONAL") {
     return "Verifica taratura di calibro / strumento dimensionale mediante confronto con campioni di riferimento.";
+  }
+
+  if (verificationModule === "TEMPERATURE") {
+    return "Monitoraggio della temperatura mediante confronto con termometro/termostato di riferimento.";
   }
 
   return "";
@@ -269,6 +277,10 @@ function defaultScopeText(verificationModule?: string) {
     return "La prova ha come scopo la verifica dello strumento dimensionale sui punti previsti, rilevando tre scostamenti per ciascun punto e calcolando media, errore medio, errore di accuratezza percentuale, ripetibilità e incertezza strumentale.";
   }
 
+  if (verificationModule === "TEMPERATURE") {
+    return "La prova ha come scopo il monitoraggio della temperatura di un ambiente, rilevando a orari prefissati la temperatura misurata dallo strumento in prova e confrontandola con la temperatura rilevata dal termometro/termostato di riferimento.";
+  }
+
   return "";
 }
 
@@ -295,6 +307,10 @@ function defaultApparatusDescription(verificationModule?: string) {
 
   if (verificationModule === "DIMENSIONAL") {
     return "L’apparato utilizzato per la verifica è costituito dai campioni di riferimento indicati nella sezione tecnica del presente rapporto. I campioni di riferimento risultano identificati con i relativi dati di matricola, codice interno e certificato di taratura in corso di validità alla data della prova.";
+  }
+
+  if (verificationModule === "TEMPERATURE") {
+    return "L’apparato utilizzato per la verifica è costituito dal termometro/termostato di riferimento indicato nella sezione tecnica del presente rapporto. Lo strumento di riferimento risulta identificato con i relativi dati di matricola, codice interno e certificato di taratura in corso di validità alla data della prova.";
   }
 
   return "";
@@ -325,6 +341,10 @@ function defaultExecutionMethod(verificationModule?: string) {
     return "La verifica di taratura è stata eseguita confrontando lo strumento in prova con i campioni di riferimento sui punti previsti, rilevando tre scostamenti consecutivi per ciascun punto. Per ogni punto sono stati determinati il valore massimo, il valore minimo, la media degli scostamenti, l'errore medio, l'errore di accuratezza percentuale, l'errore di ripetibilità percentuale e l'incertezza strumentale.";
   }
 
+  if (verificationModule === "TEMPERATURE") {
+    return "Il monitoraggio è stato eseguito rilevando, a orari prefissati, la temperatura indicata dallo strumento in prova e la temperatura indicata dal termometro/termostato di riferimento. I valori sono riportati come rilevati, senza calcolo di errore o esito automatico.";
+  }
+
   return "";
 }
 
@@ -351,6 +371,10 @@ function defaultResultsText(verificationModule?: string) {
 
   if (verificationModule === "DIMENSIONAL") {
     return "I risultati della verifica sono riportati nella sezione tecnica del presente rapporto. Per ciascun punto sono indicati il valore nominale, i tre scostamenti rilevati, la media, l'errore medio, l'errore di accuratezza percentuale, l'errore di ripetibilità percentuale e l'incertezza strumentale.";
+  }
+
+  if (verificationModule === "TEMPERATURE") {
+    return "I risultati del monitoraggio sono riportati nella sezione tecnica del presente rapporto. Per ciascuna rilevazione sono indicati data, orario, temperatura misurata dallo strumento in prova e temperatura rilevata dal termometro/termostato di riferimento.";
   }
 
   return "";
@@ -421,7 +445,9 @@ export default function CalibrationReportDetailsForm({
                 ? "Verifica bilancia / strumento di misura della massa"
                 : autoPremiseData?.verificationModule === "DIMENSIONAL"
                   ? "Verifica strumento dimensionale"
-                  : "")
+                  : autoPremiseData?.verificationModule === "TEMPERATURE"
+                    ? "Monitoraggio temperatura"
+                    : "")
   );
   const [requestedTests, setRequestedTests] = useState(
     valueOrEmpty(safeInitialData.requested_tests) ||

@@ -99,6 +99,10 @@ function modeLabel(mode: unknown, verificationModule: unknown) {
     return "Dimensionale";
   }
 
+  if (verificationModule === "TEMPERATURE" || mode === "temperatura") {
+    return "Temperatura";
+  }
+
   if (mode === "compressione") {
     return "Compressione";
   }
@@ -408,6 +412,8 @@ function FormulaPage({
   const isMass = record.verification_module === "MASS" || record.mode === "massa";
   const isDimensional =
     record.verification_module === "DIMENSIONAL" || record.mode === "dimensionale";
+  const isTemperature =
+    record.verification_module === "TEMPERATURE" || record.mode === "temperatura";
 
   let formulaText: string[] = [
     "La verifica del punto di gradazione della scala viene effettuata leggendo il corrispondente valore effettivo sul dispositivo di verifica, con carico di prova crescente, quando i sistemi sono in equilibrio.",
@@ -467,6 +473,13 @@ function FormulaPage({
       "Errore accuratezza % = [(Valore nominale - Media scostamenti) / Valore nominale] × 100.",
       "Errore ripetibilità % = [(Scostamento massimo - Scostamento minimo) / Media scostamenti] × 100.",
       "Incertezza strumentale = |Errore medio| × 2.",
+    ];
+  }
+
+  if (isTemperature) {
+    formulaText = [
+      "La verifica viene eseguita rilevando, a orari prefissati, la temperatura indicata dallo strumento in prova e la temperatura indicata dal termometro/termostato di riferimento.",
+      "I valori sono riportati come rilevati, senza calcolo di errore o esito automatico.",
     ];
   }
 

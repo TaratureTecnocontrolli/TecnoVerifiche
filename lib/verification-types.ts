@@ -77,8 +77,8 @@ export const verificationTypes: VerificationTypeConfig[] = [
     shortTitle: "Temperatura",
     description:
       "Modulo per termometri, sonde, datalogger e strumenti di misura temperatura.",
-    status: "development",
-    tag: "In sviluppo",
+    status: "active",
+    tag: "Disponibile",
     createHref: "/nuova-verifica/temperatura",
     measuresPathTemplate: "/verifiche/{id}/misure-temperatura",
     reportPathTemplate: "/verifiche/{id}/rapporto/finale",

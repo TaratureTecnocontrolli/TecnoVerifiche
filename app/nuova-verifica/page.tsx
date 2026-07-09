@@ -77,14 +77,14 @@ const modules: VerificationModule[] = [
     badge: "TMP",
     description:
       "Modulo per termometri, sonde e strumenti di misura della temperatura.",
-    href: null,
-    status: "development",
-    bookmark: "Da costruire",
+    href: "/nuova-verifica/temperatura",
+    status: "active",
+    bookmark: "Modulo attivo",
     details: [
-      "punti termici",
+      "log giornaliero",
       "campione di riferimento",
-      "stabilità",
-      "scostamento",
+      "data e orario",
+      "nessun calcolo automatico",
     ],
   },
   {

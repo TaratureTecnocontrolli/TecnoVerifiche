@@ -313,6 +313,40 @@ export function getDimensionalReportDefaults(
   };
 }
 
+export function getTemperatureReportDefaults(
+  input: ReportDefaultsInput
+): ReportTextDefaults {
+  const instrument = instrumentDescription(input);
+  const reference = referenceDescription(input);
+
+  return {
+    work_object: "Verifica della taratura di " + instrument,
+    requested_tests:
+      "Verifica della taratura di strumento di misura della temperatura mediante confronto con termometro/termostato di riferimento.",
+    premise_text: [
+      "Su incarico del Committente è stata eseguita la verifica della taratura dello strumento indicato nel presente rapporto.",
+      "La verifica riguarda esclusivamente lo strumento sottoposto a prova, nelle condizioni riportate nella sezione tecnica integrante del rapporto.",
+      "Strumento sottoposto a verifica: " + instrument + ".",
+    ].join("\n"),
+    scope_text: [
+      "Scopo della verifica è monitorare la temperatura rilevata dallo strumento in prova confrontandola, a orari prefissati, con la temperatura rilevata dal termometro/termostato di riferimento.",
+    ].join("\n"),
+    apparatus_description: [
+      "L'apparato di verifica è costituito dal termometro/termostato di riferimento indicato nella sezione tecnica del rapporto.",
+      "Lo strumento campione utilizzato risulta identificato mediante codice interno, matricola, certificato e relativa scadenza, come riportato nello snapshot tecnico della verifica.",
+      "Strumento campione utilizzato: " + reference + ".",
+    ].join("\n"),
+    execution_method: [
+      "La verifica viene eseguita rilevando, a orari prefissati nell'arco della giornata, la temperatura indicata dallo strumento in prova e la temperatura indicata dal termometro/termostato di riferimento.",
+      "I valori rilevati sono riportati nella sezione tecnica integrante del presente rapporto senza elaborazione di errore o esito automatico.",
+    ].join("\n"),
+    results_text: [
+      "I risultati della verifica sono riportati nella sezione tecnica integrante del presente rapporto.",
+      "Per ciascuna rilevazione sono indicati data, orario, temperatura misurata dallo strumento in prova e temperatura rilevata dal termometro/termostato di riferimento.",
+    ].join("\n"),
+  };
+}
+
 export function getReportDefaultsByModule(
   module: string | null | undefined,
   mode: string | null | undefined,
@@ -340,6 +374,10 @@ export function getReportDefaultsByModule(
 
   if (module === "DIMENSIONAL" || mode === "dimensionale") {
     return getDimensionalReportDefaults(input);
+  }
+
+  if (module === "TEMPERATURE" || mode === "temperatura") {
+    return getTemperatureReportDefaults(input);
   }
 
   return getCtForceReportDefaults(input);
