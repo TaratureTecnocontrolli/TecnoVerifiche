@@ -1,5 +1,8 @@
 import { notFound } from "next/navigation";
 import AppShell from "@/components/AppShell";
+import MeasurementErrorChart, {
+  type MeasurementLike,
+} from "@/components/MeasurementErrorChart";
 import { supabase } from "@/lib/supabase";
 
 type PageProps = {
@@ -669,10 +672,33 @@ function TechnicalPage({
   reportNumber: string;
 }) {
   const reportDate = details.report_date ?? new Date().toISOString().slice(0, 10);
+  const isPressure =
+    record.verification_module === "PRESSURE" || record.mode === "pressione";
   const isFlow = record.verification_module === "FLOW" || record.mode === "portata";
   const isMass = record.verification_module === "MASS" || record.mode === "massa";
   const isDimensional =
     record.verification_module === "DIMENSIONAL" || record.mode === "dimensionale";
+  const isTemperature =
+    record.verification_module === "TEMPERATURE" || record.mode === "temperatura";
+  const chartMeasurements: (MeasurementLike & { section: string | null })[] =
+    measurements.map((measurement) => ({
+      id: String(measurement.id),
+      point_order: Number(measurement.point_order) || 0,
+      nominal_value:
+        measurement.nominal_value === null || measurement.nominal_value === undefined
+          ? null
+          : Number(measurement.nominal_value),
+      applied_value:
+        measurement.applied_value === null || measurement.applied_value === undefined
+          ? null
+          : Number(measurement.applied_value),
+      accuracy_error_percent:
+        measurement.accuracy_error_percent === null ||
+        measurement.accuracy_error_percent === undefined
+          ? null
+          : Number(measurement.accuracy_error_percent),
+      section: measurement.section ?? null,
+    }));
   const showNominalColumn = isFlow || isMass;
   const nominalLabel = isMass ? "Peso nominale" : "Volume nominale";
   const appliedLabel = isFlow
@@ -885,6 +911,31 @@ function TechnicalPage({
           appliedLabel={appliedLabel}
         />
       </div>
+
+      {!isTemperature &&
+        (isPressure ? (
+          <div className="mt-6 space-y-6 print:break-before-page">
+            <MeasurementErrorChart
+              measurements={chartMeasurements.filter(
+                (measurement) => measurement.section?.toLowerCase() !== "scarico"
+              )}
+              title="Grafico errore accuratezza % - Prova in carico"
+            />
+            <MeasurementErrorChart
+              measurements={chartMeasurements.filter(
+                (measurement) => measurement.section?.toLowerCase() === "scarico"
+              )}
+              title="Grafico errore accuratezza % - Prova in scarico"
+            />
+          </div>
+        ) : (
+          <div className="mt-6 print:break-before-page">
+            <MeasurementErrorChart
+              measurements={chartMeasurements}
+              title={"Grafico errore accuratezza % - " + textValue(scale.scale_name)}
+            />
+          </div>
+        ))}
     </PageShell>
   );
 }

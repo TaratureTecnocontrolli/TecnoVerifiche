@@ -1,6 +1,6 @@
 "use client";
 
-type MeasurementLike = {
+export type MeasurementLike = {
   id: string;
   point_order: number;
   nominal_value: number | null;
