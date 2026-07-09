@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import CalibrationReportDetailsForm from "@/components/CalibrationReportDetailsForm";
 import { supabase } from "@/lib/supabase";
+import { getVerificationModuleFromMode } from "@/lib/verification-types";
 
 type PageProps = {
   params: Promise<{
@@ -219,7 +220,7 @@ export default async function CalibrationReportDetailsPage({ params }: PageProps
       "",
     verificationModule:
       record.verification_module ||
-      (record.mode === "pressione" ? "PRESSURE" : "CT_FORCE"),
+      getVerificationModuleFromMode(record.mode),
     verificationDate: record.verification_date,
   };
 

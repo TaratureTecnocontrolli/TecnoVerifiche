@@ -281,6 +281,14 @@ function matchesType(row: VerificationRow, type: string) {
     return getVerificationModule(row) === "PRESSURE";
   }
 
+  if (type === "TORQUE") {
+    return getVerificationModule(row) === "TORQUE";
+  }
+
+  if (type === "FLOW") {
+    return getVerificationModule(row) === "FLOW";
+  }
+
   return row.record.mode === type;
 }
 
@@ -524,6 +532,8 @@ export default async function VerificationsPage({ searchParams }: PageProps) {
                 <option value="tutti">Tutti</option>
                 <option value="CT_FORCE">Compressione / trazione</option>
                 <option value="PRESSURE">Pressione</option>
+                <option value="TORQUE">Chiavi dinamometriche</option>
+                <option value="FLOW">Portata / contalitri</option>
               </select>
             </label>
 

@@ -193,12 +193,28 @@ function buildAutoPremise(params: {
     return `Il giorno ${italianTestDate}, presso ${siteDescription}, è stato sottoposto a verifica di taratura lo strumento di misura della pressione ${instrumentLabel} (s/n ${params.serialNumber || "non indicato"}), per conto di ${customerName}. La strumentazione interessata dalla verifica presenta campo/fondo scala ${params.range || "non indicato"}.`;
   }
 
+  if (params.verificationModule === "TORQUE") {
+    return `Il giorno ${italianTestDate}, presso ${siteDescription}, è stato sottoposto a verifica di taratura lo strumento di coppia ${instrumentLabel} (s/n ${params.serialNumber || "non indicato"}), per conto di ${customerName}. La strumentazione interessata dalla verifica presenta campo ${params.range || "non indicato"}.`;
+  }
+
+  if (params.verificationModule === "FLOW") {
+    return `Il giorno ${italianTestDate}, presso ${siteDescription}, è stato sottoposto a verifica di taratura lo strumento di portata / contalitri ${instrumentLabel} (s/n ${params.serialNumber || "non indicato"}), per conto di ${customerName}. La strumentazione interessata dalla verifica presenta campo ${params.range || "non indicato"}.`;
+  }
+
   return `Il giorno ${italianTestDate} tecnici di questo Laboratorio tecnologico hanno sottoposto, per conto di ${customerName} presso la sede di ${siteDescription}, una ${instrumentLabel} (s/n ${params.serialNumber}) a verifica di taratura. La macchina ha un Fondo Scala di ${params.range}.`;
 }
 
 function defaultRequestedTests(verificationModule?: string) {
   if (verificationModule === "PRESSURE") {
     return "Verifica taratura dello strumento di misura della pressione mediante confronto con strumento campione.";
+  }
+
+  if (verificationModule === "TORQUE") {
+    return "Verifica taratura di chiave dinamometrica / strumento di coppia mediante confronto con strumento campione.";
+  }
+
+  if (verificationModule === "FLOW") {
+    return "Verifica taratura di contalitri / strumento di misura volume-portata mediante confronto con strumento campione.";
   }
 
   return "";
@@ -209,12 +225,28 @@ function defaultScopeText(verificationModule?: string) {
     return "La prova ha come scopo la verifica dello strumento di misura della pressione sui punti previsti della propria portata, con particolare riferimento ai quattro quinti superiori della portata massima quando applicabile. Tale verifica rappresenta il procedimento di controllo per determinare gli errori dello strumento. Gli errori presi in considerazione sono: a) errore di ripetibilità; b) errore di accuratezza.";
   }
 
+  if (verificationModule === "TORQUE") {
+    return "La prova ha come scopo la verifica dello strumento di coppia sui punti di coppia previsti, rilevando tre letture per ciascun punto e calcolando media, errore medio, errore di accuratezza percentuale e ripetibilità.";
+  }
+
+  if (verificationModule === "FLOW") {
+    return "La prova ha come scopo la verifica del contalitri / strumento di misura volume-portata confrontando il volume impostato sullo strumento in verifica con le letture rilevate sullo strumento campione, su tre cicli di misura.";
+  }
+
   return "";
 }
 
 function defaultApparatusDescription(verificationModule?: string) {
   if (verificationModule === "PRESSURE") {
     return "L’apparato utilizzato per la verifica è costituito dal sistema di generazione/applicazione della pressione e dallo strumento campione indicato nella sezione tecnica del presente rapporto. Lo strumento campione risulta identificato con i relativi dati di matricola, codice interno, campo di misura e certificato di taratura in corso di validità alla data della prova.";
+  }
+
+  if (verificationModule === "TORQUE") {
+    return "L’apparato utilizzato per la verifica è costituito dallo strumento campione indicato nella sezione tecnica del presente rapporto e dagli eventuali accessori necessari all’applicazione controllata della coppia. Lo strumento campione risulta identificato con i relativi dati di matricola, codice interno, campo di misura e certificato di taratura in corso di validità alla data della prova.";
+  }
+
+  if (verificationModule === "FLOW") {
+    return "L’apparato utilizzato per la verifica è costituito dallo strumento campione indicato nella sezione tecnica del presente rapporto, con confronto dei risultati su tre cicli di misura. Lo strumento campione risulta identificato con i relativi dati di matricola, codice interno, campo di misura e certificato di taratura in corso di validità alla data della prova.";
   }
 
   return "";
@@ -225,12 +257,28 @@ function defaultExecutionMethod(verificationModule?: string) {
     return "La verifica di taratura è stata eseguita installando lo strumento da verificare sull’apparato di generazione della pressione, in collegamento/confronto con lo strumento campione. Prima dell’inizio della verifica il sistema può essere portato al valore massimo previsto per stabilizzare il circuito e verificare il corretto funzionamento dell’insieme di prova. La verifica è stata effettuata sui punti prefissati, regolarmente distribuiti sul campo di misura, sia in fase di carico fino al raggiungimento del valore massimo previsto sia in fase di scarico sugli stessi punti a scendere. Per ciascun punto sono state registrate tre letture/cicli. Per ogni punto sono stati calcolati lettura massima, lettura minima, media delle letture, errore medio, errore di accuratezza percentuale ed errore di ripetibilità percentuale. Temperatura e umidità ambientali sono riportate nel presente rapporto.";
   }
 
+  if (verificationModule === "TORQUE") {
+    return "La verifica di taratura è stata eseguita applicando i punti di coppia previsti e rilevando, per ciascun punto, tre letture consecutive dello strumento in prova. Per ogni punto sono stati determinati il valore massimo, il valore minimo, la media delle letture, l’errore medio, l’errore di accuratezza percentuale e l’errore di ripetibilità percentuale.";
+  }
+
+  if (verificationModule === "FLOW") {
+    return "La verifica di taratura è stata eseguita impostando sullo strumento in prova i volumi nominali previsti e rilevando tre letture per ciascun punto. Per ciascun punto sono stati determinati media delle letture, errore ed errore percentuale, calcolati come Errore = Media letture - Volume impostato ed Errore % = Errore / Volume impostato x 100.";
+  }
+
   return "";
 }
 
 function defaultResultsText(verificationModule?: string) {
   if (verificationModule === "PRESSURE") {
     return "I risultati della verifica sono riportati nella sezione tecnica del presente rapporto. Le tabelle riportano, separatamente per la prova in carico e per la prova in scarico, i punti di verifica, il carico applicato, le letture dei tre cicli, la lettura massima, la lettura minima, la media delle letture, l’errore medio, l’errore di accuratezza e l’errore di ripetibilità. I grafici riportano l’andamento dell’errore di accuratezza per le due fasi di prova.";
+  }
+
+  if (verificationModule === "TORQUE") {
+    return "I risultati della verifica sono riportati nella sezione tecnica del presente rapporto. Per ciascun punto di coppia sono indicati il valore applicato, le tre letture rilevate, la media, l’errore medio, l’errore di accuratezza percentuale e l’errore di ripetibilità percentuale.";
+  }
+
+  if (verificationModule === "FLOW") {
+    return "I risultati della verifica sono riportati nella sezione tecnica del presente rapporto. Per ciascun punto sono indicati volume nominale, volume impostato nello strumento in verifica, tre letture, media letture, errore ed errore percentuale.";
   }
 
   return "";
@@ -291,7 +339,11 @@ export default function CalibrationReportDetailsForm({
     valueOrEmpty(safeInitialData.work_object) ||
       (autoPremiseData?.verificationModule === "PRESSURE"
         ? "Verifica strumento di misura della pressione"
-        : "")
+        : autoPremiseData?.verificationModule === "TORQUE"
+          ? "Verifica strumento di coppia / chiave dinamometrica"
+          : autoPremiseData?.verificationModule === "FLOW"
+            ? "Verifica strumento di portata / contalitri"
+            : "")
   );
   const [requestedTests, setRequestedTests] = useState(
     valueOrEmpty(safeInitialData.requested_tests) ||
@@ -1572,10 +1624,10 @@ export default function CalibrationReportDetailsForm({
       <div className="flex justify-end gap-3">
         <button
           type="button"
-          onClick={() => router.push(`/verifiche/${recordId}`)}
+          onClick={() => router.push("/verifiche")}
           className="rounded-xl border border-slate-300 bg-white px-5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
         >
-          Torna alla verifica
+          Torna alle verifiche
         </button>
 
         <button
