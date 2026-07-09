@@ -259,13 +259,6 @@ export default async function CalibrationReportDetailsPage({ params }: PageProps
             </span>
 
             <Link
-              href={`/verifiche/${id}/rapporto/sezione-tecnica`}
-              className="rounded-xl border border-slate-300 bg-white px-5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              Sezione tecnica
-            </Link>
-
-            <Link
               href={`/verifiche/${id}/rapporto/finale`}
               className="rounded-xl bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-700"
             >
