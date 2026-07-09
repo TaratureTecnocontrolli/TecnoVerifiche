@@ -209,6 +209,10 @@ function buildAutoPremise(params: {
     return `Il giorno ${italianTestDate}, presso ${siteDescription}, è stata sottoposta a verifica di taratura la bilancia ${instrumentLabel} (s/n ${params.serialNumber || "non indicato"}), per conto di ${customerName}. La strumentazione interessata dalla verifica presenta portata ${params.range || "non indicata"}.`;
   }
 
+  if (params.verificationModule === "DIMENSIONAL") {
+    return `Il giorno ${italianTestDate}, presso ${siteDescription}, è stato sottoposto a verifica di taratura lo strumento dimensionale ${instrumentLabel} (s/n ${params.serialNumber || "non indicato"}), per conto di ${customerName}. La strumentazione interessata dalla verifica presenta campo ${params.range || "non indicato"}.`;
+  }
+
   return `Il giorno ${italianTestDate} tecnici di questo Laboratorio tecnologico hanno sottoposto, per conto di ${customerName} presso la sede di ${siteDescription}, una ${instrumentLabel} (s/n ${params.serialNumber}) a verifica di taratura. La macchina ha un Fondo Scala di ${params.range}.`;
 }
 
@@ -231,6 +235,10 @@ function defaultRequestedTests(verificationModule?: string) {
 
   if (verificationModule === "MASS") {
     return "Verifica taratura di bilancia / strumento di misura della massa mediante prove di ripetibilità, eccentricità e linearità con masse campione.";
+  }
+
+  if (verificationModule === "DIMENSIONAL") {
+    return "Verifica taratura di calibro / strumento dimensionale mediante confronto con campioni di riferimento.";
   }
 
   return "";
@@ -257,6 +265,10 @@ function defaultScopeText(verificationModule?: string) {
     return "La prova ha come scopo la verifica della bilancia tramite tre prove distinte: ripetibilità su un unico punto, eccentricità su più zone del piatto di pesata e linearità su più punti dell'intero campo di pesata, rilevando tre letture per ciascun punto.";
   }
 
+  if (verificationModule === "DIMENSIONAL") {
+    return "La prova ha come scopo la verifica dello strumento dimensionale sui punti previsti, rilevando tre scostamenti per ciascun punto e calcolando media, errore medio, errore di accuratezza percentuale, ripetibilità e incertezza strumentale.";
+  }
+
   return "";
 }
 
@@ -279,6 +291,10 @@ function defaultApparatusDescription(verificationModule?: string) {
 
   if (verificationModule === "MASS") {
     return "L’apparato utilizzato per la verifica è costituito dalle masse campione indicate nella sezione tecnica del presente rapporto. Le masse campione risultano identificate con i relativi dati di matricola, codice interno e certificato di taratura in corso di validità alla data della prova.";
+  }
+
+  if (verificationModule === "DIMENSIONAL") {
+    return "L’apparato utilizzato per la verifica è costituito dai campioni di riferimento indicati nella sezione tecnica del presente rapporto. I campioni di riferimento risultano identificati con i relativi dati di matricola, codice interno e certificato di taratura in corso di validità alla data della prova.";
   }
 
   return "";
@@ -305,6 +321,10 @@ function defaultExecutionMethod(verificationModule?: string) {
     return "La verifica di taratura è stata eseguita mediante tre prove distinte. Ripetibilità: tre letture su un unico punto di carico. Eccentricità: tre letture su cinque zone del piatto di pesata (centro e periferia). Linearità: tre letture su più punti distribuiti sull'intero campo di pesata. Per ciascun punto sono stati determinati media delle letture, errore ed errore di ripetibilità percentuale; per la sola prova di linearità è calcolato anche l'errore percentuale rispetto al peso campione.";
   }
 
+  if (verificationModule === "DIMENSIONAL") {
+    return "La verifica di taratura è stata eseguita confrontando lo strumento in prova con i campioni di riferimento sui punti previsti, rilevando tre scostamenti consecutivi per ciascun punto. Per ogni punto sono stati determinati il valore massimo, il valore minimo, la media degli scostamenti, l'errore medio, l'errore di accuratezza percentuale, l'errore di ripetibilità percentuale e l'incertezza strumentale.";
+  }
+
   return "";
 }
 
@@ -323,6 +343,14 @@ function defaultResultsText(verificationModule?: string) {
 
   if (verificationModule === "SCLEROMETRIC") {
     return "I risultati della verifica sono riportati nella sezione tecnica del presente rapporto. Per ciascuna battuta sono indicati il valore nominale dell'incudine di riferimento, le tre letture rilevate, la media, l'errore medio e l'errore percentuale.";
+  }
+
+  if (verificationModule === "MASS") {
+    return "I risultati della verifica sono riportati nella sezione tecnica del presente rapporto, distinti per prova di ripetibilità, eccentricità e linearità. Per ciascun punto sono indicati il peso nominale, il peso campione, le tre letture rilevate, la media, l'errore e la ripetibilità percentuale (l'errore percentuale rispetto al peso campione è indicato solo per la prova di linearità).";
+  }
+
+  if (verificationModule === "DIMENSIONAL") {
+    return "I risultati della verifica sono riportati nella sezione tecnica del presente rapporto. Per ciascun punto sono indicati il valore nominale, i tre scostamenti rilevati, la media, l'errore medio, l'errore di accuratezza percentuale, l'errore di ripetibilità percentuale e l'incertezza strumentale.";
   }
 
   return "";
@@ -391,7 +419,9 @@ export default function CalibrationReportDetailsForm({
               ? "Verifica sclerometro"
               : autoPremiseData?.verificationModule === "MASS"
                 ? "Verifica bilancia / strumento di misura della massa"
-                : "")
+                : autoPremiseData?.verificationModule === "DIMENSIONAL"
+                  ? "Verifica strumento dimensionale"
+                  : "")
   );
   const [requestedTests, setRequestedTests] = useState(
     valueOrEmpty(safeInitialData.requested_tests) ||

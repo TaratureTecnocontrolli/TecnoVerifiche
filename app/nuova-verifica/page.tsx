@@ -92,14 +92,14 @@ const modules: VerificationModule[] = [
     badge: "DIM",
     description:
       "Modulo per calibri, comparatori, flessometri e strumenti dimensionali.",
-    href: null,
-    status: "development",
-    bookmark: "Da costruire",
+    href: "/nuova-verifica/dimensionale",
+    status: "active",
+    bookmark: "Modulo attivo",
     details: [
       "campo di misura",
       "risoluzione",
       "punti di controllo",
-      "conformità",
+      "incertezza strumentale",
     ],
   },
   {

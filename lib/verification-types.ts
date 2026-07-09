@@ -89,8 +89,8 @@ export const verificationTypes: VerificationTypeConfig[] = [
     shortTitle: "Dimensionale",
     description:
       "Modulo per calibri, micrometri, comparatori e strumenti dimensionali.",
-    status: "development",
-    tag: "In sviluppo",
+    status: "active",
+    tag: "Disponibile",
     createHref: "/nuova-verifica/dimensionale",
     measuresPathTemplate: "/verifiche/{id}/misure-dimensionale",
     reportPathTemplate: "/verifiche/{id}/rapporto/finale",

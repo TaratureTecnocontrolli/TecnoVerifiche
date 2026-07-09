@@ -95,6 +95,10 @@ function modeLabel(mode: unknown, verificationModule: unknown) {
     return "Massa / bilance";
   }
 
+  if (verificationModule === "DIMENSIONAL" || mode === "dimensionale") {
+    return "Dimensionale";
+  }
+
   if (mode === "compressione") {
     return "Compressione";
   }
@@ -402,6 +406,8 @@ function FormulaPage({
   const isSclerometric =
     record.verification_module === "SCLEROMETRIC" || record.mode === "sclerometro";
   const isMass = record.verification_module === "MASS" || record.mode === "massa";
+  const isDimensional =
+    record.verification_module === "DIMENSIONAL" || record.mode === "dimensionale";
 
   let formulaText: string[] = [
     "La verifica del punto di gradazione della scala viene effettuata leggendo il corrispondente valore effettivo sul dispositivo di verifica, con carico di prova crescente, quando i sistemi sono in equilibrio.",
@@ -451,6 +457,16 @@ function FormulaPage({
       "Errore % (solo prova di linearità) = (Media letture / Peso campione - 1) × 100.",
       "Errore ripetibilità % = [(Lettura massima - Lettura minima) / Media letture] × 100.",
       "Eccentricità (zona centrale) = Media delle ripetibilità delle cinque zone - Ripetibilità della zona centrale.",
+    ];
+  }
+
+  if (isDimensional) {
+    formulaText = [
+      "La verifica viene eseguita confrontando lo strumento in prova con i campioni di riferimento sui punti previsti, rilevando tre scostamenti consecutivi per ciascun punto.",
+      "Errore medio = Valore nominale - Media scostamenti.",
+      "Errore accuratezza % = [(Valore nominale - Media scostamenti) / Valore nominale] × 100.",
+      "Errore ripetibilità % = [(Scostamento massimo - Scostamento minimo) / Media scostamenti] × 100.",
+      "Incertezza strumentale = |Errore medio| × 2.",
     ];
   }
 
@@ -519,14 +535,19 @@ function FormulaPage({
 function TechnicalTable({
   measurements,
   showNominalColumn,
+  showUncertaintyColumn,
   nominalLabel = "Volume nominale",
   appliedLabel = "Carico applicato",
 }: {
   measurements: GenericRecord[];
   showNominalColumn: boolean;
+  showUncertaintyColumn?: boolean;
   nominalLabel?: string;
   appliedLabel?: string;
 }) {
+  const columnCount =
+    11 + (showNominalColumn ? 1 : 0) + (showUncertaintyColumn ? 1 : 0);
+
   return (
     <table className="w-full border-collapse text-center text-[8px]">
       <thead>
@@ -547,15 +568,17 @@ function TechnicalTable({
           <th className="border border-slate-600 p-1">
             Errore ripetibilità %
           </th>
+          {showUncertaintyColumn && (
+            <th className="border border-slate-600 p-1">
+              Incertezza strumentale
+            </th>
+          )}
         </tr>
       </thead>
       <tbody>
         {measurements.length === 0 ? (
           <tr>
-            <td
-              colSpan={showNominalColumn ? 12 : 11}
-              className="border border-slate-300 p-3"
-            >
+            <td colSpan={columnCount} className="border border-slate-300 p-3">
               Nessun punto di misura salvato per questa scala.
             </td>
           </tr>
@@ -600,6 +623,11 @@ function TechnicalTable({
               <td className="border border-slate-300 p-1">
                 {formatNumber(measurement.repeatability_error_percent)}
               </td>
+              {showUncertaintyColumn && (
+                <td className="border border-slate-300 p-1">
+                  {formatNumber(measurement.instrumental_uncertainty)}
+                </td>
+              )}
             </tr>
           ))
         )}
@@ -630,13 +658,17 @@ function TechnicalPage({
   const reportDate = details.report_date ?? new Date().toISOString().slice(0, 10);
   const isFlow = record.verification_module === "FLOW" || record.mode === "portata";
   const isMass = record.verification_module === "MASS" || record.mode === "massa";
+  const isDimensional =
+    record.verification_module === "DIMENSIONAL" || record.mode === "dimensionale";
   const showNominalColumn = isFlow || isMass;
   const nominalLabel = isMass ? "Peso nominale" : "Volume nominale";
   const appliedLabel = isFlow
     ? "Volume impostato"
     : isMass
       ? "Peso campione"
-      : "Carico applicato";
+      : isDimensional
+        ? "Valore nominale"
+        : "Carico applicato";
 
   const maxAccuracy = measurements.reduce((current, measurement) => {
     const value = Math.abs(Number(measurement.accuracy_error_percent ?? 0));
@@ -835,6 +867,7 @@ function TechnicalPage({
         <TechnicalTable
           measurements={measurements}
           showNominalColumn={showNominalColumn}
+          showUncertaintyColumn={isDimensional}
           nominalLabel={nominalLabel}
           appliedLabel={appliedLabel}
         />

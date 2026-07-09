@@ -277,6 +277,42 @@ export function getMassReportDefaults(
   };
 }
 
+export function getDimensionalReportDefaults(
+  input: ReportDefaultsInput
+): ReportTextDefaults {
+  const instrument = instrumentDescription(input);
+  const reference = referenceDescription(input);
+
+  return {
+    work_object: "Verifica della taratura di " + instrument,
+    requested_tests:
+      "Verifica della taratura di calibro / strumento dimensionale mediante confronto con blocchi o campioni di riferimento.",
+    premise_text: [
+      "Su incarico del Committente è stata eseguita la verifica della taratura dello strumento indicato nel presente rapporto.",
+      "La verifica riguarda esclusivamente lo strumento sottoposto a prova, nelle condizioni e nei punti di misura riportati nella sezione tecnica integrante del rapporto.",
+      "Strumento sottoposto a verifica: " + instrument + ".",
+    ].join("\n"),
+    scope_text: [
+      "Scopo della verifica è valutare la risposta metrologica dello strumento dimensionale mediante confronto con campioni di riferimento.",
+      "La verifica è eseguita su punti prestabiliti, rilevando tre scostamenti per ciascun punto e calcolando media, errore medio, errore di accuratezza percentuale, ripetibilità e incertezza strumentale.",
+    ].join("\n"),
+    apparatus_description: [
+      "L'apparato di verifica è costituito dai campioni di riferimento indicati nella sezione tecnica del rapporto.",
+      "I campioni di riferimento utilizzati risultano identificati mediante codice interno, matricola, certificato e relativa scadenza, come riportato nello snapshot tecnico della verifica.",
+      "Strumento campione utilizzato: " + reference + ".",
+    ].join("\n"),
+    execution_method: [
+      "La verifica viene eseguita confrontando lo strumento in prova con i campioni di riferimento sui punti previsti, rilevando tre scostamenti consecutivi per ciascun punto.",
+      "Per ogni punto vengono determinati il valore massimo, il valore minimo, la media degli scostamenti, l'errore medio, l'errore di accuratezza percentuale, l'errore di ripetibilità percentuale e l'incertezza strumentale.",
+      "Le formule utilizzate sono riportate nella sezione di espressione dei risultati del presente rapporto.",
+    ].join("\n"),
+    results_text: [
+      "I risultati della verifica sono riportati nella sezione tecnica integrante del presente rapporto.",
+      "Per ciascun punto sono indicati il valore nominale, i tre scostamenti rilevati, la media, l'errore medio, l'errore di accuratezza percentuale, l'errore di ripetibilità percentuale e l'incertezza strumentale.",
+    ].join("\n"),
+  };
+}
+
 export function getReportDefaultsByModule(
   module: string | null | undefined,
   mode: string | null | undefined,
@@ -300,6 +336,10 @@ export function getReportDefaultsByModule(
 
   if (module === "MASS" || mode === "massa") {
     return getMassReportDefaults(input);
+  }
+
+  if (module === "DIMENSIONAL" || mode === "dimensionale") {
+    return getDimensionalReportDefaults(input);
   }
 
   return getCtForceReportDefaults(input);
