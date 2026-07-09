@@ -10,7 +10,7 @@ type PageProps = {
 
 type GenericRecord = Record<string, any>;
 
-const LETTERHEAD_IMAGE_SRC = "/carta-intestata-tecnocontrolli.png";
+const LETTERHEAD_IMAGE_SRC = "/carta_intestata_rev02.png";
 
 function asObject(value: unknown): GenericRecord {
   if (value && typeof value === "object" && !Array.isArray(value)) {
