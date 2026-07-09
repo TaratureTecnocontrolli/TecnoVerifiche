@@ -217,6 +217,10 @@ function buildAutoPremise(params: {
     return `Il giorno ${italianTestDate}, presso ${siteDescription}, è stato sottoposto a monitoraggio della temperatura lo strumento ${instrumentLabel} (s/n ${params.serialNumber || "non indicato"}), per conto di ${customerName}.`;
   }
 
+  if (params.verificationModule === "PULLOFF") {
+    return `Il giorno ${italianTestDate}, presso ${siteDescription}, è stata sottoposta a verifica di taratura la strumentazione pull-off ${instrumentLabel} (s/n ${params.serialNumber || "non indicato"}), per conto di ${customerName}.`;
+  }
+
   return `Il giorno ${italianTestDate} tecnici di questo Laboratorio tecnologico hanno sottoposto, per conto di ${customerName} presso la sede di ${siteDescription}, una ${instrumentLabel} (s/n ${params.serialNumber}) a verifica di taratura. La macchina ha un Fondo Scala di ${params.range}.`;
 }
 
@@ -247,6 +251,10 @@ function defaultRequestedTests(verificationModule?: string) {
 
   if (verificationModule === "TEMPERATURE") {
     return "Monitoraggio della temperatura mediante confronto con termometro/termostato di riferimento.";
+  }
+
+  if (verificationModule === "PULLOFF") {
+    return "Verifica taratura di strumentazione pull-off mediante confronto con cella di carico campione.";
   }
 
   return "";
@@ -281,6 +289,10 @@ function defaultScopeText(verificationModule?: string) {
     return "La prova ha come scopo il monitoraggio della temperatura di un ambiente, rilevando a orari prefissati la temperatura misurata dallo strumento in prova e confrontandola con la temperatura rilevata dal termometro/termostato di riferimento.";
   }
 
+  if (verificationModule === "PULLOFF") {
+    return "La prova ha come scopo la verifica della strumentazione pull-off sui punti di carico previsti, rilevando tre letture per ciascun punto tramite ancoraggio a cella di carico e calcolando media, errore medio, errore di accuratezza percentuale e ripetibilità.";
+  }
+
   return "";
 }
 
@@ -311,6 +323,10 @@ function defaultApparatusDescription(verificationModule?: string) {
 
   if (verificationModule === "TEMPERATURE") {
     return "L’apparato utilizzato per la verifica è costituito dal termometro/termostato di riferimento indicato nella sezione tecnica del presente rapporto. Lo strumento di riferimento risulta identificato con i relativi dati di matricola, codice interno e certificato di taratura in corso di validità alla data della prova.";
+  }
+
+  if (verificationModule === "PULLOFF") {
+    return "L’apparato utilizzato per la verifica è costituito dalla cella di carico campione indicata nella sezione tecnica del presente rapporto, con relativo sistema di ancoraggio per la prova a trazione. La cella di carico campione risulta identificata con i relativi dati di matricola, codice interno, campo di misura e certificato di taratura in corso di validità alla data della prova.";
   }
 
   return "";
@@ -345,6 +361,10 @@ function defaultExecutionMethod(verificationModule?: string) {
     return "Il monitoraggio è stato eseguito rilevando, a orari prefissati, la temperatura indicata dallo strumento in prova e la temperatura indicata dal termometro/termostato di riferimento. I valori sono riportati come rilevati, senza calcolo di errore o esito automatico.";
   }
 
+  if (verificationModule === "PULLOFF") {
+    return "La verifica di taratura è stata eseguita applicando i punti di carico previsti tramite la cella di carico campione e rilevando, per ciascun punto, tre letture consecutive dello strumento in prova. Per ogni punto sono stati determinati il valore massimo, il valore minimo, la media delle letture, l’errore medio, l’errore di accuratezza percentuale e l’errore di ripetibilità percentuale.";
+  }
+
   return "";
 }
 
@@ -375,6 +395,10 @@ function defaultResultsText(verificationModule?: string) {
 
   if (verificationModule === "TEMPERATURE") {
     return "I risultati del monitoraggio sono riportati nella sezione tecnica del presente rapporto. Per ciascuna rilevazione sono indicati data, orario, temperatura misurata dallo strumento in prova e temperatura rilevata dal termometro/termostato di riferimento.";
+  }
+
+  if (verificationModule === "PULLOFF") {
+    return "I risultati della verifica sono riportati nella sezione tecnica del presente rapporto. Per ciascun punto di carico sono indicati il valore applicato, le tre letture rilevate, la media, l'errore medio, l'errore di accuratezza percentuale e l'errore di ripetibilità percentuale.";
   }
 
   return "";
@@ -447,7 +471,9 @@ export default function CalibrationReportDetailsForm({
                   ? "Verifica strumento dimensionale"
                   : autoPremiseData?.verificationModule === "TEMPERATURE"
                     ? "Monitoraggio temperatura"
-                    : "")
+                    : autoPremiseData?.verificationModule === "PULLOFF"
+                      ? "Verifica strumentazione pull-off"
+                      : "")
   );
   const [requestedTests, setRequestedTests] = useState(
     valueOrEmpty(safeInitialData.requested_tests) ||

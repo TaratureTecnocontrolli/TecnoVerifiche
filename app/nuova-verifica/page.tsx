@@ -132,6 +132,21 @@ const modules: VerificationModule[] = [
       "rapporto dedicato",
     ],
   },
+  {
+    title: "Pull-off",
+    badge: "PLO",
+    description:
+      "Modulo per strumentazione pull-off e prove di trazione tramite ancoraggio a cella di carico.",
+    href: "/nuova-verifica/pulloff",
+    status: "active",
+    bookmark: "Modulo attivo",
+    details: [
+      "carico applicato",
+      "letture ripetute",
+      "errore relativo",
+      "rapporto dedicato",
+    ],
+  },
 ];
 
 function StatusBadge({ status }: { status: VerificationModule["status"] }) {

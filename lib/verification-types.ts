@@ -8,7 +8,8 @@ export type VerificationTypeCode =
   | "TEMPERATURE"
   | "DIMENSIONAL"
   | "MASS"
-  | "SCLEROMETRIC";
+  | "SCLEROMETRIC"
+  | "PULLOFF";
 
 export type VerificationTypeConfig = {
   code: VerificationTypeCode;
@@ -119,6 +120,18 @@ export const verificationTypes: VerificationTypeConfig[] = [
     measuresPathTemplate: "/verifiche/{id}/misure-sclerometro",
     reportPathTemplate: "/verifiche/{id}/rapporto/finale",
   },
+  {
+    code: "PULLOFF",
+    title: "Pull-off",
+    shortTitle: "Pull-off",
+    description:
+      "Modulo per strumentazione pull-off e prove di trazione tramite ancoraggio a cella di carico.",
+    status: "active",
+    tag: "Disponibile",
+    createHref: "/nuova-verifica/pulloff",
+    measuresPathTemplate: "/verifiche/{id}/misure-pulloff",
+    reportPathTemplate: "/verifiche/{id}/rapporto/finale",
+  },
 ];
 
 export function getVerificationTypeConfig(code: string | null | undefined) {
@@ -137,6 +150,7 @@ export function getVerificationModuleFromMode(mode: string | null | undefined) {
   if (mode === "dimensionale") return "DIMENSIONAL";
   if (mode === "temperatura") return "TEMPERATURE";
   if (mode === "sclerometro" || mode === "sclerometrica") return "SCLEROMETRIC";
+  if (mode === "pulloff" || mode === "pull-off") return "PULLOFF";
 
   return "CT_FORCE";
 }

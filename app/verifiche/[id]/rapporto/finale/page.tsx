@@ -106,6 +106,10 @@ function modeLabel(mode: unknown, verificationModule: unknown) {
     return "Temperatura";
   }
 
+  if (verificationModule === "PULLOFF" || mode === "pulloff") {
+    return "Pull-off";
+  }
+
   if (mode === "compressione") {
     return "Compressione";
   }
@@ -417,6 +421,8 @@ function FormulaPage({
     record.verification_module === "DIMENSIONAL" || record.mode === "dimensionale";
   const isTemperature =
     record.verification_module === "TEMPERATURE" || record.mode === "temperatura";
+  const isPullOff =
+    record.verification_module === "PULLOFF" || record.mode === "pulloff";
 
   let formulaText: string[] = [
     "La verifica del punto di gradazione della scala viene effettuata leggendo il corrispondente valore effettivo sul dispositivo di verifica, con carico di prova crescente, quando i sistemi sono in equilibrio.",
@@ -483,6 +489,15 @@ function FormulaPage({
     formulaText = [
       "La verifica viene eseguita rilevando, a orari prefissati, la temperatura indicata dallo strumento in prova e la temperatura indicata dal termometro/termostato di riferimento.",
       "I valori sono riportati come rilevati, senza calcolo di errore o esito automatico.",
+    ];
+  }
+
+  if (isPullOff) {
+    formulaText = [
+      "La verifica viene eseguita applicando i punti di carico previsti tramite la cella di carico campione e rilevando, per ciascun punto, tre letture consecutive dello strumento in prova.",
+      "Errore medio = Carico applicato - Media letture.",
+      "Errore accuratezza % = [(Carico applicato - Media letture) / Carico applicato] × 100.",
+      "Errore ripetibilità % = [(Lettura massima - Lettura minima) / Media letture] × 100.",
     ];
   }
 

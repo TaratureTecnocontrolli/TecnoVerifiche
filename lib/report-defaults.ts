@@ -384,6 +384,52 @@ export function getTemperatureReportDefaults(
   };
 }
 
+export function getPullOffReportDefaults(
+  input: ReportDefaultsInput
+): ReportTextDefaults {
+  const reference = referenceDescription(input);
+  const instrumentName = clean(input.instrumentName, "in verifica");
+  const dateText = formatItalianLongDate(input.testDate);
+
+  return {
+    work_object: "Verifica taratura di PULL-OFF " + instrumentName,
+    requested_tests:
+      "Verifica taratura PULL-OFF " +
+      instrumentName +
+      (input.instrumentSerial ? " (s/n " + input.instrumentSerial + ")" : ""),
+    premise_text: [
+      (dateText ? "Il giorno " + dateText + " " : "Nella data indicata nel presente rapporto ") +
+        "è stata ritirata, da tecnici di questo Laboratorio, una strumentazione PULL-OFF " +
+        instrumentName +
+        (input.instrumentSerial ? " (s/n " + input.instrumentSerial + ")" : "") +
+        " presso la sede di " +
+        clean(input.customerName, "il Committente") +
+        ", per essere sottoposta a verifica di taratura.",
+    ].join("\n"),
+    scope_text: [
+      "La verifica di taratura della strumentazione PULL-OFF " +
+        instrumentName +
+        (input.instrumentSerial ? " (s/n " + input.instrumentSerial + ")" : "") +
+        " è stata eseguita tramite l'ancoraggio della stessa ad una cella di carico con verifica di taratura Tecnocontrolli.",
+      "Sono stati effettuati tre cicli. La temperatura e l'umidità sono state verificate con un termo-igrometro.",
+    ].join("\n"),
+    apparatus_description: [
+      "L'apparato utilizzato è stato: " + reference + " e un termo-igrometro per il rilievo delle condizioni ambientali.",
+      "Lo strumento campione utilizzato risulta identificato mediante codice interno, matricola, certificato e relativa scadenza, come riportato nello snapshot tecnico della verifica.",
+    ].join("\n"),
+    execution_method: [
+      "La verifica viene eseguita applicando i punti di carico previsti e rilevando, per ciascun punto, tre letture consecutive dello strumento in prova.",
+      "Errore medio = Carico applicato - Media letture.",
+      "Errore accuratezza % = [(Carico applicato - Media letture) / Carico applicato] × 100.",
+      "Errore ripetibilità % = [(Lettura massima - Lettura minima) / Media letture] × 100.",
+    ].join("\n"),
+    results_text: [
+      "I risultati della verifica sono riportati nella sezione tecnica integrante del presente rapporto, con la temperatura e l'umidità ambientale rilevate durante la prova.",
+      "Per ciascun punto sono indicati il carico applicato, le tre letture rilevate, la media, l'errore medio, l'errore di accuratezza percentuale e l'errore di ripetibilità percentuale.",
+    ].join("\n"),
+  };
+}
+
 export function getReportDefaultsByModule(
   module: string | null | undefined,
   mode: string | null | undefined,
@@ -415,6 +461,10 @@ export function getReportDefaultsByModule(
 
   if (module === "TEMPERATURE" || mode === "temperatura") {
     return getTemperatureReportDefaults(input);
+  }
+
+  if (module === "PULLOFF" || mode === "pulloff") {
+    return getPullOffReportDefaults(input);
   }
 
   return getCtForceReportDefaults(input);

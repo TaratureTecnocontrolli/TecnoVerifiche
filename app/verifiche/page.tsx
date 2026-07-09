@@ -305,6 +305,10 @@ function matchesType(row: VerificationRow, type: string) {
     return getVerificationModule(row) === "TEMPERATURE";
   }
 
+  if (type === "PULLOFF") {
+    return getVerificationModule(row) === "PULLOFF";
+  }
+
   return row.record.mode === type;
 }
 
@@ -554,6 +558,7 @@ export default async function VerificationsPage({ searchParams }: PageProps) {
                 <option value="MASS">Massa / bilance</option>
                 <option value="DIMENSIONAL">Dimensionale</option>
                 <option value="TEMPERATURE">Temperatura</option>
+                <option value="PULLOFF">Pull-off</option>
               </select>
             </label>
 
