@@ -91,6 +91,10 @@ function modeLabel(mode: unknown, verificationModule: unknown) {
     return "Prove sclerometriche";
   }
 
+  if (verificationModule === "MASS" || mode === "massa") {
+    return "Massa / bilance";
+  }
+
   if (mode === "compressione") {
     return "Compressione";
   }
@@ -397,6 +401,7 @@ function FormulaPage({
   const isFlow = record.verification_module === "FLOW" || record.mode === "portata";
   const isSclerometric =
     record.verification_module === "SCLEROMETRIC" || record.mode === "sclerometro";
+  const isMass = record.verification_module === "MASS" || record.mode === "massa";
 
   let formulaText: string[] = [
     "La verifica del punto di gradazione della scala viene effettuata leggendo il corrispondente valore effettivo sul dispositivo di verifica, con carico di prova crescente, quando i sistemi sono in equilibrio.",
@@ -436,6 +441,16 @@ function FormulaPage({
       "La verifica viene eseguita effettuando un numero prestabilito di battute sull'incudine di riferimento a valore nominale fisso, rilevando tre letture per ciascuna battuta.",
       "Errore medio = Media letture - Valore nominale incudine.",
       "Errore % = Errore medio / Valore nominale incudine × 100.",
+    ];
+  }
+
+  if (isMass) {
+    formulaText = [
+      "La verifica è composta da tre prove distinte: ripetibilità (un punto, tre letture), eccentricità (cinque zone del piatto di pesata, tre letture ciascuna) e linearità (più punti sull'intero campo di pesata, tre letture ciascuno).",
+      "Errore = Media letture - Peso nominale.",
+      "Errore % (solo prova di linearità) = (Media letture / Peso campione - 1) × 100.",
+      "Errore ripetibilità % = [(Lettura massima - Lettura minima) / Media letture] × 100.",
+      "Eccentricità (zona centrale) = Media delle ripetibilità delle cinque zone - Ripetibilità della zona centrale.",
     ];
   }
 
@@ -503,22 +518,24 @@ function FormulaPage({
 
 function TechnicalTable({
   measurements,
-  isFlow,
+  showNominalColumn,
+  nominalLabel = "Volume nominale",
+  appliedLabel = "Carico applicato",
 }: {
   measurements: GenericRecord[];
-  isFlow: boolean;
+  showNominalColumn: boolean;
+  nominalLabel?: string;
+  appliedLabel?: string;
 }) {
   return (
     <table className="w-full border-collapse text-center text-[8px]">
       <thead>
         <tr className="bg-slate-700 text-white">
           <th className="border border-slate-600 p-1">Punto di verifica</th>
-          {isFlow && (
-            <th className="border border-slate-600 p-1">Volume nominale</th>
+          {showNominalColumn && (
+            <th className="border border-slate-600 p-1">{nominalLabel}</th>
           )}
-          <th className="border border-slate-600 p-1">
-            {isFlow ? "Volume impostato" : "Carico applicato"}
-          </th>
+          <th className="border border-slate-600 p-1">{appliedLabel}</th>
           <th className="border border-slate-600 p-1">Lettura I° ciclo</th>
           <th className="border border-slate-600 p-1">Lettura II° ciclo</th>
           <th className="border border-slate-600 p-1">Lettura III° ciclo</th>
@@ -536,7 +553,7 @@ function TechnicalTable({
         {measurements.length === 0 ? (
           <tr>
             <td
-              colSpan={isFlow ? 12 : 11}
+              colSpan={showNominalColumn ? 12 : 11}
               className="border border-slate-300 p-3"
             >
               Nessun punto di misura salvato per questa scala.
@@ -548,7 +565,7 @@ function TechnicalTable({
               <td className="border border-slate-300 p-1">
                 {textValue(measurement.point_order)}
               </td>
-              {isFlow && (
+              {showNominalColumn && (
                 <td className="border border-slate-300 p-1">
                   {formatNumber(measurement.nominal_value)}
                 </td>
@@ -612,6 +629,14 @@ function TechnicalPage({
 }) {
   const reportDate = details.report_date ?? new Date().toISOString().slice(0, 10);
   const isFlow = record.verification_module === "FLOW" || record.mode === "portata";
+  const isMass = record.verification_module === "MASS" || record.mode === "massa";
+  const showNominalColumn = isFlow || isMass;
+  const nominalLabel = isMass ? "Peso nominale" : "Volume nominale";
+  const appliedLabel = isFlow
+    ? "Volume impostato"
+    : isMass
+      ? "Peso campione"
+      : "Carico applicato";
 
   const maxAccuracy = measurements.reduce((current, measurement) => {
     const value = Math.abs(Number(measurement.accuracy_error_percent ?? 0));
@@ -807,7 +832,12 @@ function TechnicalPage({
       </table>
 
       <div className="mt-3 overflow-x-auto">
-        <TechnicalTable measurements={measurements} isFlow={isFlow} />
+        <TechnicalTable
+          measurements={measurements}
+          showNominalColumn={showNominalColumn}
+          nominalLabel={nominalLabel}
+          appliedLabel={appliedLabel}
+        />
       </div>
     </PageShell>
   );

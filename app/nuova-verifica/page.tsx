@@ -107,9 +107,9 @@ const modules: VerificationModule[] = [
     badge: "MAS",
     description:
       "Modulo per bilance, masse e strumenti collegati alla misura della massa.",
-    href: null,
-    status: "development",
-    bookmark: "Da costruire",
+    href: "/nuova-verifica/massa",
+    status: "active",
+    bookmark: "Modulo attivo",
     details: [
       "portata",
       "divisione",

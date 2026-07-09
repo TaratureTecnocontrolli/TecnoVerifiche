@@ -240,6 +240,43 @@ export function getSclerometricReportDefaults(
   };
 }
 
+export function getMassReportDefaults(
+  input: ReportDefaultsInput
+): ReportTextDefaults {
+  const instrument = instrumentDescription(input);
+  const reference = referenceDescription(input);
+
+  return {
+    work_object: "Verifica della taratura di " + instrument,
+    requested_tests:
+      "Verifica della taratura di bilancia / strumento di misura della massa mediante prove di ripetibilità, eccentricità e linearità.",
+    premise_text: [
+      "Su incarico del Committente è stata eseguita la verifica della taratura dello strumento indicato nel presente rapporto.",
+      "La verifica riguarda esclusivamente lo strumento sottoposto a prova, nelle condizioni e nei punti di misura riportati nella sezione tecnica integrante del rapporto.",
+      "Strumento sottoposto a verifica: " + instrument + ".",
+    ].join("\n"),
+    scope_text: [
+      "Scopo della verifica è valutare la risposta metrologica della bilancia mediante confronto con masse campione.",
+      "La verifica è eseguita tramite tre prove distinte: ripetibilità (letture ripetute su un unico punto), eccentricità (letture su più zone del piatto di pesata) e linearità (letture su più punti dell'intero campo di pesata).",
+    ].join("\n"),
+    apparatus_description: [
+      "L'apparato di verifica è costituito dalle masse campione indicate nella sezione tecnica del rapporto.",
+      "Le masse campione utilizzate risultano identificate mediante codice interno, matricola, certificato e relativa scadenza, come riportato nello snapshot tecnico della verifica.",
+      "Strumento campione utilizzato: " + reference + ".",
+    ].join("\n"),
+    execution_method: [
+      "La prova di ripetibilità viene eseguita rilevando tre letture su un unico punto di carico, calcolando media, errore ed errore di ripetibilità percentuale.",
+      "La prova di eccentricità viene eseguita rilevando tre letture su più zone del piatto di pesata (centro e periferia), calcolando per ciascuna zona media, errore e ripetibilità percentuale.",
+      "La prova di linearità viene eseguita rilevando tre letture su più punti distribuiti sull'intero campo di pesata, calcolando per ciascun punto media, errore, errore percentuale rispetto al peso campione e ripetibilità percentuale.",
+      "Le formule utilizzate sono riportate nella sezione di espressione dei risultati del presente rapporto.",
+    ].join("\n"),
+    results_text: [
+      "I risultati della verifica sono riportati nella sezione tecnica integrante del presente rapporto, distinti per prova di ripetibilità, eccentricità e linearità.",
+      "Per ciascun punto sono indicati il peso nominale, il peso campione, le tre letture rilevate, la media, l'errore e la ripetibilità percentuale (l'errore percentuale rispetto al peso campione è indicato solo per la prova di linearità).",
+    ].join("\n"),
+  };
+}
+
 export function getReportDefaultsByModule(
   module: string | null | undefined,
   mode: string | null | undefined,
@@ -259,6 +296,10 @@ export function getReportDefaultsByModule(
 
   if (module === "SCLEROMETRIC" || mode === "sclerometro") {
     return getSclerometricReportDefaults(input);
+  }
+
+  if (module === "MASS" || mode === "massa") {
+    return getMassReportDefaults(input);
   }
 
   return getCtForceReportDefaults(input);

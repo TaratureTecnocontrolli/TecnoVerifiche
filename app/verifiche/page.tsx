@@ -293,6 +293,10 @@ function matchesType(row: VerificationRow, type: string) {
     return getVerificationModule(row) === "SCLEROMETRIC";
   }
 
+  if (type === "MASS") {
+    return getVerificationModule(row) === "MASS";
+  }
+
   return row.record.mode === type;
 }
 
@@ -539,6 +543,7 @@ export default async function VerificationsPage({ searchParams }: PageProps) {
                 <option value="TORQUE">Chiavi dinamometriche</option>
                 <option value="FLOW">Portata / contalitri</option>
                 <option value="SCLEROMETRIC">Prove sclerometriche</option>
+                <option value="MASS">Massa / bilance</option>
               </select>
             </label>
 

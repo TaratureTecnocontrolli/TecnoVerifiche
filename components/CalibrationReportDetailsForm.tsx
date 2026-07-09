@@ -205,6 +205,10 @@ function buildAutoPremise(params: {
     return `Il giorno ${italianTestDate}, presso ${siteDescription}, è stato sottoposto a verifica di taratura lo sclerometro ${instrumentLabel} (s/n ${params.serialNumber || "non indicato"}), per conto di ${customerName}.`;
   }
 
+  if (params.verificationModule === "MASS") {
+    return `Il giorno ${italianTestDate}, presso ${siteDescription}, è stata sottoposta a verifica di taratura la bilancia ${instrumentLabel} (s/n ${params.serialNumber || "non indicato"}), per conto di ${customerName}. La strumentazione interessata dalla verifica presenta portata ${params.range || "non indicata"}.`;
+  }
+
   return `Il giorno ${italianTestDate} tecnici di questo Laboratorio tecnologico hanno sottoposto, per conto di ${customerName} presso la sede di ${siteDescription}, una ${instrumentLabel} (s/n ${params.serialNumber}) a verifica di taratura. La macchina ha un Fondo Scala di ${params.range}.`;
 }
 
@@ -223,6 +227,10 @@ function defaultRequestedTests(verificationModule?: string) {
 
   if (verificationModule === "SCLEROMETRIC") {
     return "Verifica taratura di sclerometro / strumento di prova non distruttiva a rimbalzo mediante confronto con incudine di riferimento.";
+  }
+
+  if (verificationModule === "MASS") {
+    return "Verifica taratura di bilancia / strumento di misura della massa mediante prove di ripetibilità, eccentricità e linearità con masse campione.";
   }
 
   return "";
@@ -245,6 +253,10 @@ function defaultScopeText(verificationModule?: string) {
     return "La prova ha come scopo la verifica dello sclerometro mediante battute ripetute su un'incudine di riferimento a valore nominale fisso, rilevando tre letture per battuta e calcolando media, errore medio ed errore percentuale.";
   }
 
+  if (verificationModule === "MASS") {
+    return "La prova ha come scopo la verifica della bilancia tramite tre prove distinte: ripetibilità su un unico punto, eccentricità su più zone del piatto di pesata e linearità su più punti dell'intero campo di pesata, rilevando tre letture per ciascun punto.";
+  }
+
   return "";
 }
 
@@ -265,6 +277,10 @@ function defaultApparatusDescription(verificationModule?: string) {
     return "L’apparato utilizzato per la verifica è costituito dall'incudine di riferimento indicata nella sezione tecnica del presente rapporto, a valore nominale certificato. L'incudine risulta identificata con i relativi dati di matricola, codice interno e certificato di taratura in corso di validità alla data della prova.";
   }
 
+  if (verificationModule === "MASS") {
+    return "L’apparato utilizzato per la verifica è costituito dalle masse campione indicate nella sezione tecnica del presente rapporto. Le masse campione risultano identificate con i relativi dati di matricola, codice interno e certificato di taratura in corso di validità alla data della prova.";
+  }
+
   return "";
 }
 
@@ -283,6 +299,10 @@ function defaultExecutionMethod(verificationModule?: string) {
 
   if (verificationModule === "SCLEROMETRIC") {
     return "La verifica di taratura è stata eseguita effettuando un numero prestabilito di battute sull'incudine di riferimento a valore nominale fisso e rilevando, per ciascuna battuta, tre letture consecutive dello strumento in prova. Per ciascuna battuta sono stati determinati media delle letture, errore medio ed errore percentuale, calcolati come Errore medio = Media letture - Valore nominale incudine ed Errore % = Errore medio / Valore nominale incudine x 100.";
+  }
+
+  if (verificationModule === "MASS") {
+    return "La verifica di taratura è stata eseguita mediante tre prove distinte. Ripetibilità: tre letture su un unico punto di carico. Eccentricità: tre letture su cinque zone del piatto di pesata (centro e periferia). Linearità: tre letture su più punti distribuiti sull'intero campo di pesata. Per ciascun punto sono stati determinati media delle letture, errore ed errore di ripetibilità percentuale; per la sola prova di linearità è calcolato anche l'errore percentuale rispetto al peso campione.";
   }
 
   return "";
@@ -369,7 +389,9 @@ export default function CalibrationReportDetailsForm({
             ? "Verifica strumento di portata / contalitri"
             : autoPremiseData?.verificationModule === "SCLEROMETRIC"
               ? "Verifica sclerometro"
-              : "")
+              : autoPremiseData?.verificationModule === "MASS"
+                ? "Verifica bilancia / strumento di misura della massa"
+                : "")
   );
   const [requestedTests, setRequestedTests] = useState(
     valueOrEmpty(safeInitialData.requested_tests) ||

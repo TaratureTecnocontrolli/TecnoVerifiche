@@ -101,8 +101,8 @@ export const verificationTypes: VerificationTypeConfig[] = [
     shortTitle: "Massa",
     description:
       "Modulo per bilance, masse campione e strumenti collegati alle pesate.",
-    status: "development",
-    tag: "In sviluppo",
+    status: "active",
+    tag: "Disponibile",
     createHref: "/nuova-verifica/massa",
     measuresPathTemplate: "/verifiche/{id}/misure-massa",
     reportPathTemplate: "/verifiche/{id}/rapporto/finale",
