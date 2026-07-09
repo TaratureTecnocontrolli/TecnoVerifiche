@@ -7,7 +7,8 @@ export type VerificationTypeCode =
   | "FLOW"
   | "TEMPERATURE"
   | "DIMENSIONAL"
-  | "MASS";
+  | "MASS"
+  | "SCLEROMETRIC";
 
 export type VerificationTypeConfig = {
   code: VerificationTypeCode;
@@ -106,6 +107,18 @@ export const verificationTypes: VerificationTypeConfig[] = [
     measuresPathTemplate: "/verifiche/{id}/misure-massa",
     reportPathTemplate: "/verifiche/{id}/rapporto/finale",
   },
+  {
+    code: "SCLEROMETRIC",
+    title: "Prove sclerometriche",
+    shortTitle: "Sclerometro",
+    description:
+      "Modulo per sclerometri e strumenti di prova non distruttiva a rimbalzo, verificati su incudine di riferimento a valore nominale fisso.",
+    status: "active",
+    tag: "Disponibile",
+    createHref: "/nuova-verifica/sclerometro",
+    measuresPathTemplate: "/verifiche/{id}/misure-sclerometro",
+    reportPathTemplate: "/verifiche/{id}/rapporto/finale",
+  },
 ];
 
 export function getVerificationTypeConfig(code: string | null | undefined) {
@@ -120,6 +133,10 @@ export function getVerificationModuleFromMode(mode: string | null | undefined) {
   if (mode === "pressione") return "PRESSURE";
   if (mode === "dinamometria" || mode === "coppia") return "TORQUE";
   if (mode === "portata" || mode === "contalitri" || mode === "flow") return "FLOW";
+  if (mode === "massa" || mode === "bilance") return "MASS";
+  if (mode === "dimensionale") return "DIMENSIONAL";
+  if (mode === "temperatura") return "TEMPERATURE";
+  if (mode === "sclerometro" || mode === "sclerometrica") return "SCLEROMETRIC";
 
   return "CT_FORCE";
 }

@@ -87,6 +87,10 @@ function modeLabel(mode: unknown, verificationModule: unknown) {
     return "Portata / contalitri";
   }
 
+  if (verificationModule === "SCLEROMETRIC" || mode === "sclerometro") {
+    return "Prove sclerometriche";
+  }
+
   if (mode === "compressione") {
     return "Compressione";
   }
@@ -391,6 +395,8 @@ function FormulaPage({
   const isTorque =
     record.verification_module === "TORQUE" || record.mode === "dinamometria";
   const isFlow = record.verification_module === "FLOW" || record.mode === "portata";
+  const isSclerometric =
+    record.verification_module === "SCLEROMETRIC" || record.mode === "sclerometro";
 
   let formulaText: string[] = [
     "La verifica del punto di gradazione della scala viene effettuata leggendo il corrispondente valore effettivo sul dispositivo di verifica, con carico di prova crescente, quando i sistemi sono in equilibrio.",
@@ -422,6 +428,14 @@ function FormulaPage({
       "La verifica viene eseguita impostando sullo strumento in prova i volumi nominali previsti e rilevando tre letture per ciascun punto.",
       "Errore = Media letture - Volume impostato.",
       "Errore % = Errore / Volume impostato × 100.",
+    ];
+  }
+
+  if (isSclerometric) {
+    formulaText = [
+      "La verifica viene eseguita effettuando un numero prestabilito di battute sull'incudine di riferimento a valore nominale fisso, rilevando tre letture per ciascuna battuta.",
+      "Errore medio = Media letture - Valore nominale incudine.",
+      "Errore % = Errore medio / Valore nominale incudine × 100.",
     ];
   }
 

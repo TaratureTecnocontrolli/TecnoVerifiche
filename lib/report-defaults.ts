@@ -204,6 +204,42 @@ export function getFlowReportDefaults(
   };
 }
 
+export function getSclerometricReportDefaults(
+  input: ReportDefaultsInput
+): ReportTextDefaults {
+  const instrument = instrumentDescription(input);
+  const reference = referenceDescription(input);
+
+  return {
+    work_object: "Verifica della taratura di " + instrument,
+    requested_tests:
+      "Verifica della taratura di sclerometro / strumento di prova non distruttiva a rimbalzo.",
+    premise_text: [
+      "Su incarico del Committente è stata eseguita la verifica della taratura dello strumento indicato nel presente rapporto.",
+      "La verifica riguarda esclusivamente lo strumento sottoposto a prova, nelle condizioni riportate nella sezione tecnica integrante del rapporto.",
+      "Strumento sottoposto a verifica: " + instrument + ".",
+    ].join("\n"),
+    scope_text: [
+      "Scopo della verifica è valutare la risposta metrologica dello sclerometro mediante confronto con incudine di riferimento a valore nominale fisso.",
+      "La verifica è eseguita tramite battute ripetute sull'incudine di riferimento, rilevando tre letture per battuta e calcolando media, errore medio ed errore percentuale rispetto al valore nominale di riferimento.",
+    ].join("\n"),
+    apparatus_description: [
+      "L'apparato di verifica è costituito dall'incudine di riferimento indicata nella sezione tecnica del rapporto, a valore nominale certificato.",
+      "L'incudine di riferimento utilizzata risulta identificata mediante codice interno, matricola, certificato e relativa scadenza, come riportato nello snapshot tecnico della verifica.",
+      "Strumento campione utilizzato: " + reference + ".",
+    ].join("\n"),
+    execution_method: [
+      "La verifica viene eseguita effettuando un numero prestabilito di battute sull'incudine di riferimento e rilevando, per ciascuna battuta, tre letture consecutive dello strumento in prova.",
+      "Per ciascuna battuta viene determinata la media delle letture, l'errore medio e l'errore percentuale rispetto al valore nominale dell'incudine di riferimento.",
+      "Le formule utilizzate sono riportate nella sezione di espressione dei risultati del presente rapporto.",
+    ].join("\n"),
+    results_text: [
+      "I risultati della verifica sono riportati nella sezione tecnica integrante del presente rapporto.",
+      "Per ciascuna battuta sono indicati il valore nominale di riferimento, le tre letture rilevate, la media, l'errore medio e l'errore percentuale.",
+    ].join("\n"),
+  };
+}
+
 export function getReportDefaultsByModule(
   module: string | null | undefined,
   mode: string | null | undefined,
@@ -219,6 +255,10 @@ export function getReportDefaultsByModule(
 
   if (module === "FLOW" || mode === "portata") {
     return getFlowReportDefaults(input);
+  }
+
+  if (module === "SCLEROMETRIC" || mode === "sclerometro") {
+    return getSclerometricReportDefaults(input);
   }
 
   return getCtForceReportDefaults(input);

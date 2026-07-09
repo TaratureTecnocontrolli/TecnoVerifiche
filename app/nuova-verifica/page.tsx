@@ -117,6 +117,21 @@ const modules: VerificationModule[] = [
       "prove ripetibilità",
     ],
   },
+  {
+    title: "Prove sclerometriche",
+    badge: "SCL",
+    description:
+      "Modulo per sclerometri e strumenti di prova non distruttiva a rimbalzo.",
+    href: "/nuova-verifica/sclerometro",
+    status: "active",
+    bookmark: "Modulo attivo",
+    details: [
+      "battute su incudine",
+      "valore nominale fisso",
+      "errore percentuale",
+      "rapporto dedicato",
+    ],
+  },
 ];
 
 function StatusBadge({ status }: { status: VerificationModule["status"] }) {

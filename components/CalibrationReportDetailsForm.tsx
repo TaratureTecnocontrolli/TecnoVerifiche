@@ -201,6 +201,10 @@ function buildAutoPremise(params: {
     return `Il giorno ${italianTestDate}, presso ${siteDescription}, è stato sottoposto a verifica di taratura lo strumento di portata / contalitri ${instrumentLabel} (s/n ${params.serialNumber || "non indicato"}), per conto di ${customerName}. La strumentazione interessata dalla verifica presenta campo ${params.range || "non indicato"}.`;
   }
 
+  if (params.verificationModule === "SCLEROMETRIC") {
+    return `Il giorno ${italianTestDate}, presso ${siteDescription}, è stato sottoposto a verifica di taratura lo sclerometro ${instrumentLabel} (s/n ${params.serialNumber || "non indicato"}), per conto di ${customerName}.`;
+  }
+
   return `Il giorno ${italianTestDate} tecnici di questo Laboratorio tecnologico hanno sottoposto, per conto di ${customerName} presso la sede di ${siteDescription}, una ${instrumentLabel} (s/n ${params.serialNumber}) a verifica di taratura. La macchina ha un Fondo Scala di ${params.range}.`;
 }
 
@@ -215,6 +219,10 @@ function defaultRequestedTests(verificationModule?: string) {
 
   if (verificationModule === "FLOW") {
     return "Verifica taratura di contalitri / strumento di misura volume-portata mediante confronto con strumento campione.";
+  }
+
+  if (verificationModule === "SCLEROMETRIC") {
+    return "Verifica taratura di sclerometro / strumento di prova non distruttiva a rimbalzo mediante confronto con incudine di riferimento.";
   }
 
   return "";
@@ -233,6 +241,10 @@ function defaultScopeText(verificationModule?: string) {
     return "La prova ha come scopo la verifica del contalitri / strumento di misura volume-portata confrontando il volume impostato sullo strumento in verifica con le letture rilevate sullo strumento campione, su tre cicli di misura.";
   }
 
+  if (verificationModule === "SCLEROMETRIC") {
+    return "La prova ha come scopo la verifica dello sclerometro mediante battute ripetute su un'incudine di riferimento a valore nominale fisso, rilevando tre letture per battuta e calcolando media, errore medio ed errore percentuale.";
+  }
+
   return "";
 }
 
@@ -247,6 +259,10 @@ function defaultApparatusDescription(verificationModule?: string) {
 
   if (verificationModule === "FLOW") {
     return "L’apparato utilizzato per la verifica è costituito dallo strumento campione indicato nella sezione tecnica del presente rapporto, con confronto dei risultati su tre cicli di misura. Lo strumento campione risulta identificato con i relativi dati di matricola, codice interno, campo di misura e certificato di taratura in corso di validità alla data della prova.";
+  }
+
+  if (verificationModule === "SCLEROMETRIC") {
+    return "L’apparato utilizzato per la verifica è costituito dall'incudine di riferimento indicata nella sezione tecnica del presente rapporto, a valore nominale certificato. L'incudine risulta identificata con i relativi dati di matricola, codice interno e certificato di taratura in corso di validità alla data della prova.";
   }
 
   return "";
@@ -265,6 +281,10 @@ function defaultExecutionMethod(verificationModule?: string) {
     return "La verifica di taratura è stata eseguita impostando sullo strumento in prova i volumi nominali previsti e rilevando tre letture per ciascun punto. Per ciascun punto sono stati determinati media delle letture, errore ed errore percentuale, calcolati come Errore = Media letture - Volume impostato ed Errore % = Errore / Volume impostato x 100.";
   }
 
+  if (verificationModule === "SCLEROMETRIC") {
+    return "La verifica di taratura è stata eseguita effettuando un numero prestabilito di battute sull'incudine di riferimento a valore nominale fisso e rilevando, per ciascuna battuta, tre letture consecutive dello strumento in prova. Per ciascuna battuta sono stati determinati media delle letture, errore medio ed errore percentuale, calcolati come Errore medio = Media letture - Valore nominale incudine ed Errore % = Errore medio / Valore nominale incudine x 100.";
+  }
+
   return "";
 }
 
@@ -279,6 +299,10 @@ function defaultResultsText(verificationModule?: string) {
 
   if (verificationModule === "FLOW") {
     return "I risultati della verifica sono riportati nella sezione tecnica del presente rapporto. Per ciascun punto sono indicati volume nominale, volume impostato nello strumento in verifica, tre letture, media letture, errore ed errore percentuale.";
+  }
+
+  if (verificationModule === "SCLEROMETRIC") {
+    return "I risultati della verifica sono riportati nella sezione tecnica del presente rapporto. Per ciascuna battuta sono indicati il valore nominale dell'incudine di riferimento, le tre letture rilevate, la media, l'errore medio e l'errore percentuale.";
   }
 
   return "";
@@ -343,7 +367,9 @@ export default function CalibrationReportDetailsForm({
           ? "Verifica strumento di coppia / chiave dinamometrica"
           : autoPremiseData?.verificationModule === "FLOW"
             ? "Verifica strumento di portata / contalitri"
-            : "")
+            : autoPremiseData?.verificationModule === "SCLEROMETRIC"
+              ? "Verifica sclerometro"
+              : "")
   );
   const [requestedTests, setRequestedTests] = useState(
     valueOrEmpty(safeInitialData.requested_tests) ||
