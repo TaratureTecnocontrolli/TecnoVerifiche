@@ -1,12 +1,8 @@
 "use client";
 
-export type MeasurementLike = {
-  id: string;
-  point_order: number;
-  nominal_value: number | null;
-  applied_value: number | null;
-  accuracy_error_percent: number | null;
-};
+import { type MeasurementLike } from "@/lib/chart-utils";
+
+export type { MeasurementLike };
 
 type MeasurementErrorChartProps = {
   measurements: MeasurementLike[];
@@ -25,13 +21,6 @@ function formatNumber(value: number | null | undefined, digits = 4) {
 
 function getXValue(measurement: MeasurementLike) {
   return measurement.applied_value ?? measurement.nominal_value ?? null;
-}
-
-export function hasValidChartMeasurements(measurements: MeasurementLike[]) {
-  return measurements.some(
-    (measurement) =>
-      getXValue(measurement) !== null && measurement.accuracy_error_percent !== null
-  );
 }
 
 export default function MeasurementErrorChart({

@@ -1,11 +1,9 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import AppShell from "@/components/AppShell";
-import MeasurementErrorChart, {
-  hasValidChartMeasurements,
-  type MeasurementLike,
-} from "@/components/MeasurementErrorChart";
+import MeasurementErrorChart from "@/components/MeasurementErrorChart";
 import ReportPrintButton from "@/components/ReportPrintButton";
+import { hasValidChartMeasurements, type MeasurementLike } from "@/lib/chart-utils";
 import { supabase } from "@/lib/supabase";
 
 type PageProps = {
