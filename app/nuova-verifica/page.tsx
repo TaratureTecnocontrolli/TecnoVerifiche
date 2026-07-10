@@ -251,20 +251,12 @@ export default function NewVerificationPage() {
           </h1>
 
           <p className="mt-3 max-w-3xl text-slate-600">
-            Seleziona il tipo di verifica da avviare. I moduli attivi sono già
-            utilizzabili; quelli in sviluppo restano visibili come promemoria
-            della struttura finale del gestionale.
+            Seleziona il tipo di verifica da avviare tra i {activeModules.length}{" "}
+            moduli disponibili.
           </p>
         </section>
 
         <section className="space-y-4">
-          <div className="flex items-center gap-3">
-            <div className="rounded-b-xl bg-emerald-700 px-4 py-1 text-xs font-semibold uppercase tracking-wide text-white">
-              Moduli attivi
-            </div>
-            <div className="h-px flex-1 bg-slate-200" />
-          </div>
-
           <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
             {activeModules.map((module) => (
               <ModuleCard key={module.title} module={module} />
@@ -272,26 +264,22 @@ export default function NewVerificationPage() {
           </div>
         </section>
 
-        <section className="space-y-4">
-          <div className="flex items-center gap-3">
-            <div className="rounded-b-xl bg-slate-700 px-4 py-1 text-xs font-semibold uppercase tracking-wide text-white">
-              Moduli da costruire
+        {developmentModules.length > 0 && (
+          <section className="space-y-4">
+            <div className="flex items-center gap-3">
+              <div className="rounded-b-xl bg-slate-700 px-4 py-1 text-xs font-semibold uppercase tracking-wide text-white">
+                Moduli da costruire
+              </div>
+              <div className="h-px flex-1 bg-slate-200" />
             </div>
-            <div className="h-px flex-1 bg-slate-200" />
-          </div>
 
-          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-            {developmentModules.map((module) => (
-              <ModuleCard key={module.title} module={module} />
-            ))}
-          </div>
-        </section>
-
-        <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
-          <strong>Nota operativa:</strong> questa pagina diventa il punto unico
-          di partenza per ogni nuova verifica. Più avanti potremo trasformare la
-          navigazione in una dashboard laterale più comoda per tablet.
-        </section>
+            <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+              {developmentModules.map((module) => (
+                <ModuleCard key={module.title} module={module} />
+              ))}
+            </div>
+          </section>
+        )}
       </div>
     </AppShell>
   );

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import ReferenceInstrumentMultiSelect from "@/components/ReferenceInstrumentMultiSelect";
 
 type ReferenceInstrument = {
   id: string;
@@ -30,6 +31,8 @@ type InitialScale = {
   scale_range: string | null;
   reference_instrument_id: string | null;
   reference_instrument_snapshot: Record<string, unknown> | null;
+  reference_instrument_ids?: string[] | null;
+  reference_instruments_snapshot?: Record<string, unknown>[] | null;
   notes: string | null;
 };
 
@@ -250,13 +253,7 @@ function getRange(instrument: {
   return instrument.measurement_range || instrument.range || null;
 }
 
-function buildReferenceInstrumentSnapshot(
-  instrument: ReferenceInstrument | undefined
-) {
-  if (!instrument) {
-    return null;
-  }
-
+function buildReferenceInstrumentSnapshot(instrument: ReferenceInstrument) {
   return {
     instrument_id: instrument.id,
     name: instrument.name ?? null,
@@ -364,8 +361,19 @@ export default function EditDimensionalMeasurementsForm({
   initialMeasurements,
   referenceInstruments,
 }: EditDimensionalMeasurementsFormProps) {
-  const [referenceInstrumentId, setReferenceInstrumentId] = useState(
-    () => initialScales[0]?.reference_instrument_id || ""
+  const [referenceInstrumentIds, setReferenceInstrumentIds] = useState<string[]>(
+    () => {
+      const firstScale = initialScales[0];
+      if (
+        firstScale?.reference_instrument_ids &&
+        firstScale.reference_instrument_ids.length > 0
+      ) {
+        return firstScale.reference_instrument_ids;
+      }
+      return firstScale?.reference_instrument_id
+        ? [firstScale.reference_instrument_id]
+        : [];
+    }
   );
   const [scaleNotes, setScaleNotes] = useState(() => initialScales[0]?.notes || "");
   const [sections, setSections] = useState<DimensionalScaleSection[]>(() =>
@@ -384,20 +392,28 @@ export default function EditDimensionalMeasurementsForm({
     [sections]
   );
 
-  const selectedReferenceInstrument = referenceInstruments.find(
-    (instrument) => instrument.id === referenceInstrumentId
+  const selectedReferenceInstruments = useMemo(() => {
+    return referenceInstruments.filter((instrument) =>
+      referenceInstrumentIds.includes(instrument.id)
+    );
+  }, [referenceInstruments, referenceInstrumentIds]);
+
+  const hasBlockedReferenceInstrument = selectedReferenceInstruments.some(
+    (instrument) => isReferenceInstrumentBlocked(effectiveStatus(instrument))
   );
-
-  const selectedReferenceStatus = selectedReferenceInstrument
-    ? effectiveStatus(selectedReferenceInstrument)
-    : null;
-
-  const hasBlockedReferenceInstrument =
-    selectedReferenceStatus && isReferenceInstrumentBlocked(selectedReferenceStatus);
 
   function resetSaveState() {
     setSaveMessage("");
     setSaveError("");
+  }
+
+  function toggleReferenceInstrument(instrumentId: string) {
+    resetSaveState();
+    setReferenceInstrumentIds((current) =>
+      current.includes(instrumentId)
+        ? current.filter((id) => id !== instrumentId)
+        : [...current, instrumentId]
+    );
   }
 
   function updatePoint(
@@ -460,16 +476,14 @@ export default function EditDimensionalMeasurementsForm({
   }
 
   function validate() {
-    if (!referenceInstrumentId) {
-      throw new Error("Seleziona il campione di riferimento usato.");
-    }
-
-    if (!selectedReferenceInstrument) {
-      throw new Error("Campione di riferimento usato non trovato.");
+    if (selectedReferenceInstruments.length === 0) {
+      throw new Error("Seleziona almeno un campione di riferimento usato.");
     }
 
     if (hasBlockedReferenceInstrument) {
-      throw new Error("Il campione di riferimento usato è scaduto o fuori servizio.");
+      throw new Error(
+        "Uno dei campioni di riferimento usati è scaduto o fuori servizio."
+      );
     }
 
     const allPoints = sections.flatMap((section) => section.points);
@@ -510,9 +524,10 @@ export default function EditDimensionalMeasurementsForm({
     try {
       validate();
 
-      if (!selectedReferenceInstrument) {
-        throw new Error("Campione di riferimento usato non selezionato.");
-      }
+      const referenceSnapshots = selectedReferenceInstruments.map(
+        buildReferenceInstrumentSnapshot
+      );
+      const primaryReference = selectedReferenceInstruments[0];
 
       const updatedSections: DimensionalScaleSection[] = [];
 
@@ -523,10 +538,12 @@ export default function EditDimensionalMeasurementsForm({
         const { error: scaleError } = await supabase
           .from("calibration_record_scales")
           .update({
-            reference_instrument_id: selectedReferenceInstrument.id,
-            reference_instrument_snapshot: buildReferenceInstrumentSnapshot(
-              selectedReferenceInstrument
+            reference_instrument_id: primaryReference.id,
+            reference_instrument_snapshot: referenceSnapshots[0],
+            reference_instrument_ids: selectedReferenceInstruments.map(
+              (instrument) => instrument.id
             ),
+            reference_instruments_snapshot: referenceSnapshots,
             notes: scaleNotes.trim() || null,
           })
           .eq("id", section.scaleId);
@@ -686,107 +703,96 @@ export default function EditDimensionalMeasurementsForm({
       <fieldset disabled={isReadOnly} className="space-y-6 disabled:opacity-70">
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="text-lg font-semibold text-slate-900">
-            Campione di riferimento usato
+            Campioni di riferimento usati
           </h2>
 
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <label className="space-y-1">
-              <span className="text-sm font-medium text-slate-700">
-                Campione di riferimento usato *
-              </span>
-              <select
-                value={referenceInstrumentId}
-                onChange={(event) => {
-                  resetSaveState();
-                  setReferenceInstrumentId(event.target.value);
-                }}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
-              >
-                <option value="">Seleziona campione di riferimento</option>
-
-                {referenceInstruments.map((instrument) => (
-                  <option key={instrument.id} value={instrument.id}>
-                    {instrument.name || "Campione di riferimento"}
-                    {instrument.internal_code
-                      ? " - " + instrument.internal_code
-                      : ""}
-                    {getRange(instrument) ? " - " + getRange(instrument) : ""}
-                    {instrument.serial_number
-                      ? " - Mat. " + instrument.serial_number
-                      : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="space-y-1">
-              <span className="text-sm font-medium text-slate-700">
-                Note (comuni ai blocchi)
-              </span>
-              <input
-                value={scaleNotes}
-                onChange={(event) => {
-                  resetSaveState();
-                  setScaleNotes(event.target.value);
-                }}
-                placeholder="Eventuali note"
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-              />
-            </label>
+          <div className="mt-5">
+            <ReferenceInstrumentMultiSelect
+              instruments={referenceInstruments}
+              selectedIds={referenceInstrumentIds}
+              onToggle={toggleReferenceInstrument}
+              label="Campioni di riferimento usati *"
+            />
           </div>
 
-          {selectedReferenceInstrument && selectedReferenceStatus && (
-            <div
-              className={
-                "mt-5 rounded-xl border p-4 text-sm " +
-                statusClass(selectedReferenceStatus)
-              }
-            >
-              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
-                <div>
-                  <p className="font-semibold">Stato</p>
-                  <p>{statusLabel(selectedReferenceStatus)}</p>
-                </div>
+          <label className="mt-4 block space-y-1">
+            <span className="text-sm font-medium text-slate-700">
+              Note (comuni ai blocchi)
+            </span>
+            <input
+              value={scaleNotes}
+              onChange={(event) => {
+                resetSaveState();
+                setScaleNotes(event.target.value);
+              }}
+              placeholder="Eventuali note"
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+            />
+          </label>
 
-                <div>
-                  <p className="font-semibold">Certificato</p>
-                  <p>{selectedReferenceInstrument.certificate_number ?? "-"}</p>
-                </div>
+          {selectedReferenceInstruments.length > 0 && (
+            <div className="mt-5 space-y-3">
+              {selectedReferenceInstruments.map((instrument) => {
+                const status = effectiveStatus(instrument);
+                const blocked = isReferenceInstrumentBlocked(status);
 
-                <div>
-                  <p className="font-semibold">Scadenza</p>
-                  <p>
-                    {formatItalianDate(selectedReferenceInstrument.certificate_expiry)}
-                  </p>
-                </div>
+                return (
+                  <div
+                    key={instrument.id}
+                    className={"rounded-xl border p-4 text-sm " + statusClass(status)}
+                  >
+                    <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-6">
+                      <div>
+                        <p className="font-semibold">Campione</p>
+                        <p>{instrument.name || "-"}</p>
+                      </div>
 
-                <div>
-                  <p className="font-semibold">Campo</p>
-                  <p>{getRange(selectedReferenceInstrument) ?? "-"}</p>
-                </div>
+                      <div>
+                        <p className="font-semibold">Stato</p>
+                        <p>{statusLabel(status)}</p>
+                      </div>
 
-                <div>
-                  <p className="font-semibold">File</p>
-                  {selectedReferenceInstrument.certificate_file_url ? (
-                    <a
-                      href={selectedReferenceInstrument.certificate_file_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="font-semibold hover:underline"
-                    >
-                      Apri certificato
-                    </a>
-                  ) : (
-                    <p>-</p>
-                  )}
-                </div>
-              </div>
+                      <div>
+                        <p className="font-semibold">Certificato</p>
+                        <p>{instrument.certificate_number ?? "-"}</p>
+                      </div>
 
-              {hasBlockedReferenceInstrument && (
-                <p className="mt-3 font-medium">
-                  Blocco: il campione di riferimento è scaduto o fuori servizio.
-                </p>
-              )}
+                      <div>
+                        <p className="font-semibold">Scadenza</p>
+                        <p>{formatItalianDate(instrument.certificate_expiry)}</p>
+                      </div>
+
+                      <div>
+                        <p className="font-semibold">Campo</p>
+                        <p>{getRange(instrument) ?? "-"}</p>
+                      </div>
+
+                      <div>
+                        <p className="font-semibold">File</p>
+                        {instrument.certificate_file_url ? (
+                          <a
+                            href={instrument.certificate_file_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-semibold hover:underline"
+                          >
+                            Apri certificato
+                          </a>
+                        ) : (
+                          <p>-</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {blocked && (
+                      <p className="mt-3 font-medium">
+                        Blocco: questo campione di riferimento è scaduto o
+                        fuori servizio.
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </section>
@@ -964,7 +970,7 @@ export default function EditDimensionalMeasurementsForm({
         <button
           type="button"
           onClick={saveMeasurements}
-          disabled={isSaving || isReadOnly || Boolean(hasBlockedReferenceInstrument)}
+          disabled={isSaving || isReadOnly || hasBlockedReferenceInstrument}
           className="rounded-xl bg-emerald-700 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-slate-400"
         >
           {isReadOnly

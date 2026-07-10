@@ -324,7 +324,7 @@ export default function EditCustomerInstrumentForm({
 
           <label className="space-y-1">
             <span className="text-sm font-medium text-slate-700">
-              Campo / fondo scala
+              Fondo scala
             </span>
             <input
               value={measurementRange}

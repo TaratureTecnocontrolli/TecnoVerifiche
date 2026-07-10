@@ -31,6 +31,7 @@ type ScalePlan = {
   scale: GenericRecord;
   scaleMeasurements: GenericRecord[];
   scaleReferenceSnapshot: GenericRecord;
+  scaleReferenceSnapshots: GenericRecord[];
   chartPages: ChartPageInfo[];
 };
 
@@ -711,7 +712,7 @@ function TechnicalPage({
   scale,
   measurements,
   customerSnapshot,
-  referenceSnapshot,
+  referenceSnapshots,
   procedureSnapshot,
   reportNumber,
   reportDate,
@@ -723,7 +724,7 @@ function TechnicalPage({
   scale: GenericRecord;
   measurements: GenericRecord[];
   customerSnapshot: GenericRecord;
-  referenceSnapshot: GenericRecord;
+  referenceSnapshots: GenericRecord[];
   procedureSnapshot: GenericRecord;
   reportNumber: string;
   reportDate: unknown;
@@ -897,42 +898,58 @@ function TechnicalPage({
         </tbody>
       </table>
 
-      <table className="mt-3 w-full border-collapse text-[9px]">
-        <thead>
-          <tr className="bg-slate-700 text-left text-white">
-            <th colSpan={4} className="border border-slate-900 px-2 py-1">
-              Strumento campione usato
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr>
-            <DataCell label="Strumento" value={referenceSnapshot.name} />
-            <DataCell label="Costruttore" value={referenceSnapshot.manufacturer} />
-          </tr>
-          <tr>
-            <DataCell label="Modello" value={referenceSnapshot.model} />
-            <DataCell label="Matricola" value={referenceSnapshot.serial_number} />
-          </tr>
-          <tr>
-            <DataCell label="Cod. int." value={referenceSnapshot.internal_code} />
-            <DataCell
-              label="Fondo scala"
-              value={referenceSnapshot.measurement_range}
-            />
-          </tr>
-          <tr>
-            <DataCell
-              label="Certificato"
-              value={referenceSnapshot.certificate_number}
-            />
-            <DataCell
-              label="Scadenza"
-              value={formatDate(referenceSnapshot.certificate_expiry)}
-            />
-          </tr>
-        </tbody>
-      </table>
+      {referenceSnapshots.map((referenceSnapshot, referenceIndex) => (
+        <table
+          key={referenceIndex}
+          className="mt-3 w-full border-collapse text-[9px]"
+        >
+          <thead>
+            <tr className="bg-slate-700 text-left text-white">
+              <th colSpan={4} className="border border-slate-900 px-2 py-1">
+                {referenceSnapshots.length > 1
+                  ? "Strumento campione usato " + String(referenceIndex + 1)
+                  : "Strumento campione usato"}
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <DataCell label="Strumento" value={referenceSnapshot.name} />
+              <DataCell
+                label="Costruttore"
+                value={referenceSnapshot.manufacturer}
+              />
+            </tr>
+            <tr>
+              <DataCell label="Modello" value={referenceSnapshot.model} />
+              <DataCell
+                label="Matricola"
+                value={referenceSnapshot.serial_number}
+              />
+            </tr>
+            <tr>
+              <DataCell
+                label="Cod. int."
+                value={referenceSnapshot.internal_code}
+              />
+              <DataCell
+                label="Fondo scala"
+                value={referenceSnapshot.measurement_range}
+              />
+            </tr>
+            <tr>
+              <DataCell
+                label="Certificato"
+                value={referenceSnapshot.certificate_number}
+              />
+              <DataCell
+                label="Scadenza"
+                value={formatDate(referenceSnapshot.certificate_expiry)}
+              />
+            </tr>
+          </tbody>
+        </table>
+      ))}
 
       <div className="mt-3 overflow-x-auto">
         <TechnicalTable
@@ -989,14 +1006,14 @@ function SignatureCell({
 }) {
   if (entries.length > 0) {
     return (
-      <div className="flex h-[115px] flex-col items-center justify-center gap-2 px-2">
+      <div className="flex h-[115px] flex-col items-center justify-center px-2">
         {entries.map((entry, index) => (
           <div key={index} className="flex flex-col items-center">
             {entry.signature_url_snapshot ? (
               <img
                 src={entry.signature_url_snapshot}
                 alt={entry.display_name ?? "Firma"}
-                className="h-10 max-w-[150px] object-contain"
+                className="-mb-3 h-20 max-w-[210px] object-contain mix-blend-multiply"
               />
             ) : null}
             <span className="text-[10px]">{textValue(entry.display_name)}</span>
@@ -1167,6 +1184,19 @@ export default async function FinalReportPage({ params }: PageProps) {
         ? asObject(scale.reference_instrument_snapshot)
         : referenceSnapshot;
 
+    const rawReferenceSnapshots = Array.isArray(
+      scale.reference_instruments_snapshot
+    )
+      ? (scale.reference_instruments_snapshot as unknown[])
+          .map((item) => asObject(item))
+          .filter((item) => item.name || item.instrument_id)
+      : [];
+
+    const scaleReferenceSnapshots =
+      rawReferenceSnapshots.length > 0
+        ? rawReferenceSnapshots
+        : [scaleReferenceSnapshot];
+
     const chartMeasurements: (MeasurementLike & { section: string | null })[] =
       scaleMeasurements.map((measurement) => ({
         id: String(measurement.id),
@@ -1229,6 +1259,7 @@ export default async function FinalReportPage({ params }: PageProps) {
       scale,
       scaleMeasurements,
       scaleReferenceSnapshot,
+      scaleReferenceSnapshots,
       chartPages,
     };
   });
@@ -1319,7 +1350,7 @@ export default async function FinalReportPage({ params }: PageProps) {
                 scale={descriptor.plan.scale}
                 measurements={descriptor.plan.scaleMeasurements}
                 customerSnapshot={customerSnapshot}
-                referenceSnapshot={descriptor.plan.scaleReferenceSnapshot}
+                referenceSnapshots={descriptor.plan.scaleReferenceSnapshots}
                 procedureSnapshot={procedureSnapshot}
                 reportNumber={reportNumber}
                 reportDate={reportDate}

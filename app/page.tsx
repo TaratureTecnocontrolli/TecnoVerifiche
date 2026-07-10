@@ -183,7 +183,9 @@ export default async function HomePage() {
               Nuova verifica
             </h2>
             <p className="mt-2 text-sm text-slate-600">
-              Scegli il tipo di verifica: CT, pressione o moduli futuri.
+              Scegli tra i 9 moduli disponibili: CT, pressione, coppia,
+              portata, temperatura, dimensionale, massa, sclerometro e
+              pull-off.
             </p>
           </Link>
 

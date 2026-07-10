@@ -9,6 +9,7 @@ import {
 } from "@/lib/calculations/pressure";
 import { supabase } from "@/lib/supabase";
 import PressureErrorChart from "./PressureErrorChart";
+import ReferenceInstrumentMultiSelect from "./ReferenceInstrumentMultiSelect";
 
 type Customer = {
   id: string;
@@ -306,8 +307,8 @@ export default function PressureCalibrationTable() {
   const [selectedSiteId, setSelectedSiteId] = useState("");
   const [selectedCustomerInstrumentId, setSelectedCustomerInstrumentId] =
     useState("");
-  const [selectedReferenceInstrumentId, setSelectedReferenceInstrumentId] =
-    useState("");
+  const [selectedReferenceInstrumentIds, setSelectedReferenceInstrumentIds] =
+    useState<string[]>([]);
 
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -363,18 +364,21 @@ export default function PressureCalibrationTable() {
     (instrument) => instrument.id === selectedCustomerInstrumentId
   );
 
-  const selectedReferenceInstrument = referenceInstruments.find(
-    (instrument) => instrument.id === selectedReferenceInstrumentId
-  );
+  const selectedReferenceInstruments = selectedReferenceInstrumentIds
+    .map((instrumentId) =>
+      referenceInstruments.find((instrument) => instrument.id === instrumentId)
+    )
+    .filter(Boolean) as ReferenceInstrument[];
 
-  const hasBlockedReferenceInstrument =
-    selectedReferenceInstrument &&
-    isReferenceInstrumentBlocked(
-      getEffectiveReferenceInstrumentStatus(
-        selectedReferenceInstrument.status,
-        selectedReferenceInstrument.certificate_expiry
+  const hasBlockedReferenceInstrument = selectedReferenceInstruments.some(
+    (instrument) =>
+      isReferenceInstrumentBlocked(
+        getEffectiveReferenceInstrumentStatus(
+          instrument.status,
+          instrument.certificate_expiry
+        )
       )
-    );
+  );
 
   useEffect(() => {
     async function loadData() {
@@ -499,6 +503,16 @@ export default function PressureCalibrationTable() {
     resetSaveState();
   }
 
+  function toggleReferenceInstrument(instrumentId: string) {
+    resetSaveState();
+
+    setSelectedReferenceInstrumentIds((currentIds) =>
+      currentIds.includes(instrumentId)
+        ? currentIds.filter((id) => id !== instrumentId)
+        : [...currentIds, instrumentId]
+    );
+  }
+
   function updatePoint(
     pointId: string,
     field: keyof Omit<EditablePressurePoint, "id">,
@@ -563,13 +577,17 @@ export default function PressureCalibrationTable() {
       throw new Error("Seleziona lo strumento cliente da verificare.");
     }
 
-    if (!selectedReferenceInstrument) {
-      throw new Error("Seleziona lo strumento campione usato.");
+    if (selectedReferenceInstruments.length === 0) {
+      throw new Error("Seleziona almeno uno strumento campione usato.");
     }
 
-    if (isReferenceInstrumentBlocked(selectedReferenceInstrument.status)) {
+    if (
+      selectedReferenceInstruments.some((instrument) =>
+        isReferenceInstrumentBlocked(instrument.status)
+      )
+    ) {
       throw new Error(
-        "Lo strumento campione usato è scaduto o fuori servizio."
+        "Uno strumento campione usato è scaduto o fuori servizio."
       );
     }
 
@@ -612,7 +630,9 @@ export default function PressureCalibrationTable() {
         throw new Error("Dati cliente/strumento incompleti.");
       }
 
-      if (!selectedReferenceInstrument) {
+      const primaryReferenceInstrument = selectedReferenceInstruments[0];
+
+      if (!primaryReferenceInstrument) {
         throw new Error("Strumento campione usato non selezionato.");
       }
 
@@ -677,7 +697,10 @@ export default function PressureCalibrationTable() {
       };
 
       const referenceInstrumentSnapshot = buildReferenceInstrumentSnapshot(
-        selectedReferenceInstrument
+        primaryReferenceInstrument
+      );
+      const referenceInstrumentsSnapshot = selectedReferenceInstruments.map(
+        (instrument) => buildReferenceInstrumentSnapshot(instrument)
       );
 
       const procedureSnapshot = {
@@ -700,7 +723,7 @@ export default function PressureCalibrationTable() {
           calibration_type_id: calibrationType.id,
           procedure_id: activeProcedure.id,
           customer_instrument_id: selectedCustomerInstrument.id,
-          reference_instrument_id: selectedReferenceInstrument.id,
+          reference_instrument_id: primaryReferenceInstrument.id,
           customer_instrument_snapshot: customerInstrumentSnapshot,
           reference_instrument_snapshot: referenceInstrumentSnapshot,
           procedure_snapshot: procedureSnapshot,
@@ -731,8 +754,12 @@ export default function PressureCalibrationTable() {
           scale_order: 1,
           scale_name: scaleName.trim(),
           scale_range: scaleRange.trim() || null,
-          reference_instrument_id: selectedReferenceInstrument.id,
+          reference_instrument_id: primaryReferenceInstrument.id,
           reference_instrument_snapshot: referenceInstrumentSnapshot,
+          reference_instrument_ids: selectedReferenceInstruments.map(
+            (instrument) => instrument.id
+          ),
+          reference_instruments_snapshot: referenceInstrumentsSnapshot,
           notes: scaleNotes.trim() || null,
         })
         .select("id")
@@ -977,7 +1004,7 @@ export default function PressureCalibrationTable() {
               </div>
 
               <div>
-                <p className="font-semibold">Campo / fondo scala</p>
+                <p className="font-semibold">Fondo scala</p>
                 <p>{selectedCustomerInstrument.measurement_range ?? "-"}</p>
               </div>
 
@@ -1021,7 +1048,7 @@ export default function PressureCalibrationTable() {
 
             <label className="space-y-1">
               <span className="text-sm font-medium text-slate-700">
-                Campo / fondo scala
+                Fondo scala
               </span>
               <input
                 value={scaleRange}
@@ -1034,40 +1061,19 @@ export default function PressureCalibrationTable() {
               />
             </label>
 
-            <label className="space-y-1 lg:col-span-2">
-              <span className="text-sm font-medium text-slate-700">
-                Strumento campione usato *
-              </span>
-              <select
-                value={selectedReferenceInstrumentId}
-                onChange={(event) => {
-                  setSelectedReferenceInstrumentId(event.target.value);
-                  resetSaveState();
-                }}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
-              >
-                <option value="">
-                  {isLoadingData
+            <div className="lg:col-span-2">
+              <ReferenceInstrumentMultiSelect
+                instruments={referenceInstruments}
+                selectedIds={selectedReferenceInstrumentIds}
+                onToggle={toggleReferenceInstrument}
+                label="Strumenti campione usati *"
+                emptyLabel={
+                  isLoadingData
                     ? "Caricamento strumenti campione..."
-                    : "Seleziona strumento campione"}
-                </option>
-
-                {referenceInstruments.map((instrument) => (
-                  <option key={instrument.id} value={instrument.id}>
-                    {instrument.name}
-                    {instrument.internal_code
-                      ? " - " + instrument.internal_code
-                      : ""}
-                    {instrument.measurement_range
-                      ? " - " + instrument.measurement_range
-                      : ""}
-                    {instrument.serial_number
-                      ? " - Mat. " + instrument.serial_number
-                      : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
+                    : undefined
+                }
+              />
+            </div>
           </div>
 
           <label className="mt-4 block space-y-1">
@@ -1085,44 +1091,61 @@ export default function PressureCalibrationTable() {
             />
           </label>
 
-          {selectedReferenceInstrument && (
-            <div
-              className={
-                "mt-5 rounded-xl border p-4 text-sm " +
-                statusClass(selectedReferenceInstrument.status)
-              }
-            >
-              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-                <div>
-                  <p className="font-semibold">Stato campione</p>
-                  <p>{statusLabel(selectedReferenceInstrument.status)}</p>
-                </div>
+          {selectedReferenceInstruments.length > 0 && (
+            <div className="mt-5 space-y-3">
+              {selectedReferenceInstruments.map((instrument) => {
+                const effectiveStatus = getEffectiveReferenceInstrumentStatus(
+                  instrument.status,
+                  instrument.certificate_expiry
+                );
+                const instrumentBlocked =
+                  isReferenceInstrumentBlocked(effectiveStatus);
 
-                <div>
-                  <p className="font-semibold">Certificato</p>
-                  <p>{selectedReferenceInstrument.certificate_number ?? "-"}</p>
-                </div>
+                return (
+                  <div
+                    key={instrument.id}
+                    className={
+                      "rounded-xl border p-4 text-sm " +
+                      statusClass(effectiveStatus)
+                    }
+                  >
+                    <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
+                      <div>
+                        <p className="font-semibold">Strumento</p>
+                        <p>{instrument.name}</p>
+                      </div>
 
-                <div>
-                  <p className="font-semibold">Scadenza</p>
-                  <p>
-                    {formatItalianDate(
-                      selectedReferenceInstrument.certificate_expiry
+                      <div>
+                        <p className="font-semibold">Stato campione</p>
+                        <p>{statusLabel(effectiveStatus)}</p>
+                      </div>
+
+                      <div>
+                        <p className="font-semibold">Certificato</p>
+                        <p>{instrument.certificate_number ?? "-"}</p>
+                      </div>
+
+                      <div>
+                        <p className="font-semibold">Scadenza</p>
+                        <p>
+                          {formatItalianDate(instrument.certificate_expiry)}
+                        </p>
+                      </div>
+
+                      <div>
+                        <p className="font-semibold">Campo</p>
+                        <p>{instrument.measurement_range ?? "-"}</p>
+                      </div>
+                    </div>
+
+                    {instrumentBlocked && (
+                      <p className="mt-3 font-medium">
+                        Blocco: il campione è scaduto o fuori servizio.
+                      </p>
                     )}
-                  </p>
-                </div>
-
-                <div>
-                  <p className="font-semibold">Campo</p>
-                  <p>{selectedReferenceInstrument.measurement_range ?? "-"}</p>
-                </div>
-              </div>
-
-              {hasBlockedReferenceInstrument && (
-                <p className="mt-3 font-medium">
-                  Blocco: lo strumento campione è scaduto o fuori servizio.
-                </p>
-              )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </div>

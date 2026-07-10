@@ -3,7 +3,14 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
-import { getDimensionalReportDefaults } from "@/lib/report-defaults";
+import {
+  combineReferenceInstrumentNames,
+  getDimensionalReportDefaults,
+} from "@/lib/report-defaults";
+import ReferenceInstrumentMultiSelect, {
+  getEffectiveReferenceInstrumentStatus,
+  isReferenceInstrumentBlocked,
+} from "@/components/ReferenceInstrumentMultiSelect";
 
 type Customer = {
   id: string;
@@ -89,53 +96,6 @@ function formatItalianDate(date: string | null | undefined) {
   }
 
   return new Intl.DateTimeFormat("it-IT").format(new Date(date));
-}
-
-function daysToExpiry(date: string | null | undefined) {
-  if (!date) {
-    return null;
-  }
-
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  const expiry = new Date(date);
-  expiry.setHours(0, 0, 0, 0);
-
-  const differenceMs = expiry.getTime() - today.getTime();
-
-  return Math.ceil(differenceMs / (1000 * 60 * 60 * 24));
-}
-
-function getEffectiveReferenceInstrumentStatus(
-  status: string | null | undefined,
-  certificateExpiry: string | null | undefined
-) {
-  const baseStatus = status || "valid";
-
-  if (baseStatus === "out_of_service") {
-    return "out_of_service";
-  }
-
-  const days = daysToExpiry(certificateExpiry);
-
-  if (days === null) {
-    return baseStatus;
-  }
-
-  if (days < 0) {
-    return "expired";
-  }
-
-  if (days <= 30) {
-    return "expiring";
-  }
-
-  return "valid";
-}
-
-function isReferenceInstrumentBlocked(status: string) {
-  return status === "expired" || status === "out_of_service";
 }
 
 function statusLabel(status: string) {
@@ -232,8 +192,8 @@ export default function DimensionalVerificationStarter({
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
   const [selectedCustomerInstrumentId, setSelectedCustomerInstrumentId] =
     useState("");
-  const [selectedReferenceInstrumentId, setSelectedReferenceInstrumentId] =
-    useState("");
+  const [selectedReferenceInstrumentIds, setSelectedReferenceInstrumentIds] =
+    useState<string[]>([]);
   const [verificationDate, setVerificationDate] = useState(todayInputDate());
   const [location, setLocation] = useState("");
   const [operatorName, setOperatorName] = useState("");
@@ -292,24 +252,30 @@ export default function DimensionalVerificationStarter({
       ? dimensionalReferenceInstruments
       : referenceInstruments;
 
-  const selectedReferenceInstrument = useMemo(() => {
-    return (
-      referenceInstruments.find(
-        (instrument) => instrument.id === selectedReferenceInstrumentId
-      ) ?? null
+  function toggleReferenceInstrument(instrumentId: string) {
+    setSelectedReferenceInstrumentIds((current) =>
+      current.includes(instrumentId)
+        ? current.filter((id) => id !== instrumentId)
+        : [...current, instrumentId]
     );
-  }, [referenceInstruments, selectedReferenceInstrumentId]);
+    setSaveError("");
+  }
 
-  const selectedReferenceStatus = selectedReferenceInstrument
-    ? getEffectiveReferenceInstrumentStatus(
-        selectedReferenceInstrument.status,
-        selectedReferenceInstrument.certificate_expiry
+  const selectedReferenceInstruments = useMemo(() => {
+    return referenceInstruments.filter((instrument) =>
+      selectedReferenceInstrumentIds.includes(instrument.id)
+    );
+  }, [referenceInstruments, selectedReferenceInstrumentIds]);
+
+  const hasBlockedReferenceInstrument = selectedReferenceInstruments.some(
+    (instrument) =>
+      isReferenceInstrumentBlocked(
+        getEffectiveReferenceInstrumentStatus(
+          instrument.status,
+          instrument.certificate_expiry
+        )
       )
-    : null;
-
-  const selectedReferenceBlocked = selectedReferenceStatus
-    ? isReferenceInstrumentBlocked(selectedReferenceStatus)
-    : false;
+  );
 
   async function createVerification(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -326,13 +292,15 @@ export default function DimensionalVerificationStarter({
         throw new Error("Seleziona lo strumento cliente da verificare.");
       }
 
-      if (!selectedReferenceInstrument) {
-        throw new Error("Seleziona il campione di riferimento da utilizzare.");
+      if (selectedReferenceInstruments.length === 0) {
+        throw new Error(
+          "Seleziona almeno un campione di riferimento da utilizzare."
+        );
       }
 
-      if (selectedReferenceBlocked) {
+      if (hasBlockedReferenceInstrument) {
         throw new Error(
-          "Il campione di riferimento selezionato è scaduto o fuori servizio. Seleziona un campione valido."
+          "Uno dei campioni di riferimento selezionati è scaduto o fuori servizio. Seleziona solo campioni validi."
         );
       }
 
@@ -345,9 +313,11 @@ export default function DimensionalVerificationStarter({
         selectedCustomer
       );
 
-      const referenceSnapshot = buildReferenceInstrumentSnapshot(
-        selectedReferenceInstrument
+      const referenceSnapshots = selectedReferenceInstruments.map(
+        buildReferenceInstrumentSnapshot
       );
+      const primaryReference = selectedReferenceInstruments[0];
+      const primaryReferenceSnapshot = referenceSnapshots[0];
 
       const procedureSnapshot = {
         ...SUBTYPE_PROCEDURE[subtype],
@@ -370,7 +340,7 @@ export default function DimensionalVerificationStarter({
           final_result: null,
           notes: notes.trim() || null,
           customer_instrument_snapshot: customerSnapshot,
-          reference_instrument_snapshot: referenceSnapshot,
+          reference_instrument_snapshot: primaryReferenceSnapshot,
           procedure_snapshot: procedureSnapshot,
         })
         .select("id")
@@ -384,7 +354,10 @@ export default function DimensionalVerificationStarter({
 
       const customerName = getCustomerName(selectedCustomer);
       const instrumentName = getCustomerInstrumentName(selectedCustomerInstrument);
-      const referenceName = selectedReferenceInstrument.name || "Campione di riferimento";
+      const referenceName =
+        selectedReferenceInstruments.length > 1
+          ? combineReferenceInstrumentNames(selectedReferenceInstruments)
+          : primaryReference.name || "Campione di riferimento";
 
       const reportDefaults = getDimensionalReportDefaults({
         customerName,
@@ -395,10 +368,20 @@ export default function DimensionalVerificationStarter({
         instrumentSerial: selectedCustomerInstrument.serial_number,
         instrumentRange: getRange(selectedCustomerInstrument),
         referenceName,
-        referenceManufacturer: selectedReferenceInstrument.manufacturer,
-        referenceModel: selectedReferenceInstrument.model,
-        referenceSerial: selectedReferenceInstrument.serial_number,
-        referenceInternalCode: selectedReferenceInstrument.internal_code,
+        referenceManufacturer:
+          selectedReferenceInstruments.length === 1
+            ? primaryReference.manufacturer
+            : null,
+        referenceModel:
+          selectedReferenceInstruments.length === 1 ? primaryReference.model : null,
+        referenceSerial:
+          selectedReferenceInstruments.length === 1
+            ? primaryReference.serial_number
+            : null,
+        referenceInternalCode:
+          selectedReferenceInstruments.length === 1
+            ? primaryReference.internal_code
+            : null,
         location,
       });
 
@@ -441,10 +424,14 @@ export default function DimensionalVerificationStarter({
         scale_name: scaleName,
         scale_range:
           getRange(selectedCustomerInstrument) ||
-          getRange(selectedReferenceInstrument) ||
+          getRange(primaryReference) ||
           null,
-        reference_instrument_id: selectedReferenceInstrument.id,
-        reference_instrument_snapshot: referenceSnapshot,
+        reference_instrument_id: primaryReference.id,
+        reference_instrument_snapshot: primaryReferenceSnapshot,
+        reference_instrument_ids: selectedReferenceInstruments.map(
+          (instrument) => instrument.id
+        ),
+        reference_instruments_snapshot: referenceSnapshots,
         notes: null,
       }));
 
@@ -553,47 +540,6 @@ export default function DimensionalVerificationStarter({
             </select>
           </label>
 
-          <label className="space-y-1 xl:col-span-2">
-            <span className="text-sm font-medium text-slate-700">
-              Campione di riferimento *
-            </span>
-            <select
-              value={selectedReferenceInstrumentId}
-              onChange={(event) => {
-                setSelectedReferenceInstrumentId(event.target.value);
-                setSaveError("");
-              }}
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
-            >
-              <option value="">Seleziona campione di riferimento</option>
-
-              {availableReferenceInstruments.map((instrument) => {
-                const realStatus = getEffectiveReferenceInstrumentStatus(
-                  instrument.status,
-                  instrument.certificate_expiry
-                );
-                const blocked = isReferenceInstrumentBlocked(realStatus);
-
-                return (
-                  <option
-                    key={instrument.id}
-                    value={instrument.id}
-                    disabled={blocked}
-                  >
-                    {instrument.internal_code ? instrument.internal_code + " - " : ""}
-                    {instrument.name || "Campione di riferimento"}
-                    {getRange(instrument) ? " - " + getRange(instrument) : ""}
-                    {" - "}
-                    {statusLabel(realStatus)}
-                    {!instrument.certificate_file_url
-                      ? " - certificato file mancante"
-                      : ""}
-                  </option>
-                );
-              })}
-            </select>
-          </label>
-
           <label className="space-y-1">
             <span className="text-sm font-medium text-slate-700">
               Data verifica *
@@ -629,6 +575,15 @@ export default function DimensionalVerificationStarter({
               className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
             />
           </label>
+        </div>
+
+        <div className="mt-4">
+          <ReferenceInstrumentMultiSelect
+            instruments={availableReferenceInstruments}
+            selectedIds={selectedReferenceInstrumentIds}
+            onToggle={toggleReferenceInstrument}
+            label="Campioni di riferimento usati *"
+          />
         </div>
 
         <label className="mt-4 block space-y-1">
@@ -694,76 +649,92 @@ export default function DimensionalVerificationStarter({
         </section>
       )}
 
-      {selectedReferenceInstrument && selectedReferenceStatus && (
+      {selectedReferenceInstruments.length > 0 && (
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
-            <div>
-              <h2 className="text-lg font-semibold text-slate-900">
-                Anteprima campione di riferimento
-              </h2>
-              <p className="mt-1 text-sm text-slate-500">
-                Questo snapshot verrà salvato nella verifica.
-              </p>
-            </div>
+          <h2 className="text-lg font-semibold text-slate-900">
+            Anteprima campioni di riferimento selezionati
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Questi snapshot verranno salvati nella verifica.
+          </p>
 
-            <span
-              className={`w-fit rounded-full px-3 py-1 text-xs font-semibold ${statusClass(
-                selectedReferenceStatus
-              )}`}
-            >
-              {statusLabel(selectedReferenceStatus)}
-            </span>
-          </div>
+          <div className="mt-4 space-y-4">
+            {selectedReferenceInstruments.map((instrument) => {
+              const status = getEffectiveReferenceInstrumentStatus(
+                instrument.status,
+                instrument.certificate_expiry
+              );
+              const blocked = isReferenceInstrumentBlocked(status);
 
-          <div className="mt-4 grid gap-4 text-sm md:grid-cols-4">
-            <div>
-              <p className="font-semibold text-slate-700">Strumento</p>
-              <p className="text-slate-600">{selectedReferenceInstrument.name}</p>
-            </div>
-            <div>
-              <p className="font-semibold text-slate-700">Codice</p>
-              <p className="text-slate-600">
-                {selectedReferenceInstrument.internal_code ?? "-"}
-              </p>
-            </div>
-            <div>
-              <p className="font-semibold text-slate-700">Campo</p>
-              <p className="text-slate-600">
-                {getRange(selectedReferenceInstrument) ?? "-"}
-              </p>
-            </div>
-            <div>
-              <p className="font-semibold text-slate-700">Certificato</p>
-              <p className="text-slate-600">
-                {selectedReferenceInstrument.certificate_number ?? "-"}
-              </p>
-              <p className="text-xs text-slate-500">
-                Scadenza:{" "}
-                {formatItalianDate(selectedReferenceInstrument.certificate_expiry)}
-              </p>
-              {selectedReferenceInstrument.certificate_file_url ? (
-                <a
-                  href={selectedReferenceInstrument.certificate_file_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-1 inline-block text-xs font-semibold text-emerald-700 hover:underline"
+              return (
+                <div
+                  key={instrument.id}
+                  className="rounded-xl border border-slate-100 p-4"
                 >
-                  Apri certificato
-                </a>
-              ) : (
-                <p className="mt-1 text-xs text-amber-700">
-                  File certificato mancante
-                </p>
-              )}
-            </div>
-          </div>
+                  <div className="flex flex-col justify-between gap-3 md:flex-row md:items-start">
+                    <p className="font-semibold text-slate-900">
+                      {instrument.name || "Campione di riferimento"}
+                    </p>
 
-          {selectedReferenceBlocked && (
-            <div className="mt-4 rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">
-              Questo campione di riferimento non è utilizzabile perché risulta
-              scaduto o fuori servizio.
-            </div>
-          )}
+                    <span
+                      className={`w-fit rounded-full px-3 py-1 text-xs font-semibold ${statusClass(
+                        status
+                      )}`}
+                    >
+                      {statusLabel(status)}
+                    </span>
+                  </div>
+
+                  <div className="mt-3 grid gap-4 text-sm md:grid-cols-4">
+                    <div>
+                      <p className="font-semibold text-slate-700">Codice</p>
+                      <p className="text-slate-600">
+                        {instrument.internal_code ?? "-"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-slate-700">Campo</p>
+                      <p className="text-slate-600">
+                        {getRange(instrument) ?? "-"}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="font-semibold text-slate-700">Certificato</p>
+                      <p className="text-slate-600">
+                        {instrument.certificate_number ?? "-"}
+                      </p>
+                      <p className="text-xs text-slate-500">
+                        Scadenza: {formatItalianDate(instrument.certificate_expiry)}
+                      </p>
+                    </div>
+                    <div>
+                      {instrument.certificate_file_url ? (
+                        <a
+                          href={instrument.certificate_file_url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="text-xs font-semibold text-emerald-700 hover:underline"
+                        >
+                          Apri certificato
+                        </a>
+                      ) : (
+                        <p className="text-xs text-amber-700">
+                          File certificato mancante
+                        </p>
+                      )}
+                    </div>
+                  </div>
+
+                  {blocked && (
+                    <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+                      Questo campione di riferimento non è utilizzabile perché
+                      risulta scaduto o fuori servizio.
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </section>
       )}
 

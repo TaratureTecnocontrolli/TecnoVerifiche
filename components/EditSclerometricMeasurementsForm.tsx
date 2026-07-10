@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import ReferenceInstrumentMultiSelect from "@/components/ReferenceInstrumentMultiSelect";
 
 type ReferenceInstrument = {
   id: string;
@@ -30,6 +31,8 @@ type InitialScale = {
   scale_range: string | null;
   reference_instrument_id: string | null;
   reference_instrument_snapshot: Record<string, unknown> | null;
+  reference_instrument_ids?: string[] | null;
+  reference_instruments_snapshot?: Record<string, unknown>[] | null;
   notes: string | null;
 };
 
@@ -68,7 +71,7 @@ type EditableScale = {
   scaleId: string;
   scaleName: string;
   scaleRange: string;
-  referenceInstrumentId: string;
+  referenceInstrumentIds: string[];
   notes: string;
   nominalValue: string;
   tolerancePercent: string;
@@ -262,13 +265,7 @@ function getRange(instrument: {
   return instrument.measurement_range || instrument.range || null;
 }
 
-function buildReferenceInstrumentSnapshot(
-  instrument: ReferenceInstrument | undefined
-) {
-  if (!instrument) {
-    return null;
-  }
-
+function buildReferenceInstrumentSnapshot(instrument: ReferenceInstrument) {
   return {
     instrument_id: instrument.id,
     name: instrument.name ?? null,
@@ -300,12 +297,19 @@ function buildEditableScale(
         .sort((a, b) => a.point_order - b.point_order)
     : [...measurements].sort((a, b) => a.point_order - b.point_order);
 
+  const referenceInstrumentIds =
+    firstScale?.reference_instrument_ids && firstScale.reference_instrument_ids.length > 0
+      ? firstScale.reference_instrument_ids
+      : firstScale?.reference_instrument_id
+        ? [firstScale.reference_instrument_id]
+        : [];
+
   return {
     id: firstScale?.id || "sclerometric-scale",
     scaleId: firstScale?.id || "",
     scaleName: firstScale?.scale_name || "Prova sclerometrica",
     scaleRange: firstScale?.scale_range || "",
-    referenceInstrumentId: firstScale?.reference_instrument_id || "",
+    referenceInstrumentIds,
     notes: firstScale?.notes || "",
     nominalValue: numberToInputValue(
       scaleMeasurements[0]?.nominal_value ?? 80
@@ -434,16 +438,15 @@ export default function EditSclerometricMeasurementsForm({
       ? (overallError / nominalValueNumber) * 100
       : null;
 
-  const selectedReferenceInstrument = referenceInstruments.find(
-    (instrument) => instrument.id === scale.referenceInstrumentId
+  const selectedReferenceInstruments = useMemo(() => {
+    return referenceInstruments.filter((instrument) =>
+      scale.referenceInstrumentIds.includes(instrument.id)
+    );
+  }, [referenceInstruments, scale.referenceInstrumentIds]);
+
+  const hasBlockedReferenceInstrument = selectedReferenceInstruments.some(
+    (instrument) => isReferenceInstrumentBlocked(effectiveStatus(instrument))
   );
-
-  const selectedReferenceStatus = selectedReferenceInstrument
-    ? effectiveStatus(selectedReferenceInstrument)
-    : null;
-
-  const hasBlockedReferenceInstrument =
-    selectedReferenceStatus && isReferenceInstrumentBlocked(selectedReferenceStatus);
 
   function resetSaveState() {
     setSaveMessage("");
@@ -451,13 +454,23 @@ export default function EditSclerometricMeasurementsForm({
   }
 
   function updateScaleField(
-    field: keyof Omit<EditableScale, "id" | "scaleId" | "points">,
+    field: keyof Omit<EditableScale, "id" | "scaleId" | "points" | "referenceInstrumentIds">,
     value: string
   ) {
     resetSaveState();
     setScale((currentScale) => ({
       ...currentScale,
       [field]: value,
+    }));
+  }
+
+  function toggleReferenceInstrument(instrumentId: string) {
+    resetSaveState();
+    setScale((currentScale) => ({
+      ...currentScale,
+      referenceInstrumentIds: currentScale.referenceInstrumentIds.includes(instrumentId)
+        ? currentScale.referenceInstrumentIds.filter((id) => id !== instrumentId)
+        : [...currentScale.referenceInstrumentIds, instrumentId],
     }));
   }
 
@@ -523,17 +536,13 @@ export default function EditSclerometricMeasurementsForm({
       throw new Error("Inserisci il nome della prova.");
     }
 
-    if (!scale.referenceInstrumentId) {
-      throw new Error("Seleziona l'incudine di riferimento usata.");
-    }
-
-    if (!selectedReferenceInstrument) {
-      throw new Error("Incudine di riferimento usata non trovata.");
+    if (selectedReferenceInstruments.length === 0) {
+      throw new Error("Seleziona almeno un'incudine di riferimento usata.");
     }
 
     if (hasBlockedReferenceInstrument) {
       throw new Error(
-        "L'incudine di riferimento usata è scaduta o fuori servizio."
+        "Una delle incudini di riferimento usate è scaduta o fuori servizio."
       );
     }
 
@@ -563,9 +572,10 @@ export default function EditSclerometricMeasurementsForm({
       return scale.scaleId;
     }
 
-    if (!selectedReferenceInstrument) {
-      throw new Error("Incudine di riferimento usata non selezionata.");
-    }
+    const referenceSnapshots = selectedReferenceInstruments.map(
+      buildReferenceInstrumentSnapshot
+    );
+    const primaryReference = selectedReferenceInstruments[0];
 
     const { data: insertedScale, error: insertScaleError } = await supabase
       .from("calibration_record_scales")
@@ -574,10 +584,12 @@ export default function EditSclerometricMeasurementsForm({
         scale_order: 1,
         scale_name: scale.scaleName.trim(),
         scale_range: scale.scaleRange.trim() || null,
-        reference_instrument_id: selectedReferenceInstrument.id,
-        reference_instrument_snapshot: buildReferenceInstrumentSnapshot(
-          selectedReferenceInstrument
+        reference_instrument_id: primaryReference.id,
+        reference_instrument_snapshot: referenceSnapshots[0],
+        reference_instrument_ids: selectedReferenceInstruments.map(
+          (instrument) => instrument.id
         ),
+        reference_instruments_snapshot: referenceSnapshots,
         notes: scale.notes.trim() || null,
       })
       .select("id")
@@ -613,11 +625,12 @@ export default function EditSclerometricMeasurementsForm({
     try {
       validate();
 
-      if (!selectedReferenceInstrument) {
-        throw new Error("Incudine di riferimento usata non selezionata.");
-      }
-
       const scaleId = await ensureScaleExists();
+
+      const referenceSnapshots = selectedReferenceInstruments.map(
+        buildReferenceInstrumentSnapshot
+      );
+      const primaryReference = selectedReferenceInstruments[0];
 
       const { error: scaleError } = await supabase
         .from("calibration_record_scales")
@@ -625,10 +638,12 @@ export default function EditSclerometricMeasurementsForm({
           scale_order: 1,
           scale_name: scale.scaleName.trim(),
           scale_range: scale.scaleRange.trim() || null,
-          reference_instrument_id: selectedReferenceInstrument.id,
-          reference_instrument_snapshot: buildReferenceInstrumentSnapshot(
-            selectedReferenceInstrument
+          reference_instrument_id: primaryReference.id,
+          reference_instrument_snapshot: referenceSnapshots[0],
+          reference_instrument_ids: selectedReferenceInstruments.map(
+            (instrument) => instrument.id
           ),
+          reference_instruments_snapshot: referenceSnapshots,
           notes: scale.notes.trim() || null,
         })
         .eq("id", scaleId);
@@ -808,7 +823,7 @@ export default function EditSclerometricMeasurementsForm({
               Prova sclerometrica
             </h2>
 
-            <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
               <label className="space-y-1">
                 <span className="text-sm font-medium text-slate-700">
                   Nome prova *
@@ -853,34 +868,15 @@ export default function EditSclerometricMeasurementsForm({
                   className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
                 />
               </label>
+            </div>
 
-              <label className="space-y-1 lg:col-span-4 lg:grid lg:grid-cols-4 lg:gap-4 lg:space-y-0">
-                <span className="text-sm font-medium text-slate-700 lg:col-span-4">
-                  Incudine di riferimento usata *
-                </span>
-                <select
-                  value={scale.referenceInstrumentId}
-                  onChange={(event) =>
-                    updateScaleField("referenceInstrumentId", event.target.value)
-                  }
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm lg:col-span-4"
-                >
-                  <option value="">Seleziona incudine di riferimento</option>
-
-                  {referenceInstruments.map((instrument) => (
-                    <option key={instrument.id} value={instrument.id}>
-                      {instrument.name || "Incudine di riferimento"}
-                      {instrument.internal_code
-                        ? " - " + instrument.internal_code
-                        : ""}
-                      {getRange(instrument) ? " - " + getRange(instrument) : ""}
-                      {instrument.serial_number
-                        ? " - Mat. " + instrument.serial_number
-                        : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
+            <div className="mt-4">
+              <ReferenceInstrumentMultiSelect
+                instruments={referenceInstruments}
+                selectedIds={scale.referenceInstrumentIds}
+                onToggle={toggleReferenceInstrument}
+                label="Incudini di riferimento usate *"
+              />
             </div>
 
             <label className="mt-4 block space-y-1">
@@ -897,60 +893,69 @@ export default function EditSclerometricMeasurementsForm({
               />
             </label>
 
-            {selectedReferenceInstrument && selectedReferenceStatus && (
-              <div
-                className={
-                  "mt-5 rounded-xl border p-4 text-sm " +
-                  statusClass(selectedReferenceStatus)
-                }
-              >
-                <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
-                  <div>
-                    <p className="font-semibold">Stato</p>
-                    <p>{statusLabel(selectedReferenceStatus)}</p>
-                  </div>
+            {selectedReferenceInstruments.length > 0 && (
+              <div className="mt-5 space-y-3">
+                {selectedReferenceInstruments.map((instrument) => {
+                  const status = effectiveStatus(instrument);
+                  const blocked = isReferenceInstrumentBlocked(status);
 
-                  <div>
-                    <p className="font-semibold">Certificato</p>
-                    <p>{selectedReferenceInstrument.certificate_number ?? "-"}</p>
-                  </div>
+                  return (
+                    <div
+                      key={instrument.id}
+                      className={"rounded-xl border p-4 text-sm " + statusClass(status)}
+                    >
+                      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-6">
+                        <div>
+                          <p className="font-semibold">Incudine</p>
+                          <p>{instrument.name || "-"}</p>
+                        </div>
 
-                  <div>
-                    <p className="font-semibold">Scadenza</p>
-                    <p>
-                      {formatItalianDate(
-                        selectedReferenceInstrument.certificate_expiry
+                        <div>
+                          <p className="font-semibold">Stato</p>
+                          <p>{statusLabel(status)}</p>
+                        </div>
+
+                        <div>
+                          <p className="font-semibold">Certificato</p>
+                          <p>{instrument.certificate_number ?? "-"}</p>
+                        </div>
+
+                        <div>
+                          <p className="font-semibold">Scadenza</p>
+                          <p>{formatItalianDate(instrument.certificate_expiry)}</p>
+                        </div>
+
+                        <div>
+                          <p className="font-semibold">Campo</p>
+                          <p>{getRange(instrument) ?? "-"}</p>
+                        </div>
+
+                        <div>
+                          <p className="font-semibold">File</p>
+                          {instrument.certificate_file_url ? (
+                            <a
+                              href={instrument.certificate_file_url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="font-semibold hover:underline"
+                            >
+                              Apri certificato
+                            </a>
+                          ) : (
+                            <p>-</p>
+                          )}
+                        </div>
+                      </div>
+
+                      {blocked && (
+                        <p className="mt-3 font-medium">
+                          Blocco: questa incudine di riferimento è scaduta o
+                          fuori servizio.
+                        </p>
                       )}
-                    </p>
-                  </div>
-
-                  <div>
-                    <p className="font-semibold">Campo</p>
-                    <p>{getRange(selectedReferenceInstrument) ?? "-"}</p>
-                  </div>
-
-                  <div>
-                    <p className="font-semibold">File</p>
-                    {selectedReferenceInstrument.certificate_file_url ? (
-                      <a
-                        href={selectedReferenceInstrument.certificate_file_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="font-semibold hover:underline"
-                      >
-                        Apri certificato
-                      </a>
-                    ) : (
-                      <p>-</p>
-                    )}
-                  </div>
-                </div>
-
-                {hasBlockedReferenceInstrument && (
-                  <p className="mt-3 font-medium">
-                    Blocco: l&apos;incudine di riferimento è scaduta o fuori servizio.
-                  </p>
-                )}
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
@@ -1132,7 +1137,7 @@ export default function EditSclerometricMeasurementsForm({
         <button
           type="button"
           onClick={saveMeasurements}
-          disabled={isSaving || isReadOnly || Boolean(hasBlockedReferenceInstrument)}
+          disabled={isSaving || isReadOnly || hasBlockedReferenceInstrument}
           className="rounded-xl bg-emerald-700 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-slate-400"
         >
           {isReadOnly

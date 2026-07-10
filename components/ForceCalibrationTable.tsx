@@ -7,8 +7,12 @@ import {
   type ForcePointInput,
 } from "@/lib/calculations/force";
 import { supabase } from "@/lib/supabase";
-import { getCtForceReportDefaults } from "@/lib/report-defaults";
+import {
+  getCtForceReportDefaults,
+  combineReferenceInstrumentNames,
+} from "@/lib/report-defaults";
 import ForceErrorChart from "./ForceErrorChart";
+import ReferenceInstrumentMultiSelect from "./ReferenceInstrumentMultiSelect";
 
 type Customer = {
   id: string;
@@ -81,7 +85,7 @@ type EditableScale = {
   id: string;
   scaleName: string;
   scaleRange: string;
-  referenceInstrumentId: string;
+  referenceInstrumentIds: string[];
   notes: string;
   points: EditableForcePoint[];
 };
@@ -143,7 +147,7 @@ const initialScales: EditableScale[] = [
     id: "scala-1",
     scaleName: "Scala 1",
     scaleRange: "",
-    referenceInstrumentId: "",
+    referenceInstrumentIds: [],
     notes: "",
     points: defaultPointsScaleOne,
   },
@@ -464,9 +468,11 @@ export default function ForceCalibrationTable() {
   );
 
   const selectedReferenceInstruments = scales
-    .map((scale) =>
-      referenceInstruments.find(
-        (instrument) => instrument.id === scale.referenceInstrumentId
+    .flatMap((scale) =>
+      scale.referenceInstrumentIds.map((instrumentId) =>
+        referenceInstruments.find(
+          (instrument) => instrument.id === instrumentId
+        )
       )
     )
     .filter(Boolean) as ReferenceInstrument[];
@@ -620,7 +626,7 @@ export default function ForceCalibrationTable() {
             id: "scala-2",
             scaleName: "Scala 2",
             scaleRange: "",
-            referenceInstrumentId: "",
+            referenceInstrumentIds: [],
             notes: "",
             points: clonePoints(defaultPointsScaleTwo),
           },
@@ -642,6 +648,27 @@ export default function ForceCalibrationTable() {
       currentScales.map((scale) =>
         scale.id === scaleId ? { ...scale, [field]: value } : scale
       )
+    );
+  }
+
+  function toggleReferenceInstrument(scaleId: string, instrumentId: string) {
+    resetSaveState();
+
+    setScales((currentScales) =>
+      currentScales.map((scale) => {
+        if (scale.id !== scaleId) {
+          return scale;
+        }
+
+        const isSelected = scale.referenceInstrumentIds.includes(instrumentId);
+
+        return {
+          ...scale,
+          referenceInstrumentIds: isSelected
+            ? scale.referenceInstrumentIds.filter((id) => id !== instrumentId)
+            : [...scale.referenceInstrumentIds, instrumentId],
+        };
+      })
     );
   }
 
@@ -742,32 +769,34 @@ export default function ForceCalibrationTable() {
         );
       }
 
-      if (!scale.referenceInstrumentId) {
+      if (scale.referenceInstrumentIds.length === 0) {
         throw new Error(
-          "Seleziona lo strumento campione per " + scaleLabel + "."
+          "Seleziona almeno uno strumento campione per " + scaleLabel + "."
         );
       }
 
-      const referenceInstrument = getReferenceInstrument(
-        scale.referenceInstrumentId
-      );
+      const scaleReferenceInstruments = scale.referenceInstrumentIds
+        .map((instrumentId) => getReferenceInstrument(instrumentId))
+        .filter(Boolean) as ReferenceInstrument[];
 
-      if (!referenceInstrument) {
+      if (scaleReferenceInstruments.length !== scale.referenceInstrumentIds.length) {
         throw new Error(
           "Strumento campione non trovato per " + scaleLabel + "."
         );
       }
 
       if (
-        isReferenceInstrumentBlocked(
-          getEffectiveReferenceInstrumentStatus(
-            referenceInstrument.status,
-            referenceInstrument.certificate_expiry
+        scaleReferenceInstruments.some((referenceInstrument) =>
+          isReferenceInstrumentBlocked(
+            getEffectiveReferenceInstrumentStatus(
+              referenceInstrument.status,
+              referenceInstrument.certificate_expiry
+            )
           )
         )
       ) {
         throw new Error(
-          "Lo strumento campione selezionato per " +
+          "Uno strumento campione selezionato per " +
             scaleLabel +
             " è scaduto o fuori servizio."
         );
@@ -820,9 +849,11 @@ export default function ForceCalibrationTable() {
 
       validateScales();
 
-      const firstReferenceInstrument = getReferenceInstrument(
-        scales[0].referenceInstrumentId
-      );
+      const firstScaleReferenceInstruments = scales[0].referenceInstrumentIds
+        .map((instrumentId) => getReferenceInstrument(instrumentId))
+        .filter(Boolean) as ReferenceInstrument[];
+
+      const firstReferenceInstrument = firstScaleReferenceInstruments[0];
 
       if (!firstReferenceInstrument) {
         throw new Error("Seleziona lo strumento campione della prima scala.");
@@ -940,6 +971,11 @@ export default function ForceCalibrationTable() {
         environmentalConditions
       );
 
+      const firstScaleReferenceName =
+        firstScaleReferenceInstruments.length > 1
+          ? combineReferenceInstrumentNames(firstScaleReferenceInstruments)
+          : firstReferenceInstrument.name || "Strumento campione";
+
       const reportDefaults = getCtForceReportDefaults({
         customerName: selectedCustomer.business_name,
         customerNumber: selectedCustomer.customer_number,
@@ -948,11 +984,23 @@ export default function ForceCalibrationTable() {
         instrumentModel: selectedCustomerInstrument.model,
         instrumentSerial: selectedCustomerInstrument.serial_number,
         instrumentRange: selectedCustomerInstrument.measurement_range,
-        referenceName: firstReferenceInstrument.name,
-        referenceManufacturer: firstReferenceInstrument.manufacturer,
-        referenceModel: firstReferenceInstrument.model,
-        referenceSerial: firstReferenceInstrument.serial_number,
-        referenceInternalCode: firstReferenceInstrument.internal_code,
+        referenceName: firstScaleReferenceName,
+        referenceManufacturer:
+          firstScaleReferenceInstruments.length === 1
+            ? firstReferenceInstrument.manufacturer
+            : null,
+        referenceModel:
+          firstScaleReferenceInstruments.length === 1
+            ? firstReferenceInstrument.model
+            : null,
+        referenceSerial:
+          firstScaleReferenceInstruments.length === 1
+            ? firstReferenceInstrument.serial_number
+            : null,
+        referenceInternalCode:
+          firstScaleReferenceInstruments.length === 1
+            ? firstReferenceInstrument.internal_code
+            : null,
         location: location || selectedSite.name,
       });
 
@@ -1009,18 +1057,26 @@ export default function ForceCalibrationTable() {
       }
 
       const scaleRows = scales.map((scale, index) => {
-        const referenceInstrument = getReferenceInstrument(
-          scale.referenceInstrumentId
-        );
+        const scaleReferenceInstruments = scale.referenceInstrumentIds
+          .map((instrumentId) => getReferenceInstrument(instrumentId))
+          .filter(Boolean) as ReferenceInstrument[];
+        const primaryScaleReferenceInstrument = scaleReferenceInstruments[0];
 
         return {
           calibration_record_id: record.id,
           scale_order: index + 1,
           scale_name: scale.scaleName.trim(),
           scale_range: scale.scaleRange.trim() || null,
-          reference_instrument_id: referenceInstrument?.id ?? null,
-          reference_instrument_snapshot:
-            buildReferenceInstrumentSnapshot(referenceInstrument),
+          reference_instrument_id: primaryScaleReferenceInstrument?.id ?? null,
+          reference_instrument_snapshot: buildReferenceInstrumentSnapshot(
+            primaryScaleReferenceInstrument
+          ),
+          reference_instrument_ids: scaleReferenceInstruments.map(
+            (instrument) => instrument.id
+          ),
+          reference_instruments_snapshot: scaleReferenceInstruments.map(
+            (instrument) => buildReferenceInstrumentSnapshot(instrument)
+          ),
           notes: scale.notes.trim() || null,
         };
       });
@@ -1377,18 +1433,9 @@ export default function ForceCalibrationTable() {
       </div>
 
       {calculatedScales.map((scale, scaleIndex) => {
-        const selectedReferenceInstrument = getReferenceInstrument(
-          scale.referenceInstrumentId
-        );
-
-        const isScaleBlocked =
-          selectedReferenceInstrument &&
-          isReferenceInstrumentBlocked(
-      getEffectiveReferenceInstrumentStatus(
-        selectedReferenceInstrument.status,
-        selectedReferenceInstrument.certificate_expiry
-      )
-    );
+        const scaleReferenceInstruments = scale.referenceInstrumentIds
+          .map((instrumentId) => getReferenceInstrument(instrumentId))
+          .filter(Boolean) as ReferenceInstrument[];
 
         return (
           <div
@@ -1444,43 +1491,21 @@ export default function ForceCalibrationTable() {
                   />
                 </label>
 
-                <label className="space-y-1 lg:col-span-2">
-                  <span className="text-sm font-medium text-slate-700">
-                    Strumento campione usato *
-                  </span>
-                  <select
-                    value={scale.referenceInstrumentId}
-                    onChange={(event) =>
-                      updateScale(
-                        scale.id,
-                        "referenceInstrumentId",
-                        event.target.value
-                      )
+                <div className="lg:col-span-2">
+                  <ReferenceInstrumentMultiSelect
+                    instruments={referenceInstruments}
+                    selectedIds={scale.referenceInstrumentIds}
+                    onToggle={(instrumentId) =>
+                      toggleReferenceInstrument(scale.id, instrumentId)
                     }
-                    className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
-                  >
-                    <option value="">
-                      {isLoadingData
+                    label="Strumenti campione usati *"
+                    emptyLabel={
+                      isLoadingData
                         ? "Caricamento strumenti campione..."
-                        : "Seleziona strumento campione"}
-                    </option>
-
-                    {referenceInstruments.map((instrument) => (
-                      <option key={instrument.id} value={instrument.id}>
-                        {instrument.name}
-                        {instrument.internal_code
-                          ? " - " + instrument.internal_code
-                          : ""}
-                        {instrument.measurement_range
-                          ? " - " + instrument.measurement_range
-                          : ""}
-                        {instrument.serial_number
-                          ? " - Mat. " + instrument.serial_number
-                          : ""}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                        : undefined
+                    }
+                  />
+                </div>
               </div>
 
               <label className="mt-4 block space-y-1">
@@ -1497,88 +1522,86 @@ export default function ForceCalibrationTable() {
                 />
               </label>
 
-              {selectedReferenceInstrument && (
-                <div
-                  className={
-                    "mt-5 rounded-xl border p-4 text-sm " +
-                    statusClass(
-                      getEffectiveReferenceInstrumentStatus(
-                        selectedReferenceInstrument.status,
-                        selectedReferenceInstrument.certificate_expiry
-                      )
-                    )
-                  }
-                >
-                  <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-                    <div>
-                      <p className="font-semibold">Stato campione</p>
-                      <p>
-                        {statusLabel(
-                          getEffectiveReferenceInstrumentStatus(
-                            selectedReferenceInstrument.status,
-                            selectedReferenceInstrument.certificate_expiry
-                          )
+              {scaleReferenceInstruments.length > 0 && (
+                <div className="mt-5 space-y-3">
+                  {scaleReferenceInstruments.map((instrument) => {
+                    const effectiveStatus = getEffectiveReferenceInstrumentStatus(
+                      instrument.status,
+                      instrument.certificate_expiry
+                    );
+                    const instrumentBlocked =
+                      isReferenceInstrumentBlocked(effectiveStatus);
+
+                    return (
+                      <div
+                        key={instrument.id}
+                        className={
+                          "rounded-xl border p-4 text-sm " +
+                          statusClass(effectiveStatus)
+                        }
+                      >
+                        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
+                          <div>
+                            <p className="font-semibold">Strumento</p>
+                            <p>{instrument.name}</p>
+                          </div>
+
+                          <div>
+                            <p className="font-semibold">Stato campione</p>
+                            <p>{statusLabel(effectiveStatus)}</p>
+                          </div>
+
+                          <div>
+                            <p className="font-semibold">Certificato</p>
+                            <p>{instrument.certificate_number ?? "-"}</p>
+                          </div>
+
+                          <div>
+                            <p className="font-semibold">Scadenza</p>
+                            <p>
+                              {formatItalianDate(instrument.certificate_expiry)}
+                            </p>
+                          </div>
+
+                          <div>
+                            <p className="font-semibold">File certificato</p>
+                            {instrument.certificate_file_url ? (
+                              <a
+                                href={instrument.certificate_file_url}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="font-semibold text-emerald-700 hover:underline"
+                              >
+                                Apri certificato
+                              </a>
+                            ) : (
+                              <p className="text-amber-700">Mancante</p>
+                            )}
+                          </div>
+
+                          <div>
+                            <p className="font-semibold">Campo</p>
+                            <p>{instrument.measurement_range ?? "-"}</p>
+                          </div>
+                        </div>
+
+                        {effectiveStatus === "expiring" && (
+                          <p className="mt-3 font-medium">
+                            Attenzione: il campione è in scadenza. La verifica
+                            può essere salvata, ma il dato deve essere
+                            controllato.
+                          </p>
                         )}
-                      </p>
-                    </div>
 
-                    <div>
-                      <p className="font-semibold">Certificato</p>
-                      <p>
-                        {selectedReferenceInstrument.certificate_number ?? "-"}
-                      </p>
-                    </div>
-
-                    <div>
-                      <p className="font-semibold">Scadenza</p>
-                      <p>
-                        {formatItalianDate(
-                          selectedReferenceInstrument.certificate_expiry
+                        {instrumentBlocked && (
+                          <p className="mt-3 font-medium">
+                            Blocco: il campione è scaduto o fuori servizio.
+                            Seleziona un altro campione valido.
+                          </p>
                         )}
-                      </p>
-                    </div>
-
-                    <div>
-                      <p className="font-semibold">File certificato</p>
-                      {selectedReferenceInstrument.certificate_file_url ? (
-                        <a
-                          href={selectedReferenceInstrument.certificate_file_url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="font-semibold text-emerald-700 hover:underline"
-                        >
-                          Apri certificato
-                        </a>
-                      ) : (
-                        <p className="text-amber-700">Mancante</p>
-                      )}
-                    </div>
-
-
-                    <div>
-                      <p className="font-semibold">Campo</p>
-                      <p>
-                        {selectedReferenceInstrument.measurement_range ?? "-"}
-                      </p>
-                    </div>
-                  </div>
-
-                  {getEffectiveReferenceInstrumentStatus(
-                    selectedReferenceInstrument.status,
-                    selectedReferenceInstrument.certificate_expiry
-                  ) === "expiring" && (
-                    <p className="mt-3 font-medium">
-                      Attenzione: il campione è in scadenza. La verifica può
-                      essere salvata, ma il dato deve essere controllato.
-                    </p>
-                  )}
-
-                  {isScaleBlocked && (
-                    <p className="mt-3 font-medium">
-                      Blocco: il campione è scaduto o fuori servizio. Seleziona
-                      un altro campione valido.
-                    </p>
-                  )}
+                      </div>
+                    );
+                  })}
                 </div>
               )}
             </div>

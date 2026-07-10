@@ -61,6 +61,20 @@ function formatItalianLongDate(dateIso: string | null | undefined) {
   }).format(date);
 }
 
+export function combineReferenceInstrumentNames(
+  instruments: Array<{ name?: string | null; internal_code?: string | null }>
+) {
+  return instruments
+    .map((instrument) => {
+      const name = clean(instrument.name, "strumento campione");
+
+      return instrument.internal_code
+        ? name + " (cod. " + instrument.internal_code + ")"
+        : name;
+    })
+    .join(", ");
+}
+
 function referenceDescription(input: ReportDefaultsInput) {
   const parts = [
     clean(input.referenceName, "strumento campione"),

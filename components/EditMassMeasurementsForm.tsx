@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import ReferenceInstrumentMultiSelect from "@/components/ReferenceInstrumentMultiSelect";
 
 type ReferenceInstrument = {
   id: string;
@@ -30,6 +31,8 @@ type InitialScale = {
   scale_range: string | null;
   reference_instrument_id: string | null;
   reference_instrument_snapshot: Record<string, unknown> | null;
+  reference_instrument_ids?: string[] | null;
+  reference_instruments_snapshot?: Record<string, unknown>[] | null;
   notes: string | null;
 };
 
@@ -251,13 +254,7 @@ function getRange(instrument: {
   return instrument.measurement_range || instrument.range || null;
 }
 
-function buildReferenceInstrumentSnapshot(
-  instrument: ReferenceInstrument | undefined
-) {
-  if (!instrument) {
-    return null;
-  }
-
+function buildReferenceInstrumentSnapshot(instrument: ReferenceInstrument) {
   return {
     instrument_id: instrument.id,
     name: instrument.name ?? null,
@@ -370,8 +367,19 @@ export default function EditMassMeasurementsForm({
   initialMeasurements,
   referenceInstruments,
 }: EditMassMeasurementsFormProps) {
-  const [referenceInstrumentId, setReferenceInstrumentId] = useState(
-    () => initialScales[0]?.reference_instrument_id || ""
+  const [referenceInstrumentIds, setReferenceInstrumentIds] = useState<string[]>(
+    () => {
+      const firstScale = initialScales[0];
+      if (
+        firstScale?.reference_instrument_ids &&
+        firstScale.reference_instrument_ids.length > 0
+      ) {
+        return firstScale.reference_instrument_ids;
+      }
+      return firstScale?.reference_instrument_id
+        ? [firstScale.reference_instrument_id]
+        : [];
+    }
   );
   const [scaleNotes, setScaleNotes] = useState(
     () => initialScales[0]?.notes || ""
@@ -420,20 +428,28 @@ export default function EditMassMeasurementsForm({
     return average - calculatedEccentricity[0].repeatabilityPercent;
   }, [calculatedEccentricity]);
 
-  const selectedReferenceInstrument = referenceInstruments.find(
-    (instrument) => instrument.id === referenceInstrumentId
+  const selectedReferenceInstruments = useMemo(() => {
+    return referenceInstruments.filter((instrument) =>
+      referenceInstrumentIds.includes(instrument.id)
+    );
+  }, [referenceInstruments, referenceInstrumentIds]);
+
+  const hasBlockedReferenceInstrument = selectedReferenceInstruments.some(
+    (instrument) => isReferenceInstrumentBlocked(effectiveStatus(instrument))
   );
-
-  const selectedReferenceStatus = selectedReferenceInstrument
-    ? effectiveStatus(selectedReferenceInstrument)
-    : null;
-
-  const hasBlockedReferenceInstrument =
-    selectedReferenceStatus && isReferenceInstrumentBlocked(selectedReferenceStatus);
 
   function resetSaveState() {
     setSaveMessage("");
     setSaveError("");
+  }
+
+  function toggleReferenceInstrument(instrumentId: string) {
+    resetSaveState();
+    setReferenceInstrumentIds((current) =>
+      current.includes(instrumentId)
+        ? current.filter((id) => id !== instrumentId)
+        : [...current, instrumentId]
+    );
   }
 
   function updatePoint(
@@ -496,16 +512,14 @@ export default function EditMassMeasurementsForm({
   }
 
   function validate() {
-    if (!referenceInstrumentId) {
-      throw new Error("Seleziona la massa campione usata.");
-    }
-
-    if (!selectedReferenceInstrument) {
-      throw new Error("Massa campione usata non trovata.");
+    if (selectedReferenceInstruments.length === 0) {
+      throw new Error("Seleziona almeno una massa campione usata.");
     }
 
     if (hasBlockedReferenceInstrument) {
-      throw new Error("La massa campione usata è scaduta o fuori servizio.");
+      throw new Error(
+        "Una delle masse campione usate è scaduta o fuori servizio."
+      );
     }
 
     const allPoints = [
@@ -541,9 +555,10 @@ export default function EditMassMeasurementsForm({
       return scaleId;
     }
 
-    if (!selectedReferenceInstrument) {
-      throw new Error("Massa campione usata non selezionata.");
-    }
+    const referenceSnapshots = selectedReferenceInstruments.map(
+      buildReferenceInstrumentSnapshot
+    );
+    const primaryReference = selectedReferenceInstruments[0];
 
     const { data: insertedScale, error: insertScaleError } = await supabase
       .from("calibration_record_scales")
@@ -552,10 +567,12 @@ export default function EditMassMeasurementsForm({
         scale_order: scaleOrder,
         scale_name: scaleName,
         scale_range: null,
-        reference_instrument_id: selectedReferenceInstrument.id,
-        reference_instrument_snapshot: buildReferenceInstrumentSnapshot(
-          selectedReferenceInstrument
+        reference_instrument_id: primaryReference.id,
+        reference_instrument_snapshot: referenceSnapshots[0],
+        reference_instrument_ids: selectedReferenceInstruments.map(
+          (instrument) => instrument.id
         ),
+        reference_instruments_snapshot: referenceSnapshots,
         notes: scaleNotes.trim() || null,
       })
       .select("id")
@@ -578,14 +595,21 @@ export default function EditMassMeasurementsForm({
     points: EditableWeightPoint[],
     calculatedPoints: CalculatedWeightPoint[]
   ) {
+    const referenceSnapshots = selectedReferenceInstruments.map(
+      buildReferenceInstrumentSnapshot
+    );
+    const primaryReference = selectedReferenceInstruments[0];
+
     const { error: scaleError } = await supabase
       .from("calibration_record_scales")
       .update({
         scale_name: scaleName,
-        reference_instrument_id: selectedReferenceInstrument!.id,
-        reference_instrument_snapshot: buildReferenceInstrumentSnapshot(
-          selectedReferenceInstrument
+        reference_instrument_id: primaryReference.id,
+        reference_instrument_snapshot: referenceSnapshots[0],
+        reference_instrument_ids: selectedReferenceInstruments.map(
+          (instrument) => instrument.id
         ),
+        reference_instruments_snapshot: referenceSnapshots,
         notes: scaleNotes.trim() || null,
       })
       .eq("id", scaleId);
@@ -912,107 +936,96 @@ export default function EditMassMeasurementsForm({
       <fieldset disabled={isReadOnly} className="space-y-6 disabled:opacity-70">
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="text-lg font-semibold text-slate-900">
-            Massa campione usata
+            Masse campione usate
           </h2>
 
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <label className="space-y-1">
-              <span className="text-sm font-medium text-slate-700">
-                Massa campione usata *
-              </span>
-              <select
-                value={referenceInstrumentId}
-                onChange={(event) => {
-                  resetSaveState();
-                  setReferenceInstrumentId(event.target.value);
-                }}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
-              >
-                <option value="">Seleziona massa campione</option>
-
-                {referenceInstruments.map((instrument) => (
-                  <option key={instrument.id} value={instrument.id}>
-                    {instrument.name || "Massa campione"}
-                    {instrument.internal_code
-                      ? " - " + instrument.internal_code
-                      : ""}
-                    {getRange(instrument) ? " - " + getRange(instrument) : ""}
-                    {instrument.serial_number
-                      ? " - Mat. " + instrument.serial_number
-                      : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="space-y-1">
-              <span className="text-sm font-medium text-slate-700">
-                Note (comuni alle tre prove)
-              </span>
-              <input
-                value={scaleNotes}
-                onChange={(event) => {
-                  resetSaveState();
-                  setScaleNotes(event.target.value);
-                }}
-                placeholder="Eventuali note"
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-              />
-            </label>
+          <div className="mt-5">
+            <ReferenceInstrumentMultiSelect
+              instruments={referenceInstruments}
+              selectedIds={referenceInstrumentIds}
+              onToggle={toggleReferenceInstrument}
+              label="Masse campione usate *"
+            />
           </div>
 
-          {selectedReferenceInstrument && selectedReferenceStatus && (
-            <div
-              className={
-                "mt-5 rounded-xl border p-4 text-sm " +
-                statusClass(selectedReferenceStatus)
-              }
-            >
-              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
-                <div>
-                  <p className="font-semibold">Stato</p>
-                  <p>{statusLabel(selectedReferenceStatus)}</p>
-                </div>
+          <label className="mt-4 block space-y-1">
+            <span className="text-sm font-medium text-slate-700">
+              Note (comuni alle tre prove)
+            </span>
+            <input
+              value={scaleNotes}
+              onChange={(event) => {
+                resetSaveState();
+                setScaleNotes(event.target.value);
+              }}
+              placeholder="Eventuali note"
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+            />
+          </label>
 
-                <div>
-                  <p className="font-semibold">Certificato</p>
-                  <p>{selectedReferenceInstrument.certificate_number ?? "-"}</p>
-                </div>
+          {selectedReferenceInstruments.length > 0 && (
+            <div className="mt-5 space-y-3">
+              {selectedReferenceInstruments.map((instrument) => {
+                const status = effectiveStatus(instrument);
+                const blocked = isReferenceInstrumentBlocked(status);
 
-                <div>
-                  <p className="font-semibold">Scadenza</p>
-                  <p>
-                    {formatItalianDate(selectedReferenceInstrument.certificate_expiry)}
-                  </p>
-                </div>
+                return (
+                  <div
+                    key={instrument.id}
+                    className={"rounded-xl border p-4 text-sm " + statusClass(status)}
+                  >
+                    <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-6">
+                      <div>
+                        <p className="font-semibold">Massa</p>
+                        <p>{instrument.name || "-"}</p>
+                      </div>
 
-                <div>
-                  <p className="font-semibold">Campo</p>
-                  <p>{getRange(selectedReferenceInstrument) ?? "-"}</p>
-                </div>
+                      <div>
+                        <p className="font-semibold">Stato</p>
+                        <p>{statusLabel(status)}</p>
+                      </div>
 
-                <div>
-                  <p className="font-semibold">File</p>
-                  {selectedReferenceInstrument.certificate_file_url ? (
-                    <a
-                      href={selectedReferenceInstrument.certificate_file_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="font-semibold hover:underline"
-                    >
-                      Apri certificato
-                    </a>
-                  ) : (
-                    <p>-</p>
-                  )}
-                </div>
-              </div>
+                      <div>
+                        <p className="font-semibold">Certificato</p>
+                        <p>{instrument.certificate_number ?? "-"}</p>
+                      </div>
 
-              {hasBlockedReferenceInstrument && (
-                <p className="mt-3 font-medium">
-                  Blocco: la massa campione è scaduta o fuori servizio.
-                </p>
-              )}
+                      <div>
+                        <p className="font-semibold">Scadenza</p>
+                        <p>{formatItalianDate(instrument.certificate_expiry)}</p>
+                      </div>
+
+                      <div>
+                        <p className="font-semibold">Campo</p>
+                        <p>{getRange(instrument) ?? "-"}</p>
+                      </div>
+
+                      <div>
+                        <p className="font-semibold">File</p>
+                        {instrument.certificate_file_url ? (
+                          <a
+                            href={instrument.certificate_file_url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="font-semibold hover:underline"
+                          >
+                            Apri certificato
+                          </a>
+                        ) : (
+                          <p>-</p>
+                        )}
+                      </div>
+                    </div>
+
+                    {blocked && (
+                      <p className="mt-3 font-medium">
+                        Blocco: questa massa campione è scaduta o fuori
+                        servizio.
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </section>
@@ -1170,7 +1183,7 @@ export default function EditMassMeasurementsForm({
         <button
           type="button"
           onClick={saveMeasurements}
-          disabled={isSaving || isReadOnly || Boolean(hasBlockedReferenceInstrument)}
+          disabled={isSaving || isReadOnly || hasBlockedReferenceInstrument}
           className="rounded-xl bg-emerald-700 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-slate-400"
         >
           {isReadOnly

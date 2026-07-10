@@ -8,6 +8,7 @@ import {
 } from "@/lib/calculations/force";
 import { supabase } from "@/lib/supabase";
 import ForceErrorChart from "./ForceErrorChart";
+import ReferenceInstrumentMultiSelect from "./ReferenceInstrumentMultiSelect";
 
 type ReferenceInstrument = {
   id: string;
@@ -32,6 +33,8 @@ type InitialScale = {
   scale_range: string | null;
   reference_instrument_id: string | null;
   reference_instrument_snapshot: Record<string, unknown> | null;
+  reference_instrument_ids?: string[] | null;
+  reference_instruments_snapshot?: Record<string, unknown>[] | null;
   notes: string | null;
 };
 
@@ -70,7 +73,7 @@ type EditableScale = {
   scaleId: string;
   scaleName: string;
   scaleRange: string;
-  referenceInstrumentId: string;
+  referenceInstrumentIds: string[];
   notes: string;
   points: EditablePoint[];
 };
@@ -247,12 +250,19 @@ function buildEditableScales(
         .filter((measurement) => measurement.scale_id === scale.id)
         .sort((a, b) => a.point_order - b.point_order);
 
+      const referenceInstrumentIds =
+        scale.reference_instrument_ids && scale.reference_instrument_ids.length > 0
+          ? scale.reference_instrument_ids
+          : scale.reference_instrument_id
+            ? [scale.reference_instrument_id]
+            : [];
+
       return {
         id: scale.id,
         scaleId: scale.id,
         scaleName: scale.scale_name || "Scala " + String(index + 1),
         scaleRange: scale.scale_range || "",
-        referenceInstrumentId: scale.reference_instrument_id || "",
+        referenceInstrumentIds,
         notes: scale.notes || "",
         points: scaleMeasurements.map((measurement) => ({
           id: measurement.id || crypto.randomUUID(),
@@ -297,17 +307,19 @@ export default function EditForceMeasurementsForm({
     });
   }, [scales]);
 
-  const hasBlockedReferenceInstrument = scales.some((scale) => {
-    const instrument = referenceInstruments.find(
-      (item) => item.id === scale.referenceInstrumentId
-    );
+  const hasBlockedReferenceInstrument = scales.some((scale) =>
+    scale.referenceInstrumentIds.some((instrumentId) => {
+      const instrument = referenceInstruments.find(
+        (item) => item.id === instrumentId
+      );
 
-    if (!instrument) {
-      return false;
-    }
+      if (!instrument) {
+        return false;
+      }
 
-    return isReferenceInstrumentBlocked(instrument.status);
-  });
+      return isReferenceInstrumentBlocked(instrument.status);
+    })
+  );
 
   function resetSaveState() {
     setSaveMessage("");
@@ -322,7 +334,10 @@ export default function EditForceMeasurementsForm({
 
   function updateScale(
     scaleId: string,
-    field: keyof Omit<EditableScale, "id" | "scaleId" | "points">,
+    field: keyof Omit<
+      EditableScale,
+      "id" | "scaleId" | "points" | "referenceInstrumentIds"
+    >,
     value: string
   ) {
     resetSaveState();
@@ -331,6 +346,27 @@ export default function EditForceMeasurementsForm({
       currentScales.map((scale) =>
         scale.id === scaleId ? { ...scale, [field]: value } : scale
       )
+    );
+  }
+
+  function toggleReferenceInstrument(scaleId: string, instrumentId: string) {
+    resetSaveState();
+
+    setScales((currentScales) =>
+      currentScales.map((scale) => {
+        if (scale.id !== scaleId) {
+          return scale;
+        }
+
+        const isSelected = scale.referenceInstrumentIds.includes(instrumentId);
+
+        return {
+          ...scale,
+          referenceInstrumentIds: isSelected
+            ? scale.referenceInstrumentIds.filter((id) => id !== instrumentId)
+            : [...scale.referenceInstrumentIds, instrumentId],
+        };
+      })
     );
   }
 
@@ -424,19 +460,27 @@ export default function EditForceMeasurementsForm({
         throw new Error("Inserisci il nome della scala " + String(index + 1) + ".");
       }
 
-      if (!scale.referenceInstrumentId) {
-        throw new Error("Seleziona lo strumento campione usato per " + scaleLabel + ".");
+      if (scale.referenceInstrumentIds.length === 0) {
+        throw new Error(
+          "Seleziona almeno uno strumento campione usato per " + scaleLabel + "."
+        );
       }
 
-      const referenceInstrument = getReferenceInstrument(scale.referenceInstrumentId);
+      const scaleReferenceInstruments = scale.referenceInstrumentIds
+        .map((instrumentId) => getReferenceInstrument(instrumentId))
+        .filter(Boolean) as ReferenceInstrument[];
 
-      if (!referenceInstrument) {
+      if (scaleReferenceInstruments.length !== scale.referenceInstrumentIds.length) {
         throw new Error("Strumento campione usato non trovato per " + scaleLabel + ".");
       }
 
-      if (isReferenceInstrumentBlocked(referenceInstrument.status)) {
+      if (
+        scaleReferenceInstruments.some((referenceInstrument) =>
+          isReferenceInstrumentBlocked(referenceInstrument.status)
+        )
+      ) {
         throw new Error(
-          "Lo strumento campione usato per " +
+          "Uno strumento campione usato per " +
             scaleLabel +
             " è scaduto o fuori servizio."
         );
@@ -483,9 +527,10 @@ export default function EditForceMeasurementsForm({
 
       for (let scaleIndex = 0; scaleIndex < calculatedScales.length; scaleIndex += 1) {
         const scale = calculatedScales[scaleIndex];
-        const referenceInstrument = getReferenceInstrument(
-          scale.referenceInstrumentId
-        );
+        const scaleReferenceInstruments = scale.referenceInstrumentIds
+          .map((instrumentId) => getReferenceInstrument(instrumentId))
+          .filter(Boolean) as ReferenceInstrument[];
+        const primaryReferenceInstrument = scaleReferenceInstruments[0];
 
         const { error: scaleError } = await supabase
           .from("calibration_record_scales")
@@ -493,9 +538,16 @@ export default function EditForceMeasurementsForm({
             scale_order: scaleIndex + 1,
             scale_name: scale.scaleName.trim(),
             scale_range: scale.scaleRange.trim() || null,
-            reference_instrument_id: referenceInstrument?.id ?? null,
-            reference_instrument_snapshot:
-              buildReferenceInstrumentSnapshot(referenceInstrument),
+            reference_instrument_id: primaryReferenceInstrument?.id ?? null,
+            reference_instrument_snapshot: buildReferenceInstrumentSnapshot(
+              primaryReferenceInstrument
+            ),
+            reference_instrument_ids: scaleReferenceInstruments.map(
+              (instrument) => instrument.id
+            ),
+            reference_instruments_snapshot: scaleReferenceInstruments.map(
+              (instrument) => buildReferenceInstrumentSnapshot(instrument)
+            ),
             notes: scale.notes.trim() || null,
           })
           .eq("id", scale.scaleId);
@@ -603,13 +655,9 @@ export default function EditForceMeasurementsForm({
 
       <fieldset disabled={isReadOnly} className="space-y-6 disabled:opacity-70">
         {calculatedScales.map((scale, scaleIndex) => {
-          const selectedReferenceInstrument = getReferenceInstrument(
-            scale.referenceInstrumentId
-          );
-
-          const isScaleBlocked =
-            selectedReferenceInstrument &&
-            isReferenceInstrumentBlocked(selectedReferenceInstrument.status);
+          const scaleReferenceInstruments = scale.referenceInstrumentIds
+            .map((instrumentId) => getReferenceInstrument(instrumentId))
+            .filter(Boolean) as ReferenceInstrument[];
 
           return (
             <section
@@ -665,39 +713,16 @@ export default function EditForceMeasurementsForm({
                     />
                   </label>
 
-                  <label className="space-y-1 lg:col-span-2">
-                    <span className="text-sm font-medium text-slate-700">
-                      Strumento campione usato *
-                    </span>
-                    <select
-                      value={scale.referenceInstrumentId}
-                      onChange={(event) =>
-                        updateScale(
-                          scale.id,
-                          "referenceInstrumentId",
-                          event.target.value
-                        )
+                  <div className="lg:col-span-2">
+                    <ReferenceInstrumentMultiSelect
+                      instruments={referenceInstruments}
+                      selectedIds={scale.referenceInstrumentIds}
+                      onToggle={(instrumentId) =>
+                        toggleReferenceInstrument(scale.id, instrumentId)
                       }
-                      className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
-                    >
-                      <option value="">Seleziona strumento campione</option>
-
-                      {referenceInstruments.map((instrument) => (
-                        <option key={instrument.id} value={instrument.id}>
-                          {instrument.name}
-                          {instrument.internal_code
-                            ? " - " + instrument.internal_code
-                            : ""}
-                          {instrument.measurement_range
-                            ? " - " + instrument.measurement_range
-                            : ""}
-                          {instrument.serial_number
-                            ? " - Mat. " + instrument.serial_number
-                            : ""}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
+                      label="Strumenti campione usati *"
+                    />
+                  </div>
                 </div>
 
                 <label className="mt-4 block space-y-1">
@@ -714,48 +739,53 @@ export default function EditForceMeasurementsForm({
                   />
                 </label>
 
-                {selectedReferenceInstrument && (
-                  <div
-                    className={
-                      "mt-5 rounded-xl border p-4 text-sm " +
-                      statusClass(selectedReferenceInstrument.status)
-                    }
-                  >
-                    <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-                      <div>
-                        <p className="font-semibold">Stato</p>
-                        <p>{statusLabel(selectedReferenceInstrument.status)}</p>
-                      </div>
+                {scaleReferenceInstruments.length > 0 && (
+                  <div className="mt-5 space-y-3">
+                    {scaleReferenceInstruments.map((instrument) => (
+                      <div
+                        key={instrument.id}
+                        className={
+                          "rounded-xl border p-4 text-sm " +
+                          statusClass(instrument.status)
+                        }
+                      >
+                        <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
+                          <div>
+                            <p className="font-semibold">Strumento</p>
+                            <p>{instrument.name}</p>
+                          </div>
 
-                      <div>
-                        <p className="font-semibold">Certificato</p>
-                        <p>
-                          {selectedReferenceInstrument.certificate_number ?? "-"}
-                        </p>
-                      </div>
+                          <div>
+                            <p className="font-semibold">Stato</p>
+                            <p>{statusLabel(instrument.status)}</p>
+                          </div>
 
-                      <div>
-                        <p className="font-semibold">Scadenza</p>
-                        <p>
-                          {formatItalianDate(
-                            selectedReferenceInstrument.certificate_expiry
-                          )}
-                        </p>
-                      </div>
+                          <div>
+                            <p className="font-semibold">Certificato</p>
+                            <p>{instrument.certificate_number ?? "-"}</p>
+                          </div>
 
-                      <div>
-                        <p className="font-semibold">Campo</p>
-                        <p>
-                          {selectedReferenceInstrument.measurement_range ?? "-"}
-                        </p>
-                      </div>
-                    </div>
+                          <div>
+                            <p className="font-semibold">Scadenza</p>
+                            <p>
+                              {formatItalianDate(instrument.certificate_expiry)}
+                            </p>
+                          </div>
 
-                    {isScaleBlocked && (
-                      <p className="mt-3 font-medium">
-                        Blocco: lo strumento campione è scaduto o fuori servizio.
-                      </p>
-                    )}
+                          <div>
+                            <p className="font-semibold">Campo</p>
+                            <p>{instrument.measurement_range ?? "-"}</p>
+                          </div>
+                        </div>
+
+                        {isReferenceInstrumentBlocked(instrument.status) && (
+                          <p className="mt-3 font-medium">
+                            Blocco: lo strumento campione è scaduto o fuori
+                            servizio.
+                          </p>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 )}
               </div>

@@ -312,7 +312,7 @@ export default function EditReferenceInstrumentForm({
           </label>
 
           <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">Campo / fondo scala</span>
+            <span className="text-sm font-medium text-slate-700">Fondo scala</span>
             <input
               value={measurementRange}
               onChange={(event) => setMeasurementRange(event.target.value)}
