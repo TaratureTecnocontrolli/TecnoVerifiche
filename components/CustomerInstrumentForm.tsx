@@ -9,33 +9,97 @@ type Customer = {
   business_name: string;
 };
 
-type CustomerSite = {
-  id: string;
-  customer_id: string;
-  name: string;
-  city: string | null;
-  province: string | null;
+type MeasurementOption = {
+  label: string;
+  quantity: string;
 };
+
+const measurementOptions: MeasurementOption[] = [
+  {
+    label: "Forza",
+    quantity: "Forza",
+  },
+  {
+    label: "Pressione",
+    quantity: "Pressione",
+  },
+  {
+    label: "Coppia",
+    quantity: "Coppia",
+  },
+  {
+    label: "Portata / volume",
+    quantity: "Portata / volume",
+  },
+  {
+    label: "Temperatura",
+    quantity: "Temperatura",
+  },
+  {
+    label: "Dimensionale",
+    quantity: "Dimensionale",
+  },
+  {
+    label: "Massa",
+    quantity: "Massa",
+  },
+  {
+    label: "Sclerometro / rimbalzo",
+    quantity: "Sclerometro / rimbalzo",
+  },
+  {
+    label: "Pull-off",
+    quantity: "Pull-off",
+  },
+  {
+    label: "Altro",
+    quantity: "Altro",
+  },
+];
+
+const unitOptions = [
+  "kN",
+  "N",
+  "daN",
+  "MN",
+  "bar",
+  "mbar",
+  "Pa",
+  "kPa",
+  "MPa",
+  "Nm",
+  "Ncm",
+  "l",
+  "ml",
+  "m³",
+  "l/min",
+  "l/h",
+  "m³/h",
+  "°C",
+  "mm",
+  "cm",
+  "m",
+  "kg",
+  "g",
+  "indice di rimbalzo",
+  "%",
+  "Altro",
+];
 
 export default function CustomerInstrumentForm() {
   const router = useRouter();
 
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const [sites, setSites] = useState<CustomerSite[]>([]);
-
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
-  const [selectedSiteId, setSelectedSiteId] = useState("");
 
   const [name, setName] = useState("");
   const [manufacturer, setManufacturer] = useState("");
   const [model, setModel] = useState("");
   const [serialNumber, setSerialNumber] = useState("");
-  const [internalCode, setInternalCode] = useState("");
   const [measurementQuantity, setMeasurementQuantity] = useState("");
   const [unit, setUnit] = useState("");
+  const [customUnit, setCustomUnit] = useState("");
   const [measurementRange, setMeasurementRange] = useState("");
-  const [resolution, setResolution] = useState("");
-  const [acceptanceClass, setAcceptanceClass] = useState("");
   const [notes, setNotes] = useState("");
 
   const [isLoadingCustomers, setIsLoadingCustomers] = useState(true);
@@ -43,15 +107,11 @@ export default function CustomerInstrumentForm() {
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
 
-  const filteredSites = useMemo(() => {
-    return sites.filter((site) => site.customer_id === selectedCustomerId);
-  }, [sites, selectedCustomerId]);
+  const selectedCustomer = useMemo(() => {
+    return customers.find((customer) => customer.id === selectedCustomerId);
+  }, [customers, selectedCustomerId]);
 
-  const selectedCustomer = customers.find(
-    (customer) => customer.id === selectedCustomerId
-  );
-
-  const selectedSite = sites.find((site) => site.id === selectedSiteId);
+  const effectiveUnit = unit === "Altro" ? customUnit.trim() : unit;
 
   useEffect(() => {
     async function loadData() {
@@ -67,37 +127,16 @@ export default function CustomerInstrumentForm() {
       if (customersError) {
         setLoadError(customersError.message);
         setCustomers([]);
-        setSites([]);
-        setIsLoadingCustomers(false);
-        return;
-      }
-
-      const { data: sitesData, error: sitesError } = await supabase
-        .from("customer_sites")
-        .select("id, customer_id, name, city, province")
-        .eq("is_active", true)
-        .order("name", { ascending: true });
-
-      if (sitesError) {
-        setLoadError(sitesError.message);
-        setCustomers((customersData ?? []) as Customer[]);
-        setSites([]);
         setIsLoadingCustomers(false);
         return;
       }
 
       setCustomers((customersData ?? []) as Customer[]);
-      setSites((sitesData ?? []) as CustomerSite[]);
       setIsLoadingCustomers(false);
     }
 
     loadData();
   }, []);
-
-  function handleCustomerChange(customerId: string) {
-    setSelectedCustomerId(customerId);
-    setSelectedSiteId("");
-  }
 
   async function saveInstrument(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -110,44 +149,35 @@ export default function CustomerInstrumentForm() {
         throw new Error("Seleziona il cliente.");
       }
 
-      if (!selectedSite) {
-        throw new Error("Seleziona la sede del cliente.");
-      }
-
       if (!name.trim()) {
         throw new Error("Inserisci almeno il nome dello strumento cliente.");
       }
 
-      const siteLabel = [
-        selectedSite.name,
-        selectedSite.city,
-        selectedSite.province,
-      ]
-        .filter(Boolean)
-        .join(" - ");
+      if (unit === "Altro" && !customUnit.trim()) {
+        throw new Error("Inserisci l’unità di misura personalizzata.");
+      }
 
       const { error } = await supabase.from("customer_instruments").insert({
         customer_id: selectedCustomer.id,
-        site_id: selectedSite.id,
+        site_id: null,
 
         /*
-          Manteniamo ancora questi due campi testuali per compatibilità
-          con le pagine già create. Più avanti, quando tutto userà le relazioni,
-          potremo anche non considerarli più.
+          Lo strumento viene collegato al cliente, non al luogo prove.
+          Il luogo prove viene scelto di volta in volta durante la nuova verifica.
         */
         customer_name: selectedCustomer.business_name,
-        site: siteLabel || selectedSite.name,
+        site: null,
 
         name: name.trim(),
         manufacturer: manufacturer.trim() || null,
         model: model.trim() || null,
         serial_number: serialNumber.trim() || null,
-        internal_code: internalCode.trim() || null,
+        internal_code: null,
         measurement_quantity: measurementQuantity.trim() || null,
-        unit: unit.trim() || null,
+        unit: effectiveUnit || null,
         measurement_range: measurementRange.trim() || null,
-        resolution: resolution.trim() || null,
-        acceptance_class: acceptanceClass.trim() || null,
+        resolution: null,
+        acceptance_class: null,
         notes: notes.trim() || null,
       });
 
@@ -172,13 +202,11 @@ export default function CustomerInstrumentForm() {
   return (
     <form onSubmit={saveInstrument} className="space-y-6">
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold text-slate-900">
-          Cliente e sede
-        </h2>
+        <h2 className="text-lg font-semibold text-slate-900">Cliente</h2>
 
         {loadError && (
           <div className="mt-4 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">
-            Errore caricamento clienti/sedi: {loadError}
+            Errore caricamento clienti: {loadError}
           </div>
         )}
 
@@ -189,11 +217,13 @@ export default function CustomerInstrumentForm() {
             </span>
             <select
               value={selectedCustomerId}
-              onChange={(event) => handleCustomerChange(event.target.value)}
+              onChange={(event) => setSelectedCustomerId(event.target.value)}
               className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
             >
               <option value="">
-                {isLoadingCustomers ? "Caricamento clienti..." : "Seleziona cliente"}
+                {isLoadingCustomers
+                  ? "Caricamento clienti..."
+                  : "Seleziona cliente"}
               </option>
 
               {customers.map((customer) => (
@@ -203,44 +233,13 @@ export default function CustomerInstrumentForm() {
               ))}
             </select>
           </label>
-
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">
-              Sede *
-            </span>
-            <select
-              value={selectedSiteId}
-              onChange={(event) => setSelectedSiteId(event.target.value)}
-              disabled={!selectedCustomerId}
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100"
-            >
-              <option value="">
-                {!selectedCustomerId
-                  ? "Seleziona prima il cliente"
-                  : "Seleziona sede"}
-              </option>
-
-              {filteredSites.map((site) => (
-                <option key={site.id} value={site.id}>
-                  {site.name}
-                  {site.city ? ` - ${site.city}` : ""}
-                  {site.province ? ` (${site.province})` : ""}
-                </option>
-              ))}
-            </select>
-          </label>
         </div>
 
-        {selectedCustomer && selectedSite && (
+        {selectedCustomer && (
           <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
             <p>
               <strong>Cliente selezionato:</strong>{" "}
               {selectedCustomer.business_name}
-            </p>
-            <p>
-              <strong>Sede selezionata:</strong> {selectedSite.name}
-              {selectedSite.city ? ` - ${selectedSite.city}` : ""}
-              {selectedSite.province ? ` (${selectedSite.province})` : ""}
             </p>
           </div>
         )}
@@ -297,18 +296,6 @@ export default function CustomerInstrumentForm() {
               className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
             />
           </label>
-
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">
-              Codice interno cliente
-            </span>
-            <input
-              value={internalCode}
-              onChange={(event) => setInternalCode(event.target.value)}
-              placeholder="Codice interno"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
-          </label>
         </div>
       </section>
 
@@ -317,61 +304,68 @@ export default function CustomerInstrumentForm() {
           Caratteristiche metrologiche
         </h2>
 
-        <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+        <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           <label className="space-y-1">
             <span className="text-sm font-medium text-slate-700">
               Grandezza
             </span>
-            <input
+            <select
               value={measurementQuantity}
               onChange={(event) => setMeasurementQuantity(event.target.value)}
-              placeholder="Es. Forza"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+            >
+              <option value="">Seleziona grandezza</option>
+              {measurementOptions.map((option) => (
+                <option key={option.quantity} value={option.quantity}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </label>
 
           <label className="space-y-1">
             <span className="text-sm font-medium text-slate-700">Unità</span>
-            <input
+            <select
               value={unit}
-              onChange={(event) => setUnit(event.target.value)}
-              placeholder="Es. kN"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
+              onChange={(event) => {
+                setUnit(event.target.value);
+                if (event.target.value !== "Altro") {
+                  setCustomUnit("");
+                }
+              }}
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+            >
+              <option value="">Seleziona unità</option>
+              {unitOptions.map((unitOption) => (
+                <option key={unitOption} value={unitOption}>
+                  {unitOption}
+                </option>
+              ))}
+            </select>
           </label>
+
+          {unit === "Altro" && (
+            <label className="space-y-1">
+              <span className="text-sm font-medium text-slate-700">
+                Unità personalizzata
+              </span>
+              <input
+                value={customUnit}
+                onChange={(event) => setCustomUnit(event.target.value)}
+                placeholder="Inserisci unità"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+              />
+            </label>
+          )}
 
           <label className="space-y-1">
             <span className="text-sm font-medium text-slate-700">
-              Campo di misura
+              Fondo scala
             </span>
             <input
               value={measurementRange}
               onChange={(event) => setMeasurementRange(event.target.value)}
               placeholder="Es. 0 - 1000 kN"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
-          </label>
-
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">
-              Risoluzione
-            </span>
-            <input
-              value={resolution}
-              onChange={(event) => setResolution(event.target.value)}
-              placeholder="Es. 0,01 kN"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
-          </label>
-
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">
-              Classe / tolleranza
-            </span>
-            <input
-              value={acceptanceClass}
-              onChange={(event) => setAcceptanceClass(event.target.value)}
-              placeholder="Es. Classe 1 / ±1%"
               className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
             />
           </label>

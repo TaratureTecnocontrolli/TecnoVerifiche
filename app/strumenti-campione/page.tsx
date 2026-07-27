@@ -13,7 +13,6 @@ type ReferenceInstrument = {
   measurement_quantity: string | null;
   unit: string | null;
   measurement_range: string | null;
-  resolution: string | null;
   certificate_number: string | null;
   certificate_date: string | null;
   certificate_expiry: string | null;
@@ -63,6 +62,10 @@ function daysToExpiry(date: string | null) {
 }
 
 function effectiveStatus(status: string, certificateExpiry: string | null) {
+  if (status === "dismissed") {
+    return "dismissed";
+  }
+
   if (status === "out_of_service") {
     return "out_of_service";
   }
@@ -70,7 +73,7 @@ function effectiveStatus(status: string, certificateExpiry: string | null) {
   const days = daysToExpiry(certificateExpiry);
 
   if (days === null) {
-    return status;
+    return status || "valid";
   }
 
   if (days < 0) {
@@ -85,10 +88,11 @@ function effectiveStatus(status: string, certificateExpiry: string | null) {
 }
 
 function statusLabel(status: string) {
-  if (status === "valid") return "Valido";
+  if (status === "valid") return "Operativo";
   if (status === "expiring") return "In scadenza";
-  if (status === "expired") return "Scaduto";
+  if (status === "expired") return "Disattivato";
   if (status === "out_of_service") return "Fuori servizio";
+  if (status === "dismissed") return "Dismesso";
 
   return status;
 }
@@ -98,6 +102,7 @@ function statusClass(status: string) {
   if (status === "expiring") return "bg-amber-100 text-amber-800";
   if (status === "expired") return "bg-red-100 text-red-800";
   if (status === "out_of_service") return "bg-slate-200 text-slate-700";
+  if (status === "dismissed") return "bg-zinc-200 text-zinc-800";
 
   return "bg-slate-100 text-slate-700";
 }
@@ -259,7 +264,6 @@ export default async function ReferenceInstrumentsPage() {
       measurement_quantity,
       unit,
       measurement_range,
-      resolution,
       certificate_number,
       certificate_date,
       certificate_expiry,
@@ -354,7 +358,7 @@ export default async function ReferenceInstrumentsPage() {
           </div>
 
           <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 shadow-sm">
-            <p className="text-sm font-medium text-emerald-900">Validi</p>
+            <p className="text-sm font-medium text-emerald-900">Operativi</p>
             <p className="mt-2 text-3xl font-bold text-emerald-900">
               {validCount}
             </p>
@@ -516,8 +520,7 @@ export default async function ReferenceInstrumentsPage() {
                     <th className="px-4 py-3">Codice</th>
                     <th className="px-4 py-3">Matricola</th>
                     <th className="px-4 py-3">Grandezza</th>
-                    <th className="px-4 py-3">Campo</th>
-                    <th className="px-4 py-3">Risoluzione</th>
+                    <th className="px-4 py-3">Fondo scala</th>
                     <th className="px-4 py-3">Certificato</th>
                     <th className="px-4 py-3">Scadenza</th>
                     <th className="px-4 py-3">Giorni</th>
@@ -565,10 +568,6 @@ export default async function ReferenceInstrumentsPage() {
 
                         <td className="px-4 py-3 align-top text-slate-700">
                           {instrument.measurement_range ?? "-"}
-                        </td>
-
-                        <td className="px-4 py-3 align-top text-slate-700">
-                          {instrument.resolution ?? "-"}
                         </td>
 
                         <td className="px-4 py-3 align-top">

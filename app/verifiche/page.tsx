@@ -1,46 +1,37 @@
+"use client";
+
 import Link from "next/link";
+import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
-import DeleteCalibrationRecordButton from "@/components/DeleteCalibrationRecordButton";
-import {
-  buildVerificationPath,
-  getVerificationModuleFromMode,
-  getVerificationTypeConfig,
-} from "@/lib/verification-types";
 import { supabase } from "@/lib/supabase";
 
-type PageProps = {
-  searchParams?: Promise<{
-    q?: string;
-    stato?: string;
-    tipo?: string;
-  }>;
-};
+type GenericRecord = Record<string, any>;
 
 type CalibrationRecord = {
   id: string;
   record_number: string | null;
   mode: string | null;
-  verification_date: string;
-  operator_name: string | null;
-  location: string | null;
+  verification_module: string | null;
+  verification_scope: string | null;
+  verified_instrument_type: string | null;
+  output_type: string | null;
   status: string | null;
   report_status: string | null;
-  verification_module: string | null;
-  issued_at: string | null;
-  reopened_at: string | null;
-  customer_instrument_snapshot: Record<string, unknown> | null;
-  reference_instrument_snapshot: Record<string, unknown> | null;
+  verification_date: string | null;
+  operator_name: string | null;
+  location: string | null;
+  customer_instrument_snapshot: GenericRecord | null;
+  created_at: string | null;
 };
 
 type ReportDetails = {
   calibration_record_id: string;
   main_report_number: string | null;
-  report_date: string | null;
-  test_date: string | null;
   customer_name: string | null;
   site_description: string | null;
   work_object: string | null;
-  technician_name: string | null;
+  test_date: string | null;
+  report_date: string | null;
 };
 
 type VerificationRow = {
@@ -48,29 +39,40 @@ type VerificationRow = {
   details: ReportDetails | null;
 };
 
-function getSnapshotText(
-  snapshot: Record<string, unknown> | null,
-  key: string
-): string {
+type VerificationTypeConfig = {
+  measuresPathTemplate: string;
+};
+
+const VERIFICATION_TYPE_CONFIG: Record<string, VerificationTypeConfig> = {
+  CT_FORCE: { measuresPathTemplate: "/verifiche/:id/misure" },
+  PRESSURE: { measuresPathTemplate: "/verifiche/:id/misure-pressione" },
+  TORQUE: { measuresPathTemplate: "/verifiche/:id/misure-dinamometria" },
+  FLOW: { measuresPathTemplate: "/verifiche/:id/misure-portata" },
+  MASS: { measuresPathTemplate: "/verifiche/:id/misure-massa" },
+  SCLEROMETRIC: { measuresPathTemplate: "/verifiche/:id/misure-sclerometro" },
+  TEMPERATURE: { measuresPathTemplate: "/verifiche/:id/misure-temperatura" },
+  DIMENSIONAL: { measuresPathTemplate: "/verifiche/:id/misure-dimensionale" },
+  PULLOFF: { measuresPathTemplate: "/verifiche/:id/misure-pulloff" },
+};
+
+function textValue(value: unknown, fallback = "-") {
+  if (value === null || value === undefined) return fallback;
+  const text = String(value).trim();
+  return text || fallback;
+}
+
+function snapshotText(snapshot: GenericRecord | null, key: string) {
   const value = snapshot?.[key];
-
-  if (typeof value === "string") {
-    return value;
-  }
-
-  if (typeof value === "number") {
-    return String(value);
-  }
-
+  if (typeof value === "string") return value;
+  if (typeof value === "number") return String(value);
   return "";
 }
 
 function formatItalianDate(date: string | null | undefined) {
-  if (!date) {
-    return "-";
-  }
+  if (!date) return "-";
 
-  const parts = date.split("T")[0].split("-");
+  const dateOnly = date.split("T")[0];
+  const parts = dateOnly.split("-");
 
   if (parts.length === 3) {
     return parts[2] + "/" + parts[1] + "/" + parts[0];
@@ -79,138 +81,81 @@ function formatItalianDate(date: string | null | undefined) {
   return date;
 }
 
-function modeLabel(mode: string | null) {
-  if (mode === "compressione") return "Compressione";
-  if (mode === "trazione") return "Trazione";
-  if (mode === "pressione") return "Pressione";
-
-  return mode || "-";
-}
-
-function reportStatusLabel(status: string | null | undefined) {
-  if (status === "draft") return "Bozza";
-  if (status === "ready") return "Pronto";
-  if (status === "issued") return "Emesso";
-  if (status === "reopened") return "Da correggere";
-
-  return "Bozza";
-}
-
-function reportStatusClass(status: string | null | undefined) {
-  if (status === "issued") {
-    return "border-emerald-200 bg-emerald-50 text-emerald-800";
+function getVerificationModule(row: VerificationRow) {
+  if (row.record.verification_module) {
+    return row.record.verification_module;
   }
 
-  if (status === "ready") {
-    return "border-blue-200 bg-blue-50 text-blue-800";
-  }
+  if (row.record.mode === "pressione") return "PRESSURE";
+  if (row.record.mode === "dinamometria") return "TORQUE";
+  if (row.record.mode === "portata") return "FLOW";
+  if (row.record.mode === "massa") return "MASS";
+  if (row.record.mode === "sclerometro") return "SCLEROMETRIC";
+  if (row.record.mode === "temperatura") return "TEMPERATURE";
+  if (row.record.mode === "dimensionale") return "DIMENSIONAL";
+  if (row.record.mode === "pulloff") return "PULLOFF";
 
-  if (status === "reopened") {
-    return "border-amber-200 bg-amber-50 text-amber-900";
-  }
-
-  return "border-slate-200 bg-slate-50 text-slate-700";
+  return "CT_FORCE";
 }
 
-function normalizeSearch(value: string) {
-  return value.trim().toLowerCase();
+function getVerificationTypeConfig(module: string) {
+  return VERIFICATION_TYPE_CONFIG[module] ?? null;
 }
 
-function getCustomerName(row: VerificationRow) {
-  return (
-    row.details?.customer_name ||
-    getSnapshotText(row.record.customer_instrument_snapshot, "customer_name") ||
-    "-"
-  );
+function buildVerificationPath(template: string, id: string) {
+  return template.replace(":id", id);
 }
 
-function getSiteName(row: VerificationRow) {
-  return (
-    row.details?.site_description ||
-    getSnapshotText(row.record.customer_instrument_snapshot, "site_name") ||
-    "-"
-  );
-}
-
-function getInstrumentLabel(row: VerificationRow) {
-  const instrumentName = getSnapshotText(
-    row.record.customer_instrument_snapshot,
-    "instrument_name"
-  );
-  const manufacturer = getSnapshotText(
-    row.record.customer_instrument_snapshot,
-    "manufacturer"
-  );
-  const model = getSnapshotText(row.record.customer_instrument_snapshot, "model");
-  const serialNumber = getSnapshotText(
-    row.record.customer_instrument_snapshot,
-    "serial_number"
-  );
-  const internalCode = getSnapshotText(
-    row.record.customer_instrument_snapshot,
-    "internal_code"
-  );
-
-  const firstLine = [instrumentName, manufacturer, model]
-    .filter(Boolean)
-    .join(" - ");
-
-  const secondLine = [
-    internalCode ? "Cod. " + internalCode : "",
-    serialNumber ? "Mat. " + serialNumber : "",
+function getVerificationScope(row: VerificationRow) {
+  const valuesToCheck = [
+    row.record.verification_scope,
+    row.record.output_type,
+    row.record.verified_instrument_type,
+    row.record.mode,
+    row.details?.work_object,
   ]
     .filter(Boolean)
-    .join(" · ");
+    .map((value) => String(value).trim().toLowerCase());
 
-  if (!firstLine && !secondLine) {
-    return "-";
+  const isVI = valuesToCheck.some((value) => {
+    return (
+      value === "vi" ||
+      value === "interno" ||
+      value === "interna" ||
+      value === "internal" ||
+      value === "rapportino" ||
+      value === "rapportino interno" ||
+      value.includes("verifica interna") ||
+      value.includes("rapportino interno")
+    );
+  });
+
+  return isVI ? "VI" : "VT";
+}
+
+function isInternalVerification(row: VerificationRow) {
+  return getVerificationScope(row) === "VI";
+}
+
+function getDetailsHref(row: VerificationRow) {
+  if (!row.record.id) return "/verifiche";
+  if (isInternalVerification(row)) {
+    return "/verifiche/" + row.record.id + "/rapportino-interno";
   }
+  return "/verifiche/" + row.record.id + "/rapporto";
+}
 
-  if (firstLine && secondLine) {
-    return firstLine + " · " + secondLine;
+function getFinalHref(row: VerificationRow) {
+  if (!row.record.id) return "/verifiche";
+  if (isInternalVerification(row)) {
+    return "/verifiche/" + row.record.id + "/rapportino-interno";
   }
-
-  return firstLine || secondLine;
-}
-
-function getReferenceInstrumentLabel(row: VerificationRow) {
-  const name = getSnapshotText(row.record.reference_instrument_snapshot, "name");
-  const internalCode = getSnapshotText(
-    row.record.reference_instrument_snapshot,
-    "internal_code"
-  );
-  const range = getSnapshotText(
-    row.record.reference_instrument_snapshot,
-    "measurement_range"
-  );
-
-  return [name, internalCode, range].filter(Boolean).join(" - ") || "-";
-}
-
-function getReportNumber(row: VerificationRow) {
-  const reportNumber = row.details?.main_report_number?.trim();
-
-  if (reportNumber) {
-    return reportNumber;
-  }
-
-  return "SENZA NUMERO";
-}
-
-function getVerificationModule(row: VerificationRow) {
-  return (
-    row.record.verification_module ||
-    getVerificationModuleFromMode(row.record.mode)
-  );
-}
-
-function getVerificationShortTitle(row: VerificationRow) {
-  const config = getVerificationTypeConfig(getVerificationModule(row));
-
-  return config?.shortTitle || modeLabel(row.record.mode);
+  return "/verifiche/" + row.record.id + "/rapporto/finale";
 }
 
 function getMeasuresHref(row: VerificationRow) {
+  if (!row.record.id) return "/verifiche";
+
   const config = getVerificationTypeConfig(getVerificationModule(row));
 
   if (!config) {
@@ -220,32 +165,103 @@ function getMeasuresHref(row: VerificationRow) {
   return buildVerificationPath(config.measuresPathTemplate, row.record.id);
 }
 
-function matchesSearch(row: VerificationRow, query: string) {
-  if (!query) {
-    return true;
+function moduleLabel(row: VerificationRow) {
+  const module = getVerificationModule(row);
+  const mode = row.record.mode;
+
+  if (module === "PRESSURE" || mode === "pressione") return "Pressione";
+  if (module === "TORQUE" || mode === "dinamometria") return "Coppia";
+  if (module === "FLOW" || mode === "portata") return "Portata";
+  if (module === "MASS" || mode === "massa") return "Massa";
+  if (module === "SCLEROMETRIC" || mode === "sclerometro") return "Sclerometro";
+  if (module === "TEMPERATURE" || mode === "temperatura") return "Temperatura";
+  if (module === "DIMENSIONAL" || mode === "dimensionale") return "Dimensionale";
+  if (module === "PULLOFF" || mode === "pulloff") return "Pull-off";
+  if (mode === "trazione") return "Trazione";
+  return "Compressione";
+}
+
+function reportStatusLabel(status: string | null | undefined) {
+  if (status === "draft") return "Bozza";
+  if (status === "ready") return "Pronto";
+  if (status === "issued") return "Emesso";
+  if (status === "reopened") return "Da correggere";
+  return "Bozza";
+}
+
+function reportStatusClass(status: string | null | undefined) {
+  if (status === "issued") return "border-emerald-200 bg-emerald-50 text-emerald-800";
+  if (status === "ready") return "border-blue-200 bg-blue-50 text-blue-800";
+  if (status === "reopened") return "border-amber-200 bg-amber-50 text-amber-900";
+  return "border-slate-200 bg-slate-50 text-slate-700";
+}
+
+function getCustomerLabel(row: VerificationRow) {
+  if (isInternalVerification(row)) {
+    return row.details?.customer_name || "Tecnocontrolli S.r.l. / Interno";
   }
 
+  return (
+    row.details?.customer_name ||
+    snapshotText(row.record.customer_instrument_snapshot, "customer_name") ||
+    snapshotText(row.record.customer_instrument_snapshot, "business_name") ||
+    "-"
+  );
+}
+
+function getInstrumentLabel(row: VerificationRow) {
+  const snapshot = row.record.customer_instrument_snapshot;
+  const name =
+    snapshotText(snapshot, "instrument_name") ||
+    snapshotText(snapshot, "name") ||
+    snapshotText(snapshot, "description");
+
+  const manufacturer = snapshotText(snapshot, "manufacturer");
+  const model = snapshotText(snapshot, "model");
+  const serialNumber = snapshotText(snapshot, "serial_number");
+  const internalCode = snapshotText(snapshot, "internal_code");
+
+  const firstLine = [name, manufacturer, model].filter(Boolean).join(" - ");
+  const secondLine = [
+    internalCode ? "Cod. " + internalCode : "",
+    serialNumber ? "Mat. " + serialNumber : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  if (firstLine && secondLine) return firstLine + " · " + secondLine;
+  return firstLine || secondLine || "-";
+}
+
+function getRecordNumber(row: VerificationRow) {
+  return (
+    row.details?.main_report_number ||
+    row.record.record_number ||
+    "SENZA NUMERO"
+  );
+}
+
+function getDisplayDate(row: VerificationRow) {
+  return (
+    row.details?.test_date ||
+    row.details?.report_date ||
+    row.record.verification_date ||
+    row.record.created_at
+  );
+}
+
+function matchesSearch(row: VerificationRow, query: string) {
+  if (!query) return true;
+
   const searchableText = [
-    row.record.record_number,
-    row.record.mode,
+    getRecordNumber(row),
+    getCustomerLabel(row),
+    getInstrumentLabel(row),
+    moduleLabel(row),
+    getVerificationScope(row),
     row.record.operator_name,
-    row.record.location,
     row.record.status,
     row.record.report_status,
-    row.details?.main_report_number,
-    row.details?.customer_name,
-    row.details?.site_description,
-    row.details?.work_object,
-    row.details?.technician_name,
-    getSnapshotText(row.record.customer_instrument_snapshot, "customer_name"),
-    getSnapshotText(row.record.customer_instrument_snapshot, "site_name"),
-    getSnapshotText(row.record.customer_instrument_snapshot, "instrument_name"),
-    getSnapshotText(row.record.customer_instrument_snapshot, "manufacturer"),
-    getSnapshotText(row.record.customer_instrument_snapshot, "model"),
-    getSnapshotText(row.record.customer_instrument_snapshot, "serial_number"),
-    getSnapshotText(row.record.customer_instrument_snapshot, "internal_code"),
-    getSnapshotText(row.record.reference_instrument_snapshot, "name"),
-    getSnapshotText(row.record.reference_instrument_snapshot, "internal_code"),
   ]
     .filter(Boolean)
     .join(" ")
@@ -254,452 +270,268 @@ function matchesSearch(row: VerificationRow, query: string) {
   return searchableText.includes(query);
 }
 
-function matchesStatus(row: VerificationRow, status: string) {
-  if (!status || status === "lavorazione") {
-    return row.record.report_status !== "issued";
-  }
+export default function VerifichePage() {
+  const [rows, setRows] = useState<VerificationRow[]>([]);
+  const [query, setQuery] = useState("");
+  const [scopeFilter, setScopeFilter] = useState("tutti");
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState("");
 
-  if (status === "tutti") {
-    return true;
-  }
+  useEffect(() => {
+    let isMounted = true;
 
-  const currentStatus = row.record.report_status || "draft";
+    async function loadRows() {
+      setIsLoading(true);
+      setErrorMessage("");
 
-  return currentStatus === status;
-}
+      const { data: recordsData, error: recordsError } = await supabase
+        .from("calibration_records")
+        .select(
+          "id, record_number, mode, verification_module, verification_scope, verified_instrument_type, output_type, status, report_status, verification_date, operator_name, location, customer_instrument_snapshot, created_at"
+        )
+        .order("created_at", { ascending: false });
 
-function matchesType(row: VerificationRow, type: string) {
-  if (!type || type === "tutti") {
-    return true;
-  }
+      if (recordsError) {
+        if (isMounted) {
+          setErrorMessage(recordsError.message);
+          setRows([]);
+          setIsLoading(false);
+        }
+        return;
+      }
 
-  if (type === "CT_FORCE") {
-    return getVerificationModule(row) === "CT_FORCE";
-  }
+      const records = (recordsData ?? []) as CalibrationRecord[];
+      const recordIds = records.map((record) => record.id);
 
-  if (type === "PRESSURE") {
-    return getVerificationModule(row) === "PRESSURE";
-  }
+      let details: ReportDetails[] = [];
 
-  if (type === "TORQUE") {
-    return getVerificationModule(row) === "TORQUE";
-  }
+      if (recordIds.length > 0) {
+        const { data: detailsData, error: detailsError } = await supabase
+          .from("calibration_report_details")
+          .select(
+            "calibration_record_id, main_report_number, customer_name, site_description, work_object, test_date, report_date"
+          )
+          .in("calibration_record_id", recordIds);
 
-  if (type === "FLOW") {
-    return getVerificationModule(row) === "FLOW";
-  }
+        if (detailsError) {
+          if (isMounted) {
+            setErrorMessage(detailsError.message);
+          }
+        } else {
+          details = (detailsData ?? []) as ReportDetails[];
+        }
+      }
 
-  if (type === "SCLEROMETRIC") {
-    return getVerificationModule(row) === "SCLEROMETRIC";
-  }
+      const detailsByRecordId = new Map(
+        details.map((item) => [item.calibration_record_id, item])
+      );
 
-  if (type === "MASS") {
-    return getVerificationModule(row) === "MASS";
-  }
+      const nextRows = records.map((record) => ({
+        record,
+        details: detailsByRecordId.get(record.id) ?? null,
+      }));
 
-  if (type === "DIMENSIONAL") {
-    return getVerificationModule(row) === "DIMENSIONAL";
-  }
-
-  if (type === "TEMPERATURE") {
-    return getVerificationModule(row) === "TEMPERATURE";
-  }
-
-  if (type === "PULLOFF") {
-    return getVerificationModule(row) === "PULLOFF";
-  }
-
-  return row.record.mode === type;
-}
-
-function ClickableCell({
-  href,
-  children,
-  className = "",
-}: {
-  href: string;
-  children: React.ReactNode;
-  className?: string;
-}) {
-  return (
-    <td className={className}>
-      <Link href={href} className="block h-full w-full px-3 py-3">
-        {children}
-      </Link>
-    </td>
-  );
-}
-
-export default async function VerificationsPage({ searchParams }: PageProps) {
-  const resolvedSearchParams = searchParams ? await searchParams : {};
-  const q = normalizeSearch(resolvedSearchParams.q || "");
-  const stato = resolvedSearchParams.stato || "lavorazione";
-  const tipo = resolvedSearchParams.tipo || "tutti";
-
-  const { data: recordsData, error: recordsError } = await supabase
-    .from("calibration_records")
-    .select(
-      `
-      id,
-      record_number,
-      mode,
-      verification_date,
-      operator_name,
-      location,
-      status,
-      report_status,
-      verification_module,
-      issued_at,
-      reopened_at,
-      customer_instrument_snapshot,
-      reference_instrument_snapshot
-    `
-    )
-    .order("verification_date", { ascending: false })
-    .limit(200);
-
-  const records = (recordsData ?? []) as CalibrationRecord[];
-  const recordIds = records.map((record) => record.id);
-
-  let details: ReportDetails[] = [];
-  let detailsErrorMessage = "";
-
-  if (recordIds.length > 0) {
-    const { data: detailsData, error: detailsError } = await supabase
-      .from("calibration_report_details")
-      .select(
-        `
-        calibration_record_id,
-        main_report_number,
-        report_date,
-        test_date,
-        customer_name,
-        site_description,
-        work_object,
-        technician_name
-      `
-      )
-      .in("calibration_record_id", recordIds);
-
-    if (detailsError) {
-      detailsErrorMessage = detailsError.message;
-    } else {
-      details = (detailsData ?? []) as ReportDetails[];
+      if (isMounted) {
+        setRows(nextRows);
+        setIsLoading(false);
+      }
     }
-  }
 
-  const detailsByRecordId = new Map(
-    details.map((item) => [item.calibration_record_id, item])
-  );
+    void loadRows();
 
-  const allRows = records.map((record) => ({
-    record,
-    details: detailsByRecordId.get(record.id) ?? null,
-  }));
+    return () => {
+      isMounted = false;
+    };
+  }, []);
 
-  const rows = allRows
-    .filter((row) => matchesSearch(row, q))
-    .filter((row) => matchesStatus(row, stato))
-    .filter((row) => matchesType(row, tipo));
+  const filteredRows = useMemo(() => {
+    const normalizedQuery = query.trim().toLowerCase();
 
-  const workingCount = allRows.filter(
-    (row) => row.record.report_status !== "issued"
-  ).length;
-  const draftCount = allRows.filter(
-    (row) => !row.record.report_status || row.record.report_status === "draft"
-  ).length;
-  const readyCount = allRows.filter(
-    (row) => row.record.report_status === "ready"
-  ).length;
-  const reopenedCount = allRows.filter(
-    (row) => row.record.report_status === "reopened"
-  ).length;
-  const issuedCount = allRows.filter(
-    (row) => row.record.report_status === "issued"
-  ).length;
+    return rows
+      .filter((row) => matchesSearch(row, normalizedQuery))
+      .filter((row) => {
+        if (scopeFilter === "tutti") return true;
+        return getVerificationScope(row) === scopeFilter;
+      });
+  }, [query, rows, scopeFilter]);
+
+  const total = rows.length;
+  const vtCount = rows.filter((row) => getVerificationScope(row) === "VT").length;
+  const viCount = rows.filter((row) => getVerificationScope(row) === "VI").length;
 
   return (
     <AppShell>
       <div className="space-y-6">
         <div className="flex flex-col justify-between gap-4 lg:flex-row lg:items-end">
           <div>
-            <h1 className="text-3xl font-bold text-slate-950">
-              Verifiche
+            <p className="text-sm font-black uppercase tracking-wide text-slate-500">
+              Archivio operativo
+            </p>
+            <h1 className="mt-1 text-3xl font-black text-slate-950">
+              Verifiche elaborate
             </h1>
-
             <p className="mt-2 max-w-3xl text-slate-600">
-              Elenco operativo delle verifiche in lavorazione. Clicca una riga
-              per aprire i dati rapporto.
+              Elenco completo delle verifiche VT e VI. Da qui accedi a misure,
+              dati rapporto, rapporto finale e rapportino interno.
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-3">
-            <Link
-              href="/rapporti"
-              className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-            >
-              Archivio rapporti
-            </Link>
-
-            <Link
-              href="/nuova-verifica"
-              className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-700"
-            >
-              Nuova verifica
-            </Link>
-          </div>
+          <Link
+            href="/nuova-verifica"
+            className="inline-flex w-fit items-center justify-center rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white hover:bg-slate-800"
+          >
+            Nuova verifica
+          </Link>
         </div>
 
-        {(recordsError || detailsErrorMessage) && (
-          <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-900">
-            {recordsError && (
-              <p>Errore caricamento verifiche: {recordsError.message}</p>
-            )}
-            {detailsErrorMessage && (
-              <p>Errore caricamento dati rapporto: {detailsErrorMessage}</p>
-            )}
+        {errorMessage && (
+          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm font-semibold text-red-900">
+            {errorMessage}
           </div>
         )}
 
-        <section className="grid gap-3 md:grid-cols-5">
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              In lavorazione
-            </p>
-            <p className="mt-1 text-2xl font-bold text-slate-950">
-              {workingCount}
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">
-              Bozze
-            </p>
-            <p className="mt-1 text-2xl font-bold text-slate-950">
-              {draftCount}
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-blue-200 bg-blue-50 p-4 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">
-              Pronte
-            </p>
-            <p className="mt-1 text-2xl font-bold text-blue-900">
-              {readyCount}
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-amber-700">
-              Da correggere
-            </p>
-            <p className="mt-1 text-2xl font-bold text-amber-900">
-              {reopenedCount}
-            </p>
-          </div>
-
-          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">
-              Emesse
-            </p>
-            <p className="mt-1 text-2xl font-bold text-emerald-900">
-              {issuedCount}
-            </p>
-          </div>
+        <section className="grid gap-3 md:grid-cols-3">
+          <SummaryCard label="Totali" value={total} />
+          <SummaryCard label="VT" value={vtCount} tone="emerald" />
+          <SummaryCard label="VI" value={viCount} tone="sky" />
         </section>
 
-        <form className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="grid gap-3 lg:grid-cols-[1fr_190px_190px_auto]">
-            <label className="space-y-1">
-              <span className="text-sm font-medium text-slate-700">
-                Cerca
-              </span>
-              <input
-                name="q"
-                defaultValue={resolvedSearchParams.q || ""}
-                placeholder="Cliente, strumento, matricola, tecnico, numero..."
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-              />
-            </label>
+        <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
+          <div className="grid gap-3 md:grid-cols-[1fr_180px]">
+            <input
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Cerca per cliente, strumento, numero, tecnico..."
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+            />
 
-            <label className="space-y-1">
-              <span className="text-sm font-medium text-slate-700">
-                Stato
-              </span>
-              <select
-                name="stato"
-                defaultValue={stato}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
-              >
-                <option value="lavorazione">In lavorazione</option>
-                <option value="tutti">Tutte</option>
-                <option value="draft">Bozza</option>
-                <option value="ready">Pronto</option>
-                <option value="reopened">Da correggere</option>
-                <option value="issued">Emesso</option>
-              </select>
-            </label>
-
-            <label className="space-y-1">
-              <span className="text-sm font-medium text-slate-700">
-                Tipo
-              </span>
-              <select
-                name="tipo"
-                defaultValue={tipo}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
-              >
-                <option value="tutti">Tutti</option>
-                <option value="CT_FORCE">Compressione / trazione</option>
-                <option value="PRESSURE">Pressione</option>
-                <option value="TORQUE">Chiavi dinamometriche</option>
-                <option value="FLOW">Portata / contalitri</option>
-                <option value="SCLEROMETRIC">Prove sclerometriche</option>
-                <option value="MASS">Massa / bilance</option>
-                <option value="DIMENSIONAL">Dimensionale</option>
-                <option value="TEMPERATURE">Temperatura</option>
-                <option value="PULLOFF">Pull-off</option>
-              </select>
-            </label>
-
-            <div className="flex items-end gap-2">
-              <button
-                type="submit"
-                className="rounded-xl bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-700"
-              >
-                Filtra
-              </button>
-
-              <Link
-                href="/verifiche"
-                className="rounded-xl border border-slate-300 bg-white px-5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
-              >
-                Reset
-              </Link>
-            </div>
+            <select
+              value={scopeFilter}
+              onChange={(event) => setScopeFilter(event.target.value)}
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+            >
+              <option value="tutti">Tutte</option>
+              <option value="VT">Solo VT</option>
+              <option value="VI">Solo VI</option>
+            </select>
           </div>
-        </form>
+        </section>
 
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="hidden xl:block">
             <table className="w-full table-fixed text-sm">
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
-                  <th className="w-[145px] px-3 py-3">Verifica</th>
-                  <th className="w-[180px] px-3 py-3">Cliente / sede</th>
-                  <th className="px-3 py-3">Strumenti</th>
-                  <th className="w-[100px] px-3 py-3">Data</th>
-                  <th className="w-[120px] px-3 py-3">Tecnico</th>
-                  <th className="w-[95px] px-3 py-3">Stato</th>
-                  <th className="w-[310px] px-3 py-3 text-right">Azioni</th>
+                  <th className="w-[140px] px-3 py-3">N. documento</th>
+                  <th className="w-[85px] px-3 py-3">Tipo</th>
+                  <th className="w-[210px] px-3 py-3">Cliente / interno</th>
+                  <th className="px-3 py-3">Strumento</th>
+                  <th className="w-[120px] px-3 py-3">Data</th>
+                  <th className="w-[115px] px-3 py-3">Stato</th>
+                  <th className="w-[275px] px-3 py-3 text-right">Azioni</th>
                 </tr>
               </thead>
 
               <tbody className="divide-y divide-slate-100">
-                {rows.length === 0 ? (
+                {isLoading ? (
                   <tr>
-                    <td
-                      colSpan={7}
-                      className="px-4 py-8 text-center text-slate-500"
-                    >
+                    <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                      Caricamento verifiche...
+                    </td>
+                  </tr>
+                ) : filteredRows.length === 0 ? (
+                  <tr>
+                    <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
                       Nessuna verifica trovata.
                     </td>
                   </tr>
                 ) : (
-                  rows.map((row) => {
-                    const detailsHref =
-                      "/verifiche/" + row.record.id + "/rapporto";
-                    const measuresHref = getMeasuresHref(row);
-                    const finalHref =
-                      "/verifiche/" + row.record.id + "/rapporto/finale";
-                    const isIssued = row.record.report_status === "issued";
+                  filteredRows.map((row) => {
+                    const isVI = isInternalVerification(row);
 
                     return (
-                      <tr
-                        key={row.record.id}
-                        className="group hover:bg-slate-50"
-                      >
-                        <ClickableCell href={detailsHref} className="align-top">
-                          <p className="font-semibold leading-tight text-slate-950 group-hover:underline">
-                            {row.record.record_number || "-"}
+                      <tr key={row.record.id} className="hover:bg-slate-50">
+                        <td className="px-3 py-3 align-top">
+                          <p className="font-bold text-slate-950">
+                            {getRecordNumber(row)}
                           </p>
-                          <p className="mt-1 truncate text-xs text-slate-500">
-                            Rapporto: {getReportNumber(row)}
+                          <p className="mt-1 text-xs text-slate-500">
+                            {moduleLabel(row)}
                           </p>
-                          <p className="truncate text-xs text-slate-500">
-                            {getVerificationShortTitle(row)}
-                          </p>
-                        </ClickableCell>
+                        </td>
 
-                        <ClickableCell href={detailsHref} className="align-top">
-                          <p className="truncate font-medium text-slate-900">
-                            {getCustomerName(row)}
-                          </p>
-                          <p className="mt-1 truncate text-xs text-slate-500">
-                            {getSiteName(row)}
-                          </p>
-                        </ClickableCell>
-
-                        <ClickableCell href={detailsHref} className="align-top">
-                          <p className="truncate text-slate-700">
-                            {getInstrumentLabel(row)}
-                          </p>
-                          <p className="mt-1 truncate text-xs text-slate-500">
-                            Campione: {getReferenceInstrumentLabel(row)}
-                          </p>
-                        </ClickableCell>
-
-                        <ClickableCell href={detailsHref} className="align-top">
-                          {formatItalianDate(row.record.verification_date)}
-                        </ClickableCell>
-
-                        <ClickableCell href={detailsHref} className="align-top">
-                          <span className="block leading-tight">
-                            {row.details?.technician_name ||
-                              row.record.operator_name ||
-                              "-"}
-                          </span>
-                        </ClickableCell>
-
-                        <ClickableCell href={detailsHref} className="align-top">
+                        <td className="px-3 py-3 align-top">
                           <span
                             className={
-                              "inline-flex rounded-full border px-2 py-1 text-[11px] font-semibold " +
+                              "inline-flex rounded-full border px-2.5 py-1 text-xs font-black " +
+                              (isVI
+                                ? "border-sky-200 bg-sky-50 text-sky-800"
+                                : "border-emerald-200 bg-emerald-50 text-emerald-800")
+                            }
+                          >
+                            {getVerificationScope(row)}
+                          </span>
+                        </td>
+
+                        <td className="px-3 py-3 align-top">
+                          <p className="truncate font-semibold text-slate-900">
+                            {getCustomerLabel(row)}
+                          </p>
+                          <p className="mt-1 truncate text-xs text-slate-500">
+                            {textValue(row.details?.site_description ?? row.record.location)}
+                          </p>
+                        </td>
+
+                        <td className="px-3 py-3 align-top">
+                          <p className="truncate text-slate-800">
+                            {getInstrumentLabel(row)}
+                          </p>
+                        </td>
+
+                        <td className="px-3 py-3 align-top">
+                          {formatItalianDate(getDisplayDate(row))}
+                        </td>
+
+                        <td className="px-3 py-3 align-top">
+                          <span
+                            className={
+                              "inline-flex rounded-full border px-2 py-1 text-[11px] font-bold " +
                               reportStatusClass(row.record.report_status)
                             }
                           >
                             {reportStatusLabel(row.record.report_status)}
                           </span>
-                        </ClickableCell>
+                        </td>
 
                         <td className="px-3 py-3 align-top">
-                          <div className="flex flex-nowrap justify-end gap-1.5">
+                          <div className="flex justify-end gap-2">
                             <Link
-                              href={measuresHref}
-                              className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
+                              href={getMeasuresHref(row)}
+                              className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
                             >
                               Misure
                             </Link>
 
-                            <Link
-                              href={detailsHref}
-                              className="rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                            >
-                              Dati
-                            </Link>
+                            {!isVI && (
+                              <Link
+                                href={getDetailsHref(row)}
+                                className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
+                              >
+                                Dati
+                              </Link>
+                            )}
 
                             <Link
-                              href={finalHref}
-                              className="rounded-lg bg-slate-900 px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-slate-700"
+                              href={getFinalHref(row)}
+                              className={
+                                "rounded-lg px-3 py-1.5 text-xs font-bold text-white " +
+                                (isVI
+                                  ? "bg-sky-700 hover:bg-sky-600"
+                                  : "bg-slate-950 hover:bg-slate-800")
+                              }
                             >
-                              Rapporto
+                              {isVI ? "Rapportino" : "Rapporto"}
                             </Link>
-
-                            <DeleteCalibrationRecordButton
-                              recordId={row.record.id}
-                              recordLabel={row.record.record_number || "senza numero"}
-                              isIssued={isIssued}
-                            />
                           </div>
                         </td>
                       </tr>
@@ -711,89 +543,66 @@ export default async function VerificationsPage({ searchParams }: PageProps) {
           </div>
 
           <div className="divide-y divide-slate-100 xl:hidden">
-            {rows.length === 0 ? (
+            {isLoading ? (
+              <div className="p-6 text-center text-sm text-slate-500">
+                Caricamento verifiche...
+              </div>
+            ) : filteredRows.length === 0 ? (
               <div className="p-6 text-center text-sm text-slate-500">
                 Nessuna verifica trovata.
               </div>
             ) : (
-              rows.map((row) => {
-                const detailsHref = "/verifiche/" + row.record.id + "/rapporto";
-                const measuresHref = getMeasuresHref(row);
-                const finalHref =
-                  "/verifiche/" + row.record.id + "/rapporto/finale";
-                const isIssued = row.record.report_status === "issued";
+              filteredRows.map((row) => {
+                const isVI = isInternalVerification(row);
 
                 return (
                   <article key={row.record.id} className="p-4">
-                    <Link href={detailsHref} className="block">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="font-semibold text-slate-950">
-                            {row.record.record_number || "-"}
-                          </p>
-                          <p className="mt-1 text-xs text-slate-500">
-                            {formatItalianDate(row.record.verification_date)} ·{" "}
-                            {getVerificationShortTitle(row)}
-                          </p>
-                        </div>
-
-                        <span
-                          className={
-                            "shrink-0 rounded-full border px-2.5 py-1 text-xs font-semibold " +
-                            reportStatusClass(row.record.report_status)
-                          }
-                        >
-                          {reportStatusLabel(row.record.report_status)}
-                        </span>
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="font-black text-slate-950">
+                          {getRecordNumber(row)}
+                        </p>
+                        <p className="mt-1 text-xs text-slate-500">
+                          {formatItalianDate(getDisplayDate(row))} · {moduleLabel(row)}
+                        </p>
                       </div>
 
-                      <p className="mt-3 font-medium text-slate-900">
-                        {getCustomerName(row)}
-                      </p>
+                      <span
+                        className={
+                          "rounded-full border px-2.5 py-1 text-xs font-black " +
+                          (isVI
+                            ? "border-sky-200 bg-sky-50 text-sky-800"
+                            : "border-emerald-200 bg-emerald-50 text-emerald-800")
+                        }
+                      >
+                        {getVerificationScope(row)}
+                      </span>
+                    </div>
 
-                      <p className="mt-1 text-sm text-slate-600">
-                        {getInstrumentLabel(row)}
-                      </p>
-
-                      <p className="mt-1 text-xs text-slate-500">
-                        Rapporto: {getReportNumber(row)}
-                      </p>
-
-                      <p className="mt-1 text-xs text-slate-500">
-                        Tecnico:{" "}
-                        {row.details?.technician_name ||
-                          row.record.operator_name ||
-                          "-"}
-                      </p>
-                    </Link>
+                    <p className="mt-3 font-semibold text-slate-900">
+                      {getCustomerLabel(row)}
+                    </p>
+                    <p className="mt-1 text-sm text-slate-600">
+                      {getInstrumentLabel(row)}
+                    </p>
 
                     <div className="mt-4 grid grid-cols-2 gap-2">
                       <Link
-                        href={measuresHref}
-                        className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                        href={getMeasuresHref(row)}
+                        className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-bold text-slate-700"
                       >
                         Misure
                       </Link>
 
                       <Link
-                        href={detailsHref}
-                        className="inline-flex items-center justify-center rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+                        href={getFinalHref(row)}
+                        className={
+                          "inline-flex items-center justify-center rounded-xl px-3 py-2 text-sm font-bold text-white " +
+                          (isVI ? "bg-sky-700" : "bg-slate-950")
+                        }
                       >
-                        Dati
+                        {isVI ? "Rapportino" : "Rapporto"}
                       </Link>
-
-                      <Link
-                        href={finalHref}
-                        className="inline-flex items-center justify-center rounded-xl bg-slate-900 px-3 py-2 text-sm font-semibold text-white hover:bg-slate-700"
-                      >
-                        Rapporto
-                      </Link>
-
-                      <DeleteCalibrationRecordButton
-                        recordId={row.record.id}
-                        recordLabel={row.record.record_number || "senza numero"}
-                        isIssued={isIssued}
-                      />
                     </div>
                   </article>
                 );
@@ -801,15 +610,32 @@ export default async function VerificationsPage({ searchParams }: PageProps) {
             )}
           </div>
         </section>
-
-        <section className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm leading-6 text-amber-950">
-          <p>
-            <strong>Nota:</strong> l’eliminazione è disabilitata per i rapporti
-            emessi. Il pulsante “Misure” apre i dati tecnici della verifica; “Dati” apre i dati
-            del rapporto; “Rapporto” apre l’anteprima finale.
-          </p>
-        </section>
       </div>
     </AppShell>
+  );
+}
+
+function SummaryCard({
+  label,
+  value,
+  tone = "slate",
+}: {
+  label: string;
+  value: number;
+  tone?: "slate" | "emerald" | "sky";
+}) {
+  const classes = {
+    slate: "border-slate-200 bg-white text-slate-950",
+    emerald: "border-emerald-200 bg-emerald-50 text-emerald-900",
+    sky: "border-sky-200 bg-sky-50 text-sky-900",
+  };
+
+  return (
+    <div className={"rounded-2xl border p-4 shadow-sm " + classes[tone]}>
+      <p className="text-xs font-black uppercase tracking-wide opacity-70">
+        {label}
+      </p>
+      <p className="mt-1 text-3xl font-black">{value}</p>
+    </div>
   );
 }

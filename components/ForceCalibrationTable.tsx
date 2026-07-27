@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { type KeyboardEvent, useEffect, useMemo, useState } from "react";
 import {
   calculateForcePoints,
   type ForcePointInput,
@@ -14,6 +14,12 @@ import {
 import ForceErrorChart from "./ForceErrorChart";
 import ReferenceInstrumentMultiSelect from "./ReferenceInstrumentMultiSelect";
 
+type VerificationScope = "VT" | "VI";
+
+type ForceCalibrationTableProps = {
+  verificationScope?: VerificationScope;
+};
+
 type Customer = {
   id: string;
   customer_number: string | null;
@@ -24,8 +30,10 @@ type CustomerSite = {
   id: string;
   customer_id: string;
   name: string;
+  address: string | null;
   city: string | null;
   province: string | null;
+  postal_code: string | null;
 };
 
 type ReferenceInstrument = {
@@ -63,6 +71,21 @@ type CustomerInstrument = {
   acceptance_class: string | null;
 };
 
+type InternalInstrument = {
+  id: string;
+  name: string;
+  manufacturer: string | null;
+  model: string | null;
+  serial_number: string | null;
+  internal_code: string | null;
+  measurement_quantity: string | null;
+  unit: string | null;
+  measurement_range: string | null;
+  location: string | null;
+  department: string | null;
+  status: string;
+};
+
 type CalibrationProcedure = {
   id: string;
   code: string;
@@ -97,45 +120,45 @@ type CalculatedScale = EditableScale & {
 const defaultPointsScaleOne: EditableForcePoint[] = [
   {
     id: "1",
-    appliedValue: "50",
-    cycle1: "50,1",
-    cycle2: "50,0",
-    cycle3: "49,9",
+    appliedValue: "",
+    cycle1: "",
+    cycle2: "",
+    cycle3: "",
   },
   {
     id: "2",
-    appliedValue: "100",
-    cycle1: "100,2",
-    cycle2: "100,1",
-    cycle3: "100,0",
+    appliedValue: "",
+    cycle1: "",
+    cycle2: "",
+    cycle3: "",
   },
   {
     id: "3",
-    appliedValue: "150",
-    cycle1: "150,3",
-    cycle2: "150,1",
-    cycle3: "150,2",
+    appliedValue: "",
+    cycle1: "",
+    cycle2: "",
+    cycle3: "",
   },
 ];
 
 const defaultPointsScaleTwo: EditableForcePoint[] = [
   {
     id: "1",
-    appliedValue: "500",
+    appliedValue: "",
     cycle1: "",
     cycle2: "",
     cycle3: "",
   },
   {
     id: "2",
-    appliedValue: "1000",
+    appliedValue: "",
     cycle1: "",
     cycle2: "",
     cycle3: "",
   },
   {
     id: "3",
-    appliedValue: "1500",
+    appliedValue: "",
     cycle1: "",
     cycle2: "",
     cycle3: "",
@@ -339,16 +362,6 @@ function buildReferenceInstrumentSnapshot(
   };
 }
 
-function parseEnvironmentalConditions(value: string) {
-  const temperatureMatch = value.match(/(-?\d+(?:[,.]\d+)?)\s*°?\s*c/i);
-  const humidityMatch = value.match(/(\d+(?:[,.]\d+)?)\s*%/);
-
-  return {
-    temperature: temperatureMatch?.[1]?.replace(",", ".") ?? null,
-    humidity: humidityMatch?.[1]?.replace(",", ".") ?? null,
-  };
-}
-
 function buildCtPremiseText(input: {
   verificationDate: string;
   customerName: string;
@@ -386,6 +399,84 @@ function buildCtPremiseText(input: {
     .join(" ");
 }
 
+function buildCtInternalPremiseText(input: {
+  verificationDate: string;
+  location: string;
+  instrumentName: string;
+  manufacturer: string | null;
+  model: string | null;
+  serialNumber: string | null;
+  measurementRange: string | null;
+}) {
+  const parts = [
+    input.instrumentName,
+    input.manufacturer,
+    input.model,
+    input.serialNumber ? "s/n " + input.serialNumber : null,
+  ].filter(Boolean);
+
+  const instrumentDescription = parts.join(" ");
+
+  return [
+    "Il giorno " +
+      formatItalianDate(input.verificationDate) +
+      " tecnici di questo Laboratorio tecnologico hanno sottoposto presso " +
+      input.location +
+      " lo strumento interno " +
+      instrumentDescription +
+      " a verifica interna.",
+    input.measurementRange
+      ? "Lo strumento ha un Fondo Scala di " + input.measurementRange + "."
+      : "",
+  ]
+    .filter(Boolean)
+    .join(" ");
+}
+
+function buildInternalInstrumentSnapshot(instrument: InternalInstrument) {
+  return {
+    internal_instrument_id: instrument.id,
+    instrument_name: instrument.name,
+    manufacturer: instrument.manufacturer,
+    model: instrument.model,
+    serial_number: instrument.serial_number,
+    internal_code: instrument.internal_code,
+    measurement_quantity: instrument.measurement_quantity,
+    unit: instrument.unit,
+    measurement_range: instrument.measurement_range,
+    location: instrument.location,
+    department: instrument.department,
+    status: instrument.status,
+  };
+}
+
+function buildSiteOptionLabel(site: CustomerSite) {
+  return [
+    site.name,
+    site.address,
+    site.city,
+    site.province ? "(" + site.province + ")" : null,
+  ]
+    .filter(Boolean)
+    .join(" - ");
+}
+
+function buildSiteDescription(site: CustomerSite | undefined) {
+  if (!site) {
+    return "";
+  }
+
+  return [
+    site.name,
+    site.address,
+    site.postal_code,
+    site.city,
+    site.province ? "(" + site.province + ")" : null,
+  ]
+    .filter(Boolean)
+    .join(" - ");
+}
+
 function clonePoints(points: EditableForcePoint[]) {
   return points.map((point) => ({
     ...point,
@@ -393,11 +484,21 @@ function clonePoints(points: EditableForcePoint[]) {
   }));
 }
 
-export default function ForceCalibrationTable() {
+export default function ForceCalibrationTable({
+  verificationScope = "VT",
+}: ForceCalibrationTableProps) {
+  const isInternalVerification = verificationScope === "VI";
   const [mode, setMode] = useState<"compressione" | "trazione">("compressione");
   const [operatorName, setOperatorName] = useState("");
-  const [location, setLocation] = useState("");
-  const [environmentalConditions, setEnvironmentalConditions] = useState("");
+  const [ambientTemperature, setAmbientTemperature] = useState("");
+  const [ambientHumidity, setAmbientHumidity] = useState("");
+  const [isAddingSite, setIsAddingSite] = useState(false);
+  const [newSiteName, setNewSiteName] = useState("");
+  const [newSiteAddress, setNewSiteAddress] = useState("");
+  const [newSiteCity, setNewSiteCity] = useState("");
+  const [newSiteProvince, setNewSiteProvince] = useState("");
+  const [newSitePostalCode, setNewSitePostalCode] = useState("");
+  const [siteSaveError, setSiteSaveError] = useState("");
   const [notes, setNotes] = useState("");
   const [hasDoubleScale, setHasDoubleScale] = useState(false);
   const [scales, setScales] = useState<EditableScale[]>(initialScales);
@@ -407,6 +508,9 @@ export default function ForceCalibrationTable() {
   const [customerInstruments, setCustomerInstruments] = useState<
     CustomerInstrument[]
   >([]);
+  const [internalInstruments, setInternalInstruments] = useState<
+    InternalInstrument[]
+  >([]);
   const [referenceInstruments, setReferenceInstruments] = useState<
     ReferenceInstrument[]
   >([]);
@@ -415,6 +519,9 @@ export default function ForceCalibrationTable() {
   const [selectedSiteId, setSelectedSiteId] = useState("");
   const [selectedCustomerInstrumentId, setSelectedCustomerInstrumentId] =
     useState("");
+  const [selectedInternalInstrumentId, setSelectedInternalInstrumentId] =
+    useState("");
+  const [verificationLocation, setVerificationLocation] = useState("");
 
   const [isLoadingData, setIsLoadingData] = useState(true);
   const [loadError, setLoadError] = useState("");
@@ -445,26 +552,28 @@ export default function ForceCalibrationTable() {
   }, [sites, selectedCustomerId]);
 
   const filteredCustomerInstruments = useMemo(() => {
-    return customerInstruments.filter((instrument) => {
-      if (!selectedCustomerId || !selectedSiteId) {
-        return false;
-      }
+    if (!selectedCustomerId) {
+      return [];
+    }
 
-      return (
-        instrument.customer_id === selectedCustomerId &&
-        instrument.site_id === selectedSiteId
-      );
-    });
-  }, [customerInstruments, selectedCustomerId, selectedSiteId]);
+    return customerInstruments.filter(
+      (instrument) => instrument.customer_id === selectedCustomerId
+    );
+  }, [customerInstruments, selectedCustomerId]);
 
   const selectedCustomer = customers.find(
     (customer) => customer.id === selectedCustomerId
   );
 
   const selectedSite = sites.find((site) => site.id === selectedSiteId);
+  const selectedSiteDescription = buildSiteDescription(selectedSite);
 
   const selectedCustomerInstrument = customerInstruments.find(
     (instrument) => instrument.id === selectedCustomerInstrumentId
+  );
+
+  const selectedInternalInstrument = internalInstruments.find(
+    (instrument) => instrument.id === selectedInternalInstrumentId
   );
 
   const selectedReferenceInstruments = scales
@@ -506,7 +615,7 @@ export default function ForceCalibrationTable() {
 
       const { data: sitesData, error: sitesError } = await supabase
         .from("customer_sites")
-        .select("id, customer_id, name, city, province")
+        .select("id, customer_id, name, address, city, province, postal_code")
         .eq("is_active", true)
         .order("name", { ascending: true });
 
@@ -546,6 +655,34 @@ export default function ForceCalibrationTable() {
         return;
       }
 
+      const { data: internalInstrumentsData, error: internalInstrumentsError } =
+        await supabase
+          .from("internal_instruments")
+          .select(
+            `
+            id,
+            name,
+            manufacturer,
+            model,
+            serial_number,
+            internal_code,
+            measurement_quantity,
+            unit,
+            measurement_range,
+            location,
+            department,
+            status
+          `
+          )
+          .eq("is_active", true)
+          .order("name", { ascending: true });
+
+      if (internalInstrumentsError) {
+        setLoadError(internalInstrumentsError.message);
+        setIsLoadingData(false);
+        return;
+      }
+
       const { data: referenceInstrumentsData, error: referenceInstrumentsError } =
         await supabase
           .from("reference_instruments")
@@ -580,6 +717,9 @@ export default function ForceCalibrationTable() {
       setCustomerInstruments(
         (customerInstrumentsData ?? []) as CustomerInstrument[]
       );
+      setInternalInstruments(
+        (internalInstrumentsData ?? []) as InternalInstrument[]
+      );
       setReferenceInstruments(
         (referenceInstrumentsData ?? []) as ReferenceInstrument[]
       );
@@ -590,7 +730,36 @@ export default function ForceCalibrationTable() {
     loadData();
   }, []);
 
-  function resetSaveState() {
+  
+  function handleCycleTab(
+    event: KeyboardEvent<HTMLInputElement>,
+    field: string
+  ) {
+    if (event.key !== "Tab" || event.shiftKey) {
+      return;
+    }
+
+    const currentInput = event.currentTarget;
+    const currentRow = currentInput.closest("tr");
+    let nextRow = currentRow?.nextElementSibling;
+
+    while (nextRow) {
+      const nextInput = nextRow.querySelector<HTMLInputElement>(
+        'input[data-cycle-field="' + field + '"]'
+      );
+
+      if (nextInput) {
+        event.preventDefault();
+        nextInput.focus();
+        nextInput.select();
+        return;
+      }
+
+      nextRow = nextRow.nextElementSibling;
+    }
+  }
+
+function resetSaveState() {
     setSavedRecordId(null);
     setSavedRecordNumber(null);
     setSaveMessage("");
@@ -601,12 +770,63 @@ export default function ForceCalibrationTable() {
     setSelectedCustomerId(customerId);
     setSelectedSiteId("");
     setSelectedCustomerInstrumentId("");
+    setIsAddingSite(false);
+    setSiteSaveError("");
     resetSaveState();
   }
 
   function handleSiteChange(siteId: string) {
     setSelectedSiteId(siteId);
     setSelectedCustomerInstrumentId("");
+    setSiteSaveError("");
+    resetSaveState();
+  }
+
+  async function saveNewSite() {
+    setSiteSaveError("");
+
+    if (!selectedCustomerId) {
+      setSiteSaveError("Seleziona prima il cliente.");
+      return;
+    }
+
+    if (!newSiteName.trim()) {
+      setSiteSaveError("Inserisci almeno il nome del luogo prove.");
+      return;
+    }
+
+    const { data: createdSite, error } = await supabase
+      .from("customer_sites")
+      .insert({
+        customer_id: selectedCustomerId,
+        name: newSiteName.trim(),
+        address: newSiteAddress.trim() || null,
+        city: newSiteCity.trim() || null,
+        province: newSiteProvince.trim().toUpperCase() || null,
+        postal_code: newSitePostalCode.trim() || null,
+        is_active: true,
+      })
+      .select("id, customer_id, name, address, city, province, postal_code")
+      .single();
+
+    if (error || !createdSite) {
+      setSiteSaveError(
+        error?.message || "Errore durante il salvataggio del luogo prove."
+      );
+      return;
+    }
+
+    const site = createdSite as CustomerSite;
+
+    setSites((currentSites) => [...currentSites, site]);
+    setSelectedSiteId(site.id);
+    setSelectedCustomerInstrumentId("");
+    setNewSiteName("");
+    setNewSiteAddress("");
+    setNewSiteCity("");
+    setNewSiteProvince("");
+    setNewSitePostalCode("");
+    setIsAddingSite(false);
     resetSaveState();
   }
 
@@ -710,9 +930,7 @@ export default function ForceCalibrationTable() {
         }
 
         const lastPoint = scale.points[scale.points.length - 1];
-        const nextAppliedValue = lastPoint
-          ? toNumber(lastPoint.appliedValue) + 50
-          : 50;
+        const nextAppliedValue = "";
 
         return {
           ...scale,
@@ -720,7 +938,7 @@ export default function ForceCalibrationTable() {
             ...scale.points,
             {
               id: crypto.randomUUID(),
-              appliedValue: numberToInputValue(nextAppliedValue),
+              appliedValue: "",
               cycle1: "",
               cycle2: "",
               cycle3: "",
@@ -835,16 +1053,26 @@ export default function ForceCalibrationTable() {
     setSavedRecordNumber(null);
 
     try {
-      if (!selectedCustomer) {
-        throw new Error("Seleziona il cliente.");
-      }
+      if (isInternalVerification) {
+        if (!selectedInternalInstrument) {
+          throw new Error("Seleziona lo strumento interno da verificare.");
+        }
 
-      if (!selectedSite) {
-        throw new Error("Seleziona la sede del cliente.");
-      }
+        if (!verificationLocation.trim()) {
+          throw new Error("Inserisci il luogo della verifica interna.");
+        }
+      } else {
+        if (!selectedCustomer) {
+          throw new Error("Seleziona il cliente.");
+        }
 
-      if (!selectedCustomerInstrument) {
-        throw new Error("Seleziona lo strumento cliente da verificare.");
+        if (!selectedSite) {
+          throw new Error("Seleziona il luogo prove del cliente.");
+        }
+
+        if (!selectedCustomerInstrument) {
+          throw new Error("Seleziona lo strumento cliente da verificare.");
+        }
       }
 
       validateScales();
@@ -898,26 +1126,31 @@ export default function ForceCalibrationTable() {
 
       const activeProcedure = procedure as CalibrationProcedure;
 
-      const customerInstrumentSnapshot = {
-        customer_id: selectedCustomer.id,
-        customer_number: selectedCustomer.customer_number,
-        customer_name: selectedCustomer.business_name,
-        site_id: selectedSite.id,
-        site_name: selectedSite.name,
-        site_city: selectedSite.city,
-        site_province: selectedSite.province,
-        instrument_id: selectedCustomerInstrument.id,
-        instrument_name: selectedCustomerInstrument.name,
-        manufacturer: selectedCustomerInstrument.manufacturer,
-        model: selectedCustomerInstrument.model,
-        serial_number: selectedCustomerInstrument.serial_number,
-        internal_code: selectedCustomerInstrument.internal_code,
-        measurement_quantity: selectedCustomerInstrument.measurement_quantity,
-        unit: selectedCustomerInstrument.unit,
-        measurement_range: selectedCustomerInstrument.measurement_range,
-        resolution: selectedCustomerInstrument.resolution,
-        acceptance_class: selectedCustomerInstrument.acceptance_class,
-      };
+      const verifiedInstrumentSnapshot = isInternalVerification
+        ? buildInternalInstrumentSnapshot(selectedInternalInstrument as InternalInstrument)
+        : {
+            customer_id: selectedCustomer?.id ?? null,
+            customer_number: selectedCustomer?.customer_number ?? null,
+            customer_name: selectedCustomer?.business_name ?? null,
+            site_id: selectedSite?.id ?? null,
+            site_name: selectedSite?.name ?? null,
+            site_address: selectedSite?.address ?? null,
+            site_city: selectedSite?.city ?? null,
+            site_province: selectedSite?.province ?? null,
+            site_postal_code: selectedSite?.postal_code ?? null,
+            instrument_id: selectedCustomerInstrument?.id ?? null,
+            instrument_name: selectedCustomerInstrument?.name ?? null,
+            manufacturer: selectedCustomerInstrument?.manufacturer ?? null,
+            model: selectedCustomerInstrument?.model ?? null,
+            serial_number: selectedCustomerInstrument?.serial_number ?? null,
+            internal_code: selectedCustomerInstrument?.internal_code ?? null,
+            measurement_quantity:
+              selectedCustomerInstrument?.measurement_quantity ?? null,
+            unit: selectedCustomerInstrument?.unit ?? null,
+            measurement_range: selectedCustomerInstrument?.measurement_range ?? null,
+            resolution: null,
+            acceptance_class: null,
+          };
 
       const referenceInstrumentSnapshot =
         buildReferenceInstrumentSnapshot(firstReferenceInstrument);
@@ -941,9 +1174,19 @@ export default function ForceCalibrationTable() {
           record_number: recordNumber,
           calibration_type_id: calibrationType.id,
           procedure_id: activeProcedure.id,
-          customer_instrument_id: selectedCustomerInstrument.id,
+          verification_scope: verificationScope,
+          verified_instrument_type: isInternalVerification ? "internal" : "customer",
+          internal_instrument_id: isInternalVerification
+            ? selectedInternalInstrument?.id ?? null
+            : null,
+          output_type: isInternalVerification ? "technical_report" : "final_report",
+          acquisition_mode: "manual",
+          source_device: null,
+          customer_instrument_id: isInternalVerification
+            ? null
+            : selectedCustomerInstrument?.id ?? null,
           reference_instrument_id: firstReferenceInstrument.id,
-          customer_instrument_snapshot: customerInstrumentSnapshot,
+          customer_instrument_snapshot: verifiedInstrumentSnapshot,
           reference_instrument_snapshot: referenceInstrumentSnapshot,
           procedure_snapshot: procedureSnapshot,
           mode,
@@ -951,8 +1194,22 @@ export default function ForceCalibrationTable() {
           report_status: "draft",
           verification_date: new Date().toISOString().slice(0, 10),
           operator_name: operatorName || null,
-          location: location || null,
-          environmental_conditions: environmentalConditions || null,
+          location: isInternalVerification
+            ? verificationLocation.trim()
+            : selectedSiteDescription || null,
+          environmental_conditions:
+            ambientTemperature.trim() || ambientHumidity.trim()
+              ? [
+                  ambientTemperature.trim()
+                    ? "Temperatura: " + ambientTemperature.trim() + " °C"
+                    : null,
+                  ambientHumidity.trim()
+                    ? "Umidità: " + ambientHumidity.trim() + " %"
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join("; ")
+              : null,
           status: "draft",
           final_result: null,
           notes: notes || null,
@@ -967,9 +1224,31 @@ export default function ForceCalibrationTable() {
       }
 
       const verificationDate = new Date().toISOString().slice(0, 10);
-      const environmentalValues = parseEnvironmentalConditions(
-        environmentalConditions
-      );
+
+      const reportCustomerName = isInternalVerification
+        ? "Tecnocontrolli S.r.l."
+        : selectedCustomer?.business_name ?? "";
+      const reportCustomerNumber = isInternalVerification
+        ? null
+        : selectedCustomer?.customer_number ?? null;
+      const reportLocation = isInternalVerification
+        ? verificationLocation.trim()
+        : selectedSiteDescription || selectedSite?.name || "";
+      const verifiedInstrumentName = isInternalVerification
+        ? selectedInternalInstrument?.name ?? ""
+        : selectedCustomerInstrument?.name ?? "";
+      const verifiedInstrumentManufacturer = isInternalVerification
+        ? selectedInternalInstrument?.manufacturer ?? null
+        : selectedCustomerInstrument?.manufacturer ?? null;
+      const verifiedInstrumentModel = isInternalVerification
+        ? selectedInternalInstrument?.model ?? null
+        : selectedCustomerInstrument?.model ?? null;
+      const verifiedInstrumentSerial = isInternalVerification
+        ? selectedInternalInstrument?.serial_number ?? null
+        : selectedCustomerInstrument?.serial_number ?? null;
+      const verifiedInstrumentRange = isInternalVerification
+        ? selectedInternalInstrument?.measurement_range ?? null
+        : selectedCustomerInstrument?.measurement_range ?? null;
 
       const firstScaleReferenceName =
         firstScaleReferenceInstruments.length > 1
@@ -977,13 +1256,13 @@ export default function ForceCalibrationTable() {
           : firstReferenceInstrument.name || "Strumento campione";
 
       const reportDefaults = getCtForceReportDefaults({
-        customerName: selectedCustomer.business_name,
-        customerNumber: selectedCustomer.customer_number,
-        instrumentName: selectedCustomerInstrument.name,
-        instrumentManufacturer: selectedCustomerInstrument.manufacturer,
-        instrumentModel: selectedCustomerInstrument.model,
-        instrumentSerial: selectedCustomerInstrument.serial_number,
-        instrumentRange: selectedCustomerInstrument.measurement_range,
+        customerName: reportCustomerName,
+        customerNumber: reportCustomerNumber,
+        instrumentName: verifiedInstrumentName,
+        instrumentManufacturer: verifiedInstrumentManufacturer,
+        instrumentModel: verifiedInstrumentModel,
+        instrumentSerial: verifiedInstrumentSerial,
+        instrumentRange: verifiedInstrumentRange,
         referenceName: firstScaleReferenceName,
         referenceManufacturer:
           firstScaleReferenceInstruments.length === 1
@@ -1001,7 +1280,7 @@ export default function ForceCalibrationTable() {
           firstScaleReferenceInstruments.length === 1
             ? firstReferenceInstrument.internal_code
             : null,
-        location: location || selectedSite.name,
+        location: reportLocation,
       });
 
       const { error: reportDetailsError } = await supabase
@@ -1014,34 +1293,36 @@ export default function ForceCalibrationTable() {
           acceptance_date: null,
           report_date: null,
           test_date: verificationDate,
-          customer_name: selectedCustomer.business_name,
-          site_description:
-            location ||
-            [
-              selectedSite.name,
-              selectedSite.city,
-              selectedSite.province ? "(" + selectedSite.province + ")" : null,
-            ]
-              .filter(Boolean)
-              .join(" "),
+          customer_name: reportCustomerName,
+          site_description: reportLocation,
           work_object: reportDefaults.work_object,
           requested_tests: reportDefaults.requested_tests,
-          premise_text: buildCtPremiseText({
-            verificationDate,
-            customerName: selectedCustomer.business_name,
-            siteName: location || selectedSite.name,
-            instrumentName: selectedCustomerInstrument.name,
-            manufacturer: selectedCustomerInstrument.manufacturer,
-            model: selectedCustomerInstrument.model,
-            serialNumber: selectedCustomerInstrument.serial_number,
-            measurementRange: selectedCustomerInstrument.measurement_range,
-          }),
+          premise_text: isInternalVerification
+            ? buildCtInternalPremiseText({
+                verificationDate,
+                location: reportLocation,
+                instrumentName: verifiedInstrumentName,
+                manufacturer: verifiedInstrumentManufacturer,
+                model: verifiedInstrumentModel,
+                serialNumber: verifiedInstrumentSerial,
+                measurementRange: verifiedInstrumentRange,
+              })
+            : buildCtPremiseText({
+                verificationDate,
+                customerName: reportCustomerName,
+                siteName: reportLocation,
+                instrumentName: verifiedInstrumentName,
+                manufacturer: verifiedInstrumentManufacturer,
+                model: verifiedInstrumentModel,
+                serialNumber: verifiedInstrumentSerial,
+                measurementRange: verifiedInstrumentRange,
+              }),
           scope_text: reportDefaults.scope_text,
           apparatus_description: reportDefaults.apparatus_description,
           execution_method: reportDefaults.execution_method,
           results_text: reportDefaults.results_text,
-          temperature: environmentalValues.temperature,
-          humidity: environmentalValues.humidity,
+          temperature: ambientTemperature.trim() || null,
+          humidity: ambientHumidity.trim() || null,
           technician_name: operatorName || null,
           reviewer_name: null,
           director_name: null,
@@ -1172,7 +1453,7 @@ export default function ForceCalibrationTable() {
           Dati generali verifica
         </h2>
 
-        <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+        <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           <label className="space-y-1">
             <span className="text-sm font-medium text-slate-700">
               Tipo verifica
@@ -1191,42 +1472,48 @@ export default function ForceCalibrationTable() {
           </label>
 
           <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">Operatore</span>
+            <span className="text-sm font-medium text-slate-700">Tecnico</span>
             <input
               value={operatorName}
               onChange={(event) => {
                 setOperatorName(event.target.value);
                 resetSaveState();
               }}
-              placeholder="Nome operatore"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
-          </label>
-
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">Luogo</span>
-            <input
-              value={location}
-              onChange={(event) => {
-                setLocation(event.target.value);
-                resetSaveState();
-              }}
-              placeholder="Sede / laboratorio / cantiere"
+              placeholder="Nome tecnico"
               className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
             />
           </label>
 
           <label className="space-y-1">
             <span className="text-sm font-medium text-slate-700">
-              Condizioni ambientali
+              Temperatura ambiente °C
             </span>
             <input
-              value={environmentalConditions}
+              type="text"
+              inputMode="decimal"
+              value={ambientTemperature}
               onChange={(event) => {
-                setEnvironmentalConditions(event.target.value);
+                setAmbientTemperature(event.target.value.replace(",", "."));
                 resetSaveState();
               }}
-              placeholder="Es. 20 °C - 55% U.R."
+              placeholder="Es. 20"
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+            />
+          </label>
+
+          <label className="space-y-1">
+            <span className="text-sm font-medium text-slate-700">
+              Umidità ambiente %
+            </span>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={ambientHumidity}
+              onChange={(event) => {
+                setAmbientHumidity(event.target.value.replace(",", "."));
+                resetSaveState();
+              }}
+              placeholder="Es. 50"
               className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
             />
           </label>
@@ -1247,163 +1534,380 @@ export default function ForceCalibrationTable() {
         </label>
       </div>
 
-      <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold text-slate-900">
-          Strumento cliente verificato
-        </h2>
+      {isInternalVerification ? (
+        <div className="rounded-2xl border border-sky-200 bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-semibold text-slate-900">
+            Strumento interno verificato
+          </h2>
 
-        <div className="mt-5 grid gap-4 md:grid-cols-3">
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">
-              Cliente *
-            </span>
-            <select
-              value={selectedCustomerId}
-              onChange={(event) => handleCustomerChange(event.target.value)}
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
-            >
-              <option value="">
-                {isLoadingData ? "Caricamento..." : "Seleziona cliente"}
-              </option>
-
-              {customers.map((customer) => (
-                <option key={customer.id} value={customer.id}>
-                  {customer.customer_number
-                    ? customer.customer_number + " - "
-                    : ""}
-                  {customer.business_name}
+          <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <label className="space-y-1 lg:col-span-2">
+              <span className="text-sm font-medium text-slate-700">
+                Strumento interno *
+              </span>
+              <select
+                value={selectedInternalInstrumentId}
+                onChange={(event) => {
+                  setSelectedInternalInstrumentId(event.target.value);
+                  resetSaveState();
+                }}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+              >
+                <option value="">
+                  {isLoadingData
+                    ? "Caricamento strumenti interni..."
+                    : "Seleziona strumento interno"}
                 </option>
-              ))}
-            </select>
-          </label>
 
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">Sede *</span>
-            <select
-              value={selectedSiteId}
-              onChange={(event) => handleSiteChange(event.target.value)}
-              disabled={!selectedCustomerId}
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100"
-            >
-              <option value="">
-                {!selectedCustomerId
-                  ? "Seleziona prima il cliente"
-                  : "Seleziona sede"}
-              </option>
+                {internalInstruments.map((instrument) => (
+                  <option key={instrument.id} value={instrument.id}>
+                    {instrument.name}
+                    {instrument.internal_code
+                      ? " - " + instrument.internal_code
+                      : ""}
+                    {instrument.serial_number
+                      ? " - Mat. " + instrument.serial_number
+                      : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
 
-              {filteredSites.map((site) => (
-                <option key={site.id} value={site.id}>
-                  {site.name}
-                  {site.city ? " - " + site.city : ""}
-                  {site.province ? " (" + site.province + ")" : ""}
-                </option>
-              ))}
-            </select>
-          </label>
+            <label className="space-y-1">
+              <span className="text-sm font-medium text-slate-700">
+                Luogo verifica *
+              </span>
+              <input
+                value={verificationLocation}
+                onChange={(event) => {
+                  setVerificationLocation(event.target.value);
+                  resetSaveState();
+                }}
+                placeholder="Es. Laboratorio Bologna / sede cliente / campo"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+              />
+            </label>
+          </div>
 
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">
-              Strumento *
-            </span>
-            <select
-              value={selectedCustomerInstrumentId}
-              onChange={(event) => {
-                setSelectedCustomerInstrumentId(event.target.value);
-                resetSaveState();
-              }}
-              disabled={!selectedSiteId}
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100"
-            >
-              <option value="">
-                {!selectedSiteId
-                  ? "Seleziona prima la sede"
-                  : "Seleziona strumento"}
-              </option>
-
-              {filteredCustomerInstruments.map((instrument) => (
-                <option key={instrument.id} value={instrument.id}>
-                  {instrument.name}
-                  {instrument.internal_code
-                    ? " - " + instrument.internal_code
-                    : ""}
-                  {instrument.serial_number
-                    ? " - Mat. " + instrument.serial_number
-                    : ""}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
-
-        {selectedCustomer &&
-          selectedSite &&
-          filteredCustomerInstruments.length === 0 && (
+          {internalInstruments.length === 0 && !isLoadingData && (
             <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-              Per questa sede non risultano strumenti cliente registrati. Vai in
-              “Strumenti cliente” e aggiungi l’attrezzatura prima di creare la
-              verifica.
+              Nessuno strumento interno registrato. Vai in “Strumenti interni”
+              e aggiungi l’attrezzatura prima di creare una VI.
             </div>
           )}
 
-        {selectedCustomerInstrument && (
-          <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-800">
-            <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-              <div>
-                <p className="font-semibold">Cliente</p>
-                <p>
-                  {selectedCustomer?.customer_number
-                    ? selectedCustomer.customer_number + " - "
-                    : ""}
-                  {selectedCustomer?.business_name ?? "-"}
-                </p>
-              </div>
+          {selectedInternalInstrument && (
+            <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-800">
+              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+                <div>
+                  <p className="font-semibold">Strumento</p>
+                  <p>{selectedInternalInstrument.name}</p>
+                </div>
 
-              <div>
-                <p className="font-semibold">Sede</p>
-                <p>
-                  {selectedSite?.name ?? "-"}
-                  {selectedSite?.city ? " - " + selectedSite.city : ""}
-                  {selectedSite?.province
-                    ? " (" + selectedSite.province + ")"
-                    : ""}
-                </p>
-              </div>
+                <div>
+                  <p className="font-semibold">Costruttore / modello</p>
+                  <p>
+                    {[
+                      selectedInternalInstrument.manufacturer,
+                      selectedInternalInstrument.model,
+                    ]
+                      .filter(Boolean)
+                      .join(" - ") || "-"}
+                  </p>
+                </div>
 
-              <div>
-                <p className="font-semibold">Strumento</p>
-                <p>{selectedCustomerInstrument.name}</p>
-              </div>
+                <div>
+                  <p className="font-semibold">Matricola</p>
+                  <p>{selectedInternalInstrument.serial_number ?? "-"}</p>
+                </div>
 
-              <div>
-                <p className="font-semibold">Costruttore / modello</p>
-                <p>
-                  {[
-                    selectedCustomerInstrument.manufacturer,
-                    selectedCustomerInstrument.model,
-                  ]
-                    .filter(Boolean)
-                    .join(" - ") || "-"}
-                </p>
-              </div>
+                <div>
+                  <p className="font-semibold">Codice interno</p>
+                  <p>{selectedInternalInstrument.internal_code ?? "-"}</p>
+                </div>
 
-              <div>
-                <p className="font-semibold">Fondo scala</p>
-                <p>{selectedCustomerInstrument.measurement_range ?? "-"}</p>
-              </div>
+                <div>
+                  <p className="font-semibold">Grandezza / unità</p>
+                  <p>
+                    {[
+                      selectedInternalInstrument.measurement_quantity,
+                      selectedInternalInstrument.unit,
+                    ]
+                      .filter(Boolean)
+                      .join(" / ") || "-"}
+                  </p>
+                </div>
 
-              <div>
-                <p className="font-semibold">Risoluzione</p>
-                <p>{selectedCustomerInstrument.resolution ?? "-"}</p>
-              </div>
+                <div>
+                  <p className="font-semibold">Fondo scala</p>
+                  <p>{selectedInternalInstrument.measurement_range ?? "-"}</p>
+                </div>
 
-              <div>
-                <p className="font-semibold">Classe / tolleranza</p>
-                <p>{selectedCustomerInstrument.acceptance_class ?? "-"}</p>
+                <div>
+                  <p className="font-semibold">Reparto</p>
+                  <p>{selectedInternalInstrument.department ?? "-"}</p>
+                </div>
+
+                <div>
+                  <p className="font-semibold">Ubicazione</p>
+                  <p>{selectedInternalInstrument.location ?? "-"}</p>
+                </div>
               </div>
             </div>
+          )}
+        </div>
+      ) : (
+        <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-semibold text-slate-900">
+            Strumento cliente verificato
+          </h2>
+
+          <div className="mt-5 grid gap-4 md:grid-cols-3">
+            <label className="space-y-1">
+              <span className="text-sm font-medium text-slate-700">
+                Cliente *
+              </span>
+              <select
+                value={selectedCustomerId}
+                onChange={(event) => handleCustomerChange(event.target.value)}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+              >
+                <option value="">
+                  {isLoadingData ? "Caricamento..." : "Seleziona cliente"}
+                </option>
+
+                {customers.map((customer) => (
+                  <option key={customer.id} value={customer.id}>
+                    {customer.customer_number
+                      ? customer.customer_number + " - "
+                      : ""}
+                    {customer.business_name}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label className="space-y-1">
+              <span className="text-sm font-medium text-slate-700">Luogo prove *</span>
+              <select
+                value={selectedSiteId}
+                onChange={(event) => handleSiteChange(event.target.value)}
+                disabled={!selectedCustomerId}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100"
+              >
+                <option value="">
+                  {!selectedCustomerId
+                    ? "Seleziona prima il cliente"
+                    : "Seleziona luogo prove"}
+                </option>
+
+                {filteredSites.map((site) => (
+                  <option key={site.id} value={site.id}>
+                    {buildSiteOptionLabel(site)}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <div className="space-y-2 md:col-span-3">
+              <div className="flex flex-wrap items-center gap-3">
+                <button
+                  type="button"
+                  disabled={!selectedCustomerId}
+                  onClick={() => {
+                    setIsAddingSite((current) => !current);
+                    setSiteSaveError("");
+                  }}
+                  className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400"
+                >
+                  {isAddingSite ? "Chiudi nuovo luogo" : "Aggiungi nuovo luogo prove"}
+                </button>
+
+                {selectedCustomerId && filteredSites.length === 0 && (
+                  <span className="text-sm text-amber-700">
+                    Nessun luogo prove salvato per questo cliente. Aggiungine uno.
+                  </span>
+                )}
+              </div>
+
+              {isAddingSite && (
+                <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+                  <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-5">
+                    <label className="space-y-1">
+                      <span className="text-sm font-medium text-slate-700">
+                        Nome luogo *
+                      </span>
+                      <input
+                        value={newSiteName}
+                        onChange={(event) => setNewSiteName(event.target.value)}
+                        placeholder="Es. Sede principale / Cantiere"
+                        className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                      />
+                    </label>
+
+                    <label className="space-y-1 lg:col-span-2">
+                      <span className="text-sm font-medium text-slate-700">
+                        Indirizzo
+                      </span>
+                      <input
+                        value={newSiteAddress}
+                        onChange={(event) => setNewSiteAddress(event.target.value)}
+                        placeholder="Via / località"
+                        className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                      />
+                    </label>
+
+                    <label className="space-y-1">
+                      <span className="text-sm font-medium text-slate-700">CAP</span>
+                      <input
+                        value={newSitePostalCode}
+                        onChange={(event) => setNewSitePostalCode(event.target.value)}
+                        placeholder="CAP"
+                        className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                      />
+                    </label>
+
+                    <label className="space-y-1">
+                      <span className="text-sm font-medium text-slate-700">Città</span>
+                      <input
+                        value={newSiteCity}
+                        onChange={(event) => setNewSiteCity(event.target.value)}
+                        placeholder="Città"
+                        className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+                      />
+                    </label>
+
+                    <label className="space-y-1">
+                      <span className="text-sm font-medium text-slate-700">Provincia</span>
+                      <input
+                        value={newSiteProvince}
+                        onChange={(event) => setNewSiteProvince(event.target.value)}
+                        placeholder="BO"
+                        maxLength={2}
+                        className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm uppercase"
+                      />
+                    </label>
+                  </div>
+
+                  {siteSaveError && (
+                    <div className="mt-3 rounded-xl border border-red-200 bg-red-50 p-3 text-sm text-red-900">
+                      {siteSaveError}
+                    </div>
+                  )}
+
+                  <div className="mt-4 flex justify-end">
+                    <button
+                      type="button"
+                      onClick={saveNewSite}
+                      className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700"
+                    >
+                      Salva luogo prove
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <label className="space-y-1">
+              <span className="text-sm font-medium text-slate-700">
+                Strumento *
+              </span>
+              <select
+                value={selectedCustomerInstrumentId}
+                onChange={(event) => {
+                  setSelectedCustomerInstrumentId(event.target.value);
+                  resetSaveState();
+                }}
+                disabled={!selectedCustomerId}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100"
+              >
+                <option value="">
+                  {!selectedCustomerId
+                    ? "Seleziona prima il cliente"
+                    : "Seleziona strumento"}
+                </option>
+
+                {filteredCustomerInstruments.map((instrument) => (
+                  <option key={instrument.id} value={instrument.id}>
+                    {instrument.name}
+                    {instrument.internal_code
+                      ? " - " + instrument.internal_code
+                      : ""}
+                    {instrument.serial_number
+                      ? " - Mat. " + instrument.serial_number
+                      : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
-        )}
-      </div>
+
+          {selectedCustomer &&
+            selectedSite &&
+            filteredCustomerInstruments.length === 0 && (
+              <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                Per questo cliente non risultano strumenti cliente registrati. Vai in
+                “Strumenti cliente” e aggiungi l’attrezzatura prima di creare la
+                verifica.
+              </div>
+            )}
+
+          {selectedCustomerInstrument && (
+            <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-800">
+              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+                <div>
+                  <p className="font-semibold">Cliente</p>
+                  <p>
+                    {selectedCustomer?.customer_number
+                      ? selectedCustomer.customer_number + " - "
+                      : ""}
+                    {selectedCustomer?.business_name ?? "-"}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="font-semibold">Luogo prove</p>
+                  <p>{selectedSiteDescription || "-"}</p>
+                </div>
+
+                <div>
+                  <p className="font-semibold">Strumento</p>
+                  <p>{selectedCustomerInstrument.name}</p>
+                </div>
+
+                <div>
+                  <p className="font-semibold">Costruttore / modello</p>
+                  <p>
+                    {[
+                      selectedCustomerInstrument.manufacturer,
+                      selectedCustomerInstrument.model,
+                    ]
+                      .filter(Boolean)
+                      .join(" - ") || "-"}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="font-semibold">Grandezza / unità</p>
+                  <p>
+                    {[
+                      selectedCustomerInstrument.measurement_quantity,
+                      selectedCustomerInstrument.unit,
+                    ]
+                      .filter(Boolean)
+                      .join(" / ") || "-"}
+                  </p>
+                </div>
+
+                <div>
+                  <p className="font-semibold">Fondo scala</p>
+                  <p>{selectedCustomerInstrument.measurement_range ?? "-"}</p>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
@@ -1452,14 +1956,6 @@ export default function ForceCalibrationTable() {
                     Punti di misura, campione e grafico relativi a questa scala.
                   </p>
                 </div>
-
-                <button
-                  type="button"
-                  onClick={() => addPoint(scale.id)}
-                  className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700"
-                >
-                  Aggiungi punto
-                </button>
               </div>
 
               <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
@@ -1580,7 +2076,7 @@ export default function ForceCalibrationTable() {
                           </div>
 
                           <div>
-                            <p className="font-semibold">Campo</p>
+                            <p className="font-semibold">Fondo scala</p>
                             <p>{instrument.measurement_range ?? "-"}</p>
                           </div>
                         </div>
@@ -1611,16 +2107,16 @@ export default function ForceCalibrationTable() {
                 <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                   <tr>
                     <th className="px-4 py-3">Punto</th>
-                    <th className="px-4 py-3">Carico applicato</th>
-                    <th className="bg-amber-100 px-4 py-3 text-amber-900">
-                      Ciclo 1
-                    </th>
-                    <th className="bg-amber-100 px-4 py-3 text-amber-900">
-                      Ciclo 2
-                    </th>
-                    <th className="bg-amber-100 px-4 py-3 text-amber-900">
-                      Ciclo 3
-                    </th>
+                    <th className="px-4 py-3">Punto di applicazione</th>
+                    <th className="bg-white text-slate-900 px-4 py-3">
+                  Ciclo 1
+                </th>
+                    <th className="bg-slate-100 text-slate-900 px-4 py-3">
+                  Ciclo 2
+                </th>
+                    <th className="bg-white text-slate-900 px-4 py-3">
+                  Ciclo 3
+                </th>
                     <th className="px-4 py-3">Max</th>
                     <th className="px-4 py-3">Min</th>
                     <th className="px-4 py-3">Media</th>
@@ -1658,11 +2154,13 @@ export default function ForceCalibrationTable() {
                           />
                         </td>
 
-                        <td className="bg-amber-50 px-4 py-3">
+                        <td className="bg-white px-4 py-3">
                           <input
                             type="text"
                             inputMode="decimal"
                             value={editablePoint?.cycle1 ?? ""}
+                            data-cycle-field="cycle1"
+                            onKeyDown={(event) => handleCycleTab(event, "cycle1")}
                             onChange={(event) =>
                               updatePoint(
                                 scale.id,
@@ -1671,15 +2169,16 @@ export default function ForceCalibrationTable() {
                                 event.target.value
                               )
                             }
-                            className="w-28 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 font-semibold text-amber-950 focus:border-amber-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-200"
-                          />
-                        </td>
+                            className="w-28 rounded-lg border border-slate-300 bg-white px-2 py-1 font-semibold text-slate-950 focus:border-slate-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-200"
+                          /></td>
 
-                        <td className="bg-amber-50 px-4 py-3">
+                        <td className="bg-slate-50 px-4 py-3">
                           <input
                             type="text"
                             inputMode="decimal"
                             value={editablePoint?.cycle2 ?? ""}
+                            data-cycle-field="cycle2"
+                            onKeyDown={(event) => handleCycleTab(event, "cycle2")}
                             onChange={(event) =>
                               updatePoint(
                                 scale.id,
@@ -1688,15 +2187,16 @@ export default function ForceCalibrationTable() {
                                 event.target.value
                               )
                             }
-                            className="w-28 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 font-semibold text-amber-950 focus:border-amber-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-200"
-                          />
-                        </td>
+                            className="w-28 rounded-lg border border-slate-300 bg-white px-2 py-1 font-semibold text-slate-950 focus:border-slate-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-200"
+                          /></td>
 
-                        <td className="bg-amber-50 px-4 py-3">
+                        <td className="bg-white px-4 py-3">
                           <input
                             type="text"
                             inputMode="decimal"
                             value={editablePoint?.cycle3 ?? ""}
+                            data-cycle-field="cycle3"
+                            onKeyDown={(event) => handleCycleTab(event, "cycle3")}
                             onChange={(event) =>
                               updatePoint(
                                 scale.id,
@@ -1705,9 +2205,8 @@ export default function ForceCalibrationTable() {
                                 event.target.value
                               )
                             }
-                            className="w-28 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 font-semibold text-amber-950 focus:border-amber-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-200"
-                          />
-                        </td>
+                            className="w-28 rounded-lg border border-slate-300 bg-white px-2 py-1 font-semibold text-slate-950 focus:border-slate-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-200"
+                          /></td>
 
                         <td className="px-4 py-3 text-slate-700">
                           {formatItalianNumber(point.maxValue)}
@@ -1749,12 +2248,25 @@ export default function ForceCalibrationTable() {
               </table>
             </div>
 
+            <div className="border-t border-slate-200 bg-slate-50 px-5 py-4">
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={() => addPoint(scale.id)}
+                  className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700"
+                >
+                  Aggiungi punto
+                </button>
+              </div>
+            </div>
+
             <div className="border-t border-slate-200 p-5">
               <h3 className="mb-3 text-sm font-semibold text-slate-700">
                 Grafico errori -{" "}
                 {scale.scaleName || "Scala " + String(scaleIndex + 1)}
               </h3>
-              <ForceErrorChart points={scale.calculatedPoints} />
+              <ForceErrorChart points={scale.calculatedPoints}
+                  lineColor="amber" />
             </div>
           </div>
         );
@@ -1766,8 +2278,9 @@ export default function ForceCalibrationTable() {
             Salvataggio verifica
           </h2>
           <p className="text-sm text-slate-500">
-            La verifica viene salvata come bozza. Dopo il salvataggio potrai
-            passare direttamente alla compilazione del rapporto finale.
+            La verifica viene salvata come bozza. Per le VT potrai passare ai
+            dati rapporto; per le VI verrà generato il rapportino tecnico nello
+            step successivo.
           </p>
         </div>
 
@@ -1796,10 +2309,16 @@ export default function ForceCalibrationTable() {
 
             {savedRecordId && (
               <Link
-                href={"/verifiche/" + savedRecordId + "/rapporto"}
+                href={
+                  isInternalVerification
+                    ? "/verifiche/" + savedRecordId + "/rapportino-interno"
+                    : "/verifiche/" + savedRecordId + "/rapporto"
+                }
                 className="inline-flex items-center justify-center rounded-xl bg-emerald-700 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-600"
               >
-                Vai ai dati rapporto
+                {isInternalVerification
+                  ? "Vai al rapportino interno"
+                  : "Vai ai dati rapporto"}
               </Link>
             )}
           </div>

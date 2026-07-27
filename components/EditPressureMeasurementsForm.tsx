@@ -5,8 +5,7 @@ import { useMemo, useState } from "react";
 import {
   calculatePressurePoints,
   type PressurePhase,
-  type PressurePointInput,
-} from "@/lib/calculations/pressure";
+  type PressurePointInput} from "@/lib/calculations/pressure";
 import { supabase } from "@/lib/supabase";
 import PressureErrorChart from "./PressureErrorChart";
 import ReferenceInstrumentMultiSelect from "./ReferenceInstrumentMultiSelect";
@@ -49,7 +48,7 @@ type InitialMeasurement = {
   applied_value: number | null;
   cycle_1: number | null;
   cycle_2: number | null;
-  cycle_3: number | null;
+  cycle_3: null,
   max_value: number | null;
   min_value: number | null;
   average_value: number | null;
@@ -68,7 +67,6 @@ type EditablePressurePoint = {
   appliedValue: string;
   reading1: string;
   reading2: string;
-  reading3: string;
 };
 
 type EditableScale = {
@@ -147,8 +145,7 @@ function formatItalianNumber(value: number | null | undefined) {
   }
 
   return new Intl.NumberFormat("it-IT", {
-    maximumFractionDigits: 4,
-  }).format(value);
+    maximumFractionDigits: 4}).format(value);
 }
 
 function formatItalianDate(date: string | null) {
@@ -217,8 +214,7 @@ function buildReferenceInstrumentSnapshot(
     measurement_range: instrument.measurement_range,
     certificate_number: instrument.certificate_number,
     certificate_expiry: instrument.certificate_expiry,
-    status: instrument.status,
-  };
+    status: instrument.status};
 }
 
 function editablePointToPressurePoint(
@@ -230,9 +226,7 @@ function editablePointToPressurePoint(
     verificationPoint: toNumber(point.verificationPoint),
     appliedValue: toNumber(point.appliedValue),
     reading1: toNumber(point.reading1),
-    reading2: toNumber(point.reading2),
-    reading3: toNumber(point.reading3),
-  };
+    reading2: toNumber(point.reading2)};
 }
 
 function buildEditableScale(
@@ -273,10 +267,7 @@ function buildEditableScale(
       verificationPoint: numberToInputValue(measurement.nominal_value),
       appliedValue: numberToInputValue(measurement.applied_value),
       reading1: numberToInputValue(measurement.cycle_1),
-      reading2: numberToInputValue(measurement.cycle_2),
-      reading3: numberToInputValue(measurement.cycle_3),
-    })),
-  };
+      reading2: numberToInputValue(measurement.cycle_2)}))};
 }
 
 export default function EditPressureMeasurementsForm({
@@ -285,8 +276,7 @@ export default function EditPressureMeasurementsForm({
   reportStatus,
   initialScales,
   initialMeasurements,
-  referenceInstruments,
-}: EditPressureMeasurementsFormProps) {
+  referenceInstruments}: EditPressureMeasurementsFormProps) {
   const [scale, setScale] = useState<EditableScale>(() =>
     buildEditableScale(initialScales, initialMeasurements)
   );
@@ -338,8 +328,7 @@ export default function EditPressureMeasurementsForm({
     resetSaveState();
     setScale((currentScale) => ({
       ...currentScale,
-      [field]: value,
-    }));
+      [field]: value}));
   }
 
   function toggleReferenceInstrument(instrumentId: string) {
@@ -353,8 +342,7 @@ export default function EditPressureMeasurementsForm({
         ? currentScale.referenceInstrumentIds.filter(
             (id) => id !== instrumentId
           )
-        : [...currentScale.referenceInstrumentIds, instrumentId],
-    }));
+        : [...currentScale.referenceInstrumentIds, instrumentId]}));
   }
 
   function updatePoint(
@@ -370,8 +358,7 @@ export default function EditPressureMeasurementsForm({
       ...currentScale,
       points: currentScale.points.map((point) =>
         point.id === pointId ? { ...point, [field]: normalizedValue } : point
-      ),
-    }));
+      )}));
   }
 
   function addPoint(phase: PressurePhase) {
@@ -399,11 +386,8 @@ export default function EditPressureMeasurementsForm({
             verificationPoint: numberToInputValue(nextAppliedValue),
             appliedValue: numberToInputValue(nextAppliedValue),
             reading1: "",
-            reading2: "",
-            reading3: "",
-          },
-        ],
-      };
+            reading2: ""},
+        ]};
     });
   }
 
@@ -412,8 +396,7 @@ export default function EditPressureMeasurementsForm({
 
     setScale((currentScale) => ({
       ...currentScale,
-      points: currentScale.points.filter((point) => point.id !== pointId),
-    }));
+      points: currentScale.points.filter((point) => point.id !== pointId)}));
   }
 
   function validate() {
@@ -448,14 +431,13 @@ export default function EditPressureMeasurementsForm({
         point.verificationPoint.trim() === "" ||
         point.appliedValue.trim() === "" ||
         point.reading1.trim() === "" ||
-        point.reading2.trim() === "" ||
-        point.reading3.trim() === ""
+        point.reading2.trim() === ""
       );
     });
 
     if (invalidPoint) {
       throw new Error(
-        "Compila punti di verifica, carico applicato e le tre letture per tutti i punti."
+        "Compila punti di verifica, carico applicato e le due letture per tutti i punti."
       );
     }
   }
@@ -498,8 +480,7 @@ export default function EditPressureMeasurementsForm({
           reference_instruments_snapshot: selectedReferenceInstruments.map(
             (instrument) => buildReferenceInstrumentSnapshot(instrument)
           ),
-          notes: scale.notes.trim() || null,
-        })
+          notes: scale.notes.trim() || null})
         .eq("id", scale.scaleId);
 
       if (scaleError) {
@@ -546,7 +527,7 @@ export default function EditPressureMeasurementsForm({
           applied_value: calculatedPoint.appliedValue,
           cycle_1: calculatedPoint.reading1,
           cycle_2: calculatedPoint.reading2,
-          cycle_3: calculatedPoint.reading3,
+          cycle_3: null,
           max_value: calculatedPoint.maxReading,
           min_value: calculatedPoint.minReading,
           average_value: calculatedPoint.averageReading,
@@ -554,8 +535,7 @@ export default function EditPressureMeasurementsForm({
           accuracy_error_percent: calculatedPoint.accuracyErrorPercent,
           repeatability_error_percent: calculatedPoint.repeatabilityErrorPercent,
           result: null,
-          notes: null,
-        };
+          notes: null};
 
         if (editablePoint.measurementId) {
           const { error: updateError } = await supabase
@@ -586,19 +566,16 @@ export default function EditPressureMeasurementsForm({
               currentPoint.id === editablePoint.id
                 ? {
                     ...currentPoint,
-                    measurementId: insertedMeasurement.id,
-                  }
+                    measurementId: insertedMeasurement.id}
                 : currentPoint
-            ),
-          }));
+            )}));
         }
       }
 
       await supabase
         .from("calibration_records")
         .update({
-          report_status: "draft",
-        })
+          report_status: "draft"})
         .eq("id", recordId)
         .neq("report_status", "issued");
 
@@ -791,7 +768,7 @@ export default function EditPressureMeasurementsForm({
               </div>
 
               <div className="overflow-x-auto">
-                <table className="w-full min-w-[1180px] text-sm">
+                <table className="w-full min-w-[1080px] text-sm">
                   <thead className="text-center text-xs uppercase tracking-wide text-slate-700">
                     <tr className="border-y border-slate-300">
                       <th className="bg-orange-200 px-3 py-3 text-orange-950">
@@ -811,11 +788,6 @@ export default function EditPressureMeasurementsForm({
                       </th>
                       <th className="bg-sky-200 px-3 py-3 text-sky-950">
                         Lettura II° ciclo
-                        <br />
-                        <span className="font-normal lowercase">bar</span>
-                      </th>
-                      <th className="bg-sky-200 px-3 py-3 text-sky-950">
-                        Lettura III° ciclo
                         <br />
                         <span className="font-normal lowercase">bar</span>
                       </th>
@@ -912,18 +884,6 @@ export default function EditPressureMeasurementsForm({
                               value={editablePoint?.reading2 ?? ""}
                               onChange={(event) =>
                                 updatePoint(point.id, "reading2", event.target.value)
-                              }
-                              className="w-24 rounded-lg border border-sky-300 bg-sky-50 px-2 py-1 text-center font-semibold text-sky-950"
-                            />
-                          </td>
-
-                          <td className="bg-sky-50 px-3 py-2">
-                            <input
-                              type="text"
-                              inputMode="decimal"
-                              value={editablePoint?.reading3 ?? ""}
-                              onChange={(event) =>
-                                updatePoint(point.id, "reading3", event.target.value)
                               }
                               className="w-24 rounded-lg border border-sky-300 bg-sky-50 px-2 py-1 text-center font-semibold text-sky-950"
                             />

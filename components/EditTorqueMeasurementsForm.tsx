@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import ReferenceInstrumentMultiSelect from "@/components/ReferenceInstrumentMultiSelect";
+import SimpleAccuracyChart from "@/components/SimpleAccuracyChart";
 
 type ReferenceInstrument = {
   id: string;
@@ -31,8 +31,6 @@ type InitialScale = {
   scale_range: string | null;
   reference_instrument_id: string | null;
   reference_instrument_snapshot: Record<string, unknown> | null;
-  reference_instrument_ids?: string[] | null;
-  reference_instruments_snapshot?: Record<string, unknown>[] | null;
   notes: string | null;
 };
 
@@ -73,7 +71,7 @@ type EditableScale = {
   scaleId: string;
   scaleName: string;
   scaleRange: string;
-  referenceInstrumentIds: string[];
+  referenceInstrumentId: string;
   notes: string;
   points: EditableTorquePoint[];
 };
@@ -101,6 +99,7 @@ type EditTorqueMeasurementsFormProps = {
   initialScales: InitialScale[];
   initialMeasurements: InitialMeasurement[];
   referenceInstruments: ReferenceInstrument[];
+  isInternal?: boolean;
 };
 
 function toNumber(value: string): number {
@@ -164,7 +163,7 @@ function numberToInputValue(value: number | null | undefined) {
   return String(value).replace(".", ",");
 }
 
-function formatItalianNumber(value: number | null | undefined, digits = 4) {
+function formatItalianNumber(value: number | null | undefined, digits = 3) {
   if (value === null || value === undefined || !Number.isFinite(value)) {
     return "-";
   }
@@ -268,7 +267,13 @@ function getRange(instrument: {
   return instrument.measurement_range || instrument.range || null;
 }
 
-function buildReferenceInstrumentSnapshot(instrument: ReferenceInstrument) {
+function buildReferenceInstrumentSnapshot(
+  instrument: ReferenceInstrument | undefined
+) {
+  if (!instrument) {
+    return null;
+  }
+
   return {
     instrument_id: instrument.id,
     name: instrument.name ?? null,
@@ -300,19 +305,12 @@ function buildEditableScale(
         .sort((a, b) => a.point_order - b.point_order)
     : [...measurements].sort((a, b) => a.point_order - b.point_order);
 
-  const referenceInstrumentIds =
-    firstScale?.reference_instrument_ids && firstScale.reference_instrument_ids.length > 0
-      ? firstScale.reference_instrument_ids
-      : firstScale?.reference_instrument_id
-        ? [firstScale.reference_instrument_id]
-        : [];
-
   return {
     id: firstScale?.id || "torque-scale",
     scaleId: firstScale?.id || "",
     scaleName: firstScale?.scale_name || "Scala coppia",
     scaleRange: firstScale?.scale_range || "",
-    referenceInstrumentIds,
+    referenceInstrumentId: firstScale?.reference_instrument_id || "",
     notes: firstScale?.notes || "",
     points: scaleMeasurements.map((measurement) => ({
       id: measurement.id || crypto.randomUUID(),
@@ -325,27 +323,6 @@ function buildEditableScale(
       notes: measurement.notes || "",
     })),
   };
-}
-
-
-function buildFinalResult(points: CalculatedTorquePoint[]) {
-  const results = points
-    .map((point) => point.result)
-    .filter((result): result is string => Boolean(result));
-
-  if (results.length === 0) {
-    return "DA VALUTARE";
-  }
-
-  if (results.some((result) => result === "NON CONFORME")) {
-    return "NON CONFORME";
-  }
-
-  if (results.length === points.length && results.every((result) => result === "CONFORME")) {
-    return "CONFORME";
-  }
-
-  return "DA VALUTARE";
 }
 
 function calculateTorquePoint(point: EditableTorquePoint): CalculatedTorquePoint {
@@ -362,15 +339,11 @@ function calculateTorquePoint(point: EditableTorquePoint): CalculatedTorquePoint
 
   const min = Math.min(...values);
   const max = Math.max(...values);
-  // Formula da modello Excel VI-002A-26:
-  // Errore medio = coppia nominale - media letture
-  // Errore accuratezza % = (coppia nominale - media letture) / coppia nominale * 100
-  // Errore ripetibilità % = (lettura max - lettura min) / media letture * 100
-  const error = nominalTorque - average;
+  const error = average - nominalTorque;
   const errorPercent =
     nominalTorque !== 0 ? (error / nominalTorque) * 100 : 0;
   const repeatabilityPercent =
-    average !== 0 ? ((max - min) / average) * 100 : 0;
+    nominalTorque !== 0 ? ((max - min) / nominalTorque) * 100 : 0;
   const tolerancePercent = nullableNumberFromInput(point.tolerancePercent);
 
   let result: string | null = null;
@@ -403,6 +376,7 @@ export default function EditTorqueMeasurementsForm({
   initialScales,
   initialMeasurements,
   referenceInstruments,
+  isInternal = false,
 }: EditTorqueMeasurementsFormProps) {
   const [scale, setScale] = useState<EditableScale>(() =>
     buildEditableScale(initialScales, initialMeasurements)
@@ -418,15 +392,16 @@ export default function EditTorqueMeasurementsForm({
     return scale.points.map(calculateTorquePoint);
   }, [scale.points]);
 
-  const selectedReferenceInstruments = useMemo(() => {
-    return referenceInstruments.filter((instrument) =>
-      scale.referenceInstrumentIds.includes(instrument.id)
-    );
-  }, [referenceInstruments, scale.referenceInstrumentIds]);
-
-  const hasBlockedReferenceInstrument = selectedReferenceInstruments.some(
-    (instrument) => isReferenceInstrumentBlocked(effectiveStatus(instrument))
+  const selectedReferenceInstrument = referenceInstruments.find(
+    (instrument) => instrument.id === scale.referenceInstrumentId
   );
+
+  const selectedReferenceStatus = selectedReferenceInstrument
+    ? effectiveStatus(selectedReferenceInstrument)
+    : null;
+
+  const hasBlockedReferenceInstrument =
+    selectedReferenceStatus && isReferenceInstrumentBlocked(selectedReferenceStatus);
 
   function resetSaveState() {
     setSaveMessage("");
@@ -434,23 +409,13 @@ export default function EditTorqueMeasurementsForm({
   }
 
   function updateScaleField(
-    field: keyof Omit<EditableScale, "id" | "scaleId" | "points" | "referenceInstrumentIds">,
+    field: keyof Omit<EditableScale, "id" | "scaleId" | "points">,
     value: string
   ) {
     resetSaveState();
     setScale((currentScale) => ({
       ...currentScale,
       [field]: value,
-    }));
-  }
-
-  function toggleReferenceInstrument(instrumentId: string) {
-    resetSaveState();
-    setScale((currentScale) => ({
-      ...currentScale,
-      referenceInstrumentIds: currentScale.referenceInstrumentIds.includes(instrumentId)
-        ? currentScale.referenceInstrumentIds.filter((id) => id !== instrumentId)
-        : [...currentScale.referenceInstrumentIds, instrumentId],
     }));
   }
 
@@ -514,13 +479,17 @@ export default function EditTorqueMeasurementsForm({
       throw new Error("Inserisci il nome della scala.");
     }
 
-    if (selectedReferenceInstruments.length === 0) {
-      throw new Error("Seleziona almeno uno strumento campione usato.");
+    if (!scale.referenceInstrumentId) {
+      throw new Error("Seleziona lo strumento campione usato.");
+    }
+
+    if (!selectedReferenceInstrument) {
+      throw new Error("Strumento campione usato non trovato.");
     }
 
     if (hasBlockedReferenceInstrument) {
       throw new Error(
-        "Uno degli strumenti campione usati è scaduto o fuori servizio."
+        "Lo strumento campione usato è scaduto o fuori servizio."
       );
     }
 
@@ -549,10 +518,9 @@ export default function EditTorqueMeasurementsForm({
       return scale.scaleId;
     }
 
-    const referenceSnapshots = selectedReferenceInstruments.map(
-      buildReferenceInstrumentSnapshot
-    );
-    const primaryReference = selectedReferenceInstruments[0];
+    if (!selectedReferenceInstrument) {
+      throw new Error("Strumento campione usato non selezionato.");
+    }
 
     const { data: insertedScale, error: insertScaleError } = await supabase
       .from("calibration_record_scales")
@@ -561,12 +529,10 @@ export default function EditTorqueMeasurementsForm({
         scale_order: 1,
         scale_name: scale.scaleName.trim(),
         scale_range: scale.scaleRange.trim() || null,
-        reference_instrument_id: primaryReference.id,
-        reference_instrument_snapshot: referenceSnapshots[0],
-        reference_instrument_ids: selectedReferenceInstruments.map(
-          (instrument) => instrument.id
+        reference_instrument_id: selectedReferenceInstrument.id,
+        reference_instrument_snapshot: buildReferenceInstrumentSnapshot(
+          selectedReferenceInstrument
         ),
-        reference_instruments_snapshot: referenceSnapshots,
         notes: scale.notes.trim() || null,
       })
       .select("id")
@@ -602,12 +568,11 @@ export default function EditTorqueMeasurementsForm({
     try {
       validate();
 
-      const scaleId = await ensureScaleExists();
+      if (!selectedReferenceInstrument) {
+        throw new Error("Strumento campione usato non selezionato.");
+      }
 
-      const referenceSnapshots = selectedReferenceInstruments.map(
-        buildReferenceInstrumentSnapshot
-      );
-      const primaryReference = selectedReferenceInstruments[0];
+      const scaleId = await ensureScaleExists();
 
       const { error: scaleError } = await supabase
         .from("calibration_record_scales")
@@ -615,12 +580,10 @@ export default function EditTorqueMeasurementsForm({
           scale_order: 1,
           scale_name: scale.scaleName.trim(),
           scale_range: scale.scaleRange.trim() || null,
-          reference_instrument_id: primaryReference.id,
-          reference_instrument_snapshot: referenceSnapshots[0],
-          reference_instrument_ids: selectedReferenceInstruments.map(
-            (instrument) => instrument.id
+          reference_instrument_id: selectedReferenceInstrument.id,
+          reference_instrument_snapshot: buildReferenceInstrumentSnapshot(
+            selectedReferenceInstrument
           ),
-          reference_instruments_snapshot: referenceSnapshots,
           notes: scale.notes.trim() || null,
         })
         .eq("id", scaleId);
@@ -666,7 +629,7 @@ export default function EditTorqueMeasurementsForm({
           section: scale.scaleName.trim(),
           point_order: pointIndex + 1,
           nominal_value: calculatedPoint.nominalTorque,
-          applied_value: calculatedPoint.nominalTorque,
+          applied_value: calculatedPoint.average,
           cycle_1: calculatedPoint.reading1,
           cycle_2: calculatedPoint.reading2,
           cycle_3: calculatedPoint.reading3,
@@ -724,22 +687,15 @@ export default function EditTorqueMeasurementsForm({
         }
       }
 
-      const finalResult = buildFinalResult(calculatedPoints);
-
       await supabase
         .from("calibration_records")
         .update({
           report_status: "draft",
-          final_result: finalResult,
         })
         .eq("id", recordId)
         .neq("report_status", "issued");
 
-      setSaveMessage(
-        "Misure dinamometriche aggiornate correttamente. Risultato finale: " +
-          finalResult +
-          "."
-      );
+      setSaveMessage("Misure dinamometriche aggiornate correttamente.");
     } catch (error) {
       const message =
         error instanceof Error
@@ -777,17 +733,17 @@ export default function EditTorqueMeasurementsForm({
 
           <div className="flex flex-wrap gap-3">
             <Link
-              href={"/verifiche/" + recordId + "/rapporto"}
+              href={isInternal ? "/verifiche/" + recordId + "/rapportino-interno" : "/verifiche/" + recordId + "/rapporto"}
               className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
             >
-              Dati rapporto
+              {isInternal ? "Rapportino" : "Dati rapporto"}
             </Link>
 
             <Link
-              href={"/verifiche/" + recordId + "/rapporto/finale"}
+              href={isInternal ? "/verifiche/" + recordId + "/rapportino-interno" : "/verifiche/" + recordId + "/rapporto/finale"}
               className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700"
             >
-              Rapporto
+              {isInternal ? "Rapportino" : "Rapporto"}
             </Link>
           </div>
         </div>
@@ -800,7 +756,7 @@ export default function EditTorqueMeasurementsForm({
               Scala coppia
             </h2>
 
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               <label className="space-y-1">
                 <span className="text-sm font-medium text-slate-700">
                   Nome scala *
@@ -816,7 +772,7 @@ export default function EditTorqueMeasurementsForm({
 
               <label className="space-y-1">
                 <span className="text-sm font-medium text-slate-700">
-                  Fondo scala
+                  Campo / fondo scala
                 </span>
                 <input
                   value={scale.scaleRange}
@@ -827,15 +783,34 @@ export default function EditTorqueMeasurementsForm({
                   className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
                 />
               </label>
-            </div>
 
-            <div className="mt-4">
-              <ReferenceInstrumentMultiSelect
-                instruments={referenceInstruments}
-                selectedIds={scale.referenceInstrumentIds}
-                onToggle={toggleReferenceInstrument}
-                label="Strumenti campione usati *"
-              />
+              <label className="space-y-1 lg:col-span-2">
+                <span className="text-sm font-medium text-slate-700">
+                  Strumento campione usato *
+                </span>
+                <select
+                  value={scale.referenceInstrumentId}
+                  onChange={(event) =>
+                    updateScaleField("referenceInstrumentId", event.target.value)
+                  }
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+                >
+                  <option value="">Seleziona strumento campione</option>
+
+                  {referenceInstruments.map((instrument) => (
+                    <option key={instrument.id} value={instrument.id}>
+                      {instrument.name || "Strumento campione"}
+                      {instrument.internal_code
+                        ? " - " + instrument.internal_code
+                        : ""}
+                      {getRange(instrument) ? " - " + getRange(instrument) : ""}
+                      {instrument.serial_number
+                        ? " - Mat. " + instrument.serial_number
+                        : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
 
             <label className="mt-4 block space-y-1">
@@ -852,69 +827,60 @@ export default function EditTorqueMeasurementsForm({
               />
             </label>
 
-            {selectedReferenceInstruments.length > 0 && (
-              <div className="mt-5 space-y-3">
-                {selectedReferenceInstruments.map((instrument) => {
-                  const status = effectiveStatus(instrument);
-                  const blocked = isReferenceInstrumentBlocked(status);
+            {selectedReferenceInstrument && selectedReferenceStatus && (
+              <div
+                className={
+                  "mt-5 rounded-xl border p-4 text-sm " +
+                  statusClass(selectedReferenceStatus)
+                }
+              >
+                <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
+                  <div>
+                    <p className="font-semibold">Stato</p>
+                    <p>{statusLabel(selectedReferenceStatus)}</p>
+                  </div>
 
-                  return (
-                    <div
-                      key={instrument.id}
-                      className={"rounded-xl border p-4 text-sm " + statusClass(status)}
-                    >
-                      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-6">
-                        <div>
-                          <p className="font-semibold">Strumento</p>
-                          <p>{instrument.name || "-"}</p>
-                        </div>
+                  <div>
+                    <p className="font-semibold">Certificato</p>
+                    <p>{selectedReferenceInstrument.certificate_number ?? "-"}</p>
+                  </div>
 
-                        <div>
-                          <p className="font-semibold">Stato</p>
-                          <p>{statusLabel(status)}</p>
-                        </div>
-
-                        <div>
-                          <p className="font-semibold">Certificato</p>
-                          <p>{instrument.certificate_number ?? "-"}</p>
-                        </div>
-
-                        <div>
-                          <p className="font-semibold">Scadenza</p>
-                          <p>{formatItalianDate(instrument.certificate_expiry)}</p>
-                        </div>
-
-                        <div>
-                          <p className="font-semibold">Campo</p>
-                          <p>{getRange(instrument) ?? "-"}</p>
-                        </div>
-
-                        <div>
-                          <p className="font-semibold">File</p>
-                          {instrument.certificate_file_url ? (
-                            <a
-                              href={instrument.certificate_file_url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="font-semibold hover:underline"
-                            >
-                              Apri certificato
-                            </a>
-                          ) : (
-                            <p>-</p>
-                          )}
-                        </div>
-                      </div>
-
-                      {blocked && (
-                        <p className="mt-3 font-medium">
-                          Blocco: questo strumento campione è scaduto o fuori
-                          servizio.
-                        </p>
+                  <div>
+                    <p className="font-semibold">Scadenza</p>
+                    <p>
+                      {formatItalianDate(
+                        selectedReferenceInstrument.certificate_expiry
                       )}
-                    </div>
-                  );
-                })}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="font-semibold">Campo</p>
+                    <p>{getRange(selectedReferenceInstrument) ?? "-"}</p>
+                  </div>
+
+                  <div>
+                    <p className="font-semibold">File</p>
+                    {selectedReferenceInstrument.certificate_file_url ? (
+                      <a
+                        href={selectedReferenceInstrument.certificate_file_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-semibold hover:underline"
+                      >
+                        Apri certificato
+                      </a>
+                    ) : (
+                      <p>-</p>
+                    )}
+                  </div>
+                </div>
+
+                {hasBlockedReferenceInstrument && (
+                  <p className="mt-3 font-medium">
+                    Blocco: lo strumento campione è scaduto o fuori servizio.
+                  </p>
+                )}
               </div>
             )}
           </div>
@@ -924,7 +890,7 @@ export default function EditTorqueMeasurementsForm({
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-4 py-3">Punto</th>
-                  <th className="px-4 py-3">Punto / carico applicato N·m</th>
+                  <th className="px-4 py-3">Coppia nominale N·m</th>
                   <th className="bg-amber-100 px-4 py-3 text-amber-900">
                     Lettura 1
                   </th>
@@ -1007,19 +973,19 @@ export default function EditTorqueMeasurementsForm({
                       </td>
 
                       <td className="px-4 py-3">
-                        {formatItalianNumber(point.average)}
+                        {formatItalianNumber(point.average, 3)}
                       </td>
 
                       <td className="px-4 py-3">
-                        {formatItalianNumber(point.error)}
+                        {formatItalianNumber(point.error, 3)}
                       </td>
 
                       <td className="px-4 py-3">
-                        {formatItalianNumber(point.errorPercent)}
+                        {formatItalianNumber(point.errorPercent, 3)}
                       </td>
 
                       <td className="px-4 py-3">
-                        {formatItalianNumber(point.repeatabilityPercent)}
+                        {formatItalianNumber(point.repeatabilityPercent, 3)}
                       </td>
 
                       <td className="px-4 py-3">
@@ -1071,6 +1037,22 @@ export default function EditTorqueMeasurementsForm({
             </table>
           </div>
 
+
+
+          <div className="border-t border-slate-200 p-5">
+            <SimpleAccuracyChart
+              title="Grafico errore accuratezza % - Dinamometria"
+              lineColor="#d97706"
+              points={calculatedPoints.map((point, index) => ({
+                label:
+                  point.nominalTorque
+                    ? formatItalianNumber(point.nominalTorque, 3)
+                    : "Punto " + String(index + 1),
+                value: point.errorPercent,
+              }))}
+            />
+          </div>
+
           <div className="border-t border-slate-200 p-5">
             <div className="flex justify-end">
               <button
@@ -1091,15 +1073,15 @@ export default function EditTorqueMeasurementsForm({
             Salva misure dinamometriche
           </h2>
           <p className="text-sm text-slate-500">
-            I valori vengono salvati nella tabella misure usando punto di verifica,
-            tre letture, media, errore medio, errore accuratezza percentuale e ripetibilità.
+            I valori vengono salvati nella tabella misure usando coppia nominale,
+            tre letture, media, errore, errore percentuale e ripetibilità.
           </p>
         </div>
 
         <button
           type="button"
           onClick={saveMeasurements}
-          disabled={isSaving || isReadOnly || hasBlockedReferenceInstrument}
+          disabled={isSaving || isReadOnly || Boolean(hasBlockedReferenceInstrument)}
           className="rounded-xl bg-emerald-700 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-slate-400"
         >
           {isReadOnly

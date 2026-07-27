@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "TecnoTarature",
-  description: "Gestionale interno per verifiche e tarature",
+  title: "TecnoVerifiche",
+  description: "Gestionale interno per verifiche di tarature",
 };
 
 export default function RootLayout({

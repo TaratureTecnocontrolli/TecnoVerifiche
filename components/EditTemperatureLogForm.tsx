@@ -71,6 +71,7 @@ type EditTemperatureLogFormProps = {
   recordId: string;
   recordNumber: string | null;
   reportStatus: string | null;
+  isInternalVerification?: boolean;
   initialScales: InitialScale[];
   initialMeasurements: InitialMeasurement[];
   referenceInstruments: ReferenceInstrument[];
@@ -332,6 +333,7 @@ export default function EditTemperatureLogForm({
   recordId,
   recordNumber,
   reportStatus,
+  isInternalVerification = false,
   initialScales,
   initialMeasurements,
   referenceInstruments,
@@ -361,6 +363,14 @@ export default function EditTemperatureLogForm({
   const [saveError, setSaveError] = useState("");
 
   const isReadOnly = reportStatus === "issued";
+  const detailsHref = isInternalVerification
+    ? "/verifiche/" + recordId + "/rapportino-interno"
+    : "/verifiche/" + recordId + "/rapporto";
+
+  const reportHref = isInternalVerification
+    ? "/verifiche/" + recordId + "/rapportino-interno"
+    : "/verifiche/" + recordId + "/rapporto/finale";
+
 
   const selectedReferenceInstruments = referenceInstruments.filter((instrument) =>
     referenceInstrumentIds.includes(instrument.id)
@@ -655,17 +665,17 @@ export default function EditTemperatureLogForm({
 
           <div className="flex flex-wrap gap-3">
             <Link
-              href={"/verifiche/" + recordId + "/rapporto"}
+              href={detailsHref}
               className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
             >
-              Dati rapporto
+              {isInternalVerification ? "Rapportino" : "Dati rapporto"}
             </Link>
 
             <Link
-              href={"/verifiche/" + recordId + "/rapporto/finale"}
+              href={reportHref}
               className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700"
             >
-              Rapporto
+              {isInternalVerification ? "Rapportino" : "Rapporto"}
             </Link>
           </div>
         </div>

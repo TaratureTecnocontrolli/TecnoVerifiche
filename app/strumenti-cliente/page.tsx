@@ -15,8 +15,6 @@ type CustomerInstrument = {
   measurement_quantity: string | null;
   unit: string | null;
   measurement_range: string | null;
-  resolution: string | null;
-  acceptance_class: string | null;
   notes: string | null;
   created_at: string;
 };
@@ -45,8 +43,6 @@ export default async function CustomerInstrumentsPage() {
       measurement_quantity,
       unit,
       measurement_range,
-      resolution,
-      acceptance_class,
       notes,
       created_at
     `
@@ -143,7 +139,7 @@ export default async function CustomerInstrumentsPage() {
             </div>
           ) : (
             <div className="overflow-x-auto">
-              <table className="w-full min-w-[1220px] text-sm">
+              <table className="w-full min-w-[980px] text-sm">
                 <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                   <tr>
                     <th className="px-4 py-3">Cliente</th>
@@ -151,9 +147,7 @@ export default async function CustomerInstrumentsPage() {
                     <th className="px-4 py-3">Codice</th>
                     <th className="px-4 py-3">Matricola</th>
                     <th className="px-4 py-3">Grandezza</th>
-                    <th className="px-4 py-3">Campo</th>
-                    <th className="px-4 py-3">Risoluzione</th>
-                    <th className="px-4 py-3">Classe/tolleranza</th>
+                    <th className="px-4 py-3">Fondo scala</th>
                     <th className="px-4 py-3">Inserito il</th>
                     <th className="px-4 py-3">Azioni</th>
                   </tr>
@@ -201,14 +195,6 @@ export default async function CustomerInstrumentsPage() {
 
                       <td className="px-4 py-3 text-slate-700">
                         {instrument.measurement_range ?? "-"}
-                      </td>
-
-                      <td className="px-4 py-3 text-slate-700">
-                        {instrument.resolution ?? "-"}
-                      </td>
-
-                      <td className="px-4 py-3 text-slate-700">
-                        {instrument.acceptance_class ?? "-"}
                       </td>
 
                       <td className="px-4 py-3 text-slate-700">

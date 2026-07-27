@@ -1,6 +1,8 @@
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
 
+type VerificationScope = "VT" | "VI";
+
 type VerificationModule = {
   title: string;
   badge: string;
@@ -149,6 +151,25 @@ const modules: VerificationModule[] = [
   },
 ];
 
+function scopeLabel(scope: VerificationScope) {
+  if (scope === "VT") return "VT - Verifiche di Taratura Cliente";
+  return "VI - Verifiche Interne";
+}
+
+function scopeDescription(scope: VerificationScope) {
+  if (scope === "VT") {
+    return "Flusso per verifiche di taratura eseguite su strumenti del cliente, con rapporto finale completo.";
+  }
+
+  return "Flusso per verifiche interne su strumenti aziendali, con rapportino tecnico finale.";
+}
+
+function buildScopedHref(href: string | null, scope: VerificationScope) {
+  if (!href) return null;
+
+  return `${href}?scope=${scope}`;
+}
+
 function StatusBadge({ status }: { status: VerificationModule["status"] }) {
   if (status === "active") {
     return (
@@ -165,7 +186,15 @@ function StatusBadge({ status }: { status: VerificationModule["status"] }) {
   );
 }
 
-function ModuleCard({ module }: { module: VerificationModule }) {
+function ModuleCard({
+  module,
+  scope,
+}: {
+  module: VerificationModule;
+  scope: VerificationScope;
+}) {
+  const scopedHref = buildScopedHref(module.href, scope);
+
   const cardContent = (
     <div
       className={`relative h-full rounded-2xl border bg-white p-6 shadow-sm transition ${
@@ -210,7 +239,7 @@ function ModuleCard({ module }: { module: VerificationModule }) {
       <div className="mt-6">
         {module.status === "active" ? (
           <span className="text-sm font-semibold text-slate-900">
-            Avvia verifica →
+            Avvia {scope} →
           </span>
         ) : (
           <span className="text-sm font-semibold text-slate-400">
@@ -221,14 +250,57 @@ function ModuleCard({ module }: { module: VerificationModule }) {
     </div>
   );
 
-  if (!module.href) {
+  if (!scopedHref || module.status !== "active") {
     return cardContent;
   }
 
   return (
-    <Link href={module.href} className="block h-full">
+    <Link href={scopedHref} className="block h-full">
       {cardContent}
     </Link>
+  );
+}
+
+function ScopeSection({
+  scope,
+  modules,
+}: {
+  scope: VerificationScope;
+  modules: VerificationModule[];
+}) {
+  return (
+    <section className="space-y-5">
+      <div
+        id={scope.toLowerCase()}
+        className={`rounded-3xl border p-6 shadow-sm ${
+          scope === "VT"
+            ? "border-emerald-200 bg-emerald-50"
+            : "border-sky-200 bg-sky-50"
+        }`}
+      >
+        <div
+          className={`inline-flex rounded-b-xl px-4 py-1 text-xs font-semibold uppercase tracking-wide text-white ${
+            scope === "VT" ? "bg-emerald-700" : "bg-sky-700"
+          }`}
+        >
+          {scope}
+        </div>
+
+        <h2 className="mt-5 text-2xl font-bold text-slate-950">
+          {scopeLabel(scope)}
+        </h2>
+
+        <p className="mt-2 max-w-4xl text-sm leading-6 text-slate-700">
+          {scopeDescription(scope)}
+        </p>
+      </div>
+
+      <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
+        {modules.map((module) => (
+          <ModuleCard key={`${scope}-${module.title}`} module={module} scope={scope} />
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -243,26 +315,55 @@ export default function NewVerificationPage() {
       <div className="space-y-8">
         <section className="rounded-3xl border border-slate-200 bg-white p-6 shadow-sm">
           <div className="inline-flex rounded-b-xl bg-slate-900 px-4 py-1 text-xs font-semibold uppercase tracking-wide text-white">
-            Selezione modulo
+            Selezione processo
           </div>
 
           <h1 className="mt-5 text-3xl font-bold text-slate-950">
             Nuova verifica
           </h1>
 
-          <p className="mt-3 max-w-3xl text-slate-600">
-            Seleziona il tipo di verifica da avviare tra i {activeModules.length}{" "}
-            moduli disponibili.
+          <p className="mt-3 max-w-4xl text-slate-600">
+            Seleziona prima il processo operativo e poi il modulo tecnico da
+            avviare. Le VT sono verifiche di tarature per cliente con rapporto
+            finale completo. Le VI sono verifiche interne su strumenti aziendali
+            con rapportino tecnico.
           </p>
-        </section>
 
-        <section className="space-y-4">
-          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-4">
-            {activeModules.map((module) => (
-              <ModuleCard key={module.title} module={module} />
-            ))}
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
+            <a
+              href="#vt"
+              className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 transition hover:-translate-y-0.5 hover:shadow-md"
+            >
+              <p className="text-sm font-black uppercase tracking-wide text-emerald-700">
+                VT
+              </p>
+              <h2 className="mt-2 text-xl font-bold text-slate-950">
+                Verifiche di Taratura Cliente
+              </h2>
+              <p className="mt-2 text-sm leading-5 text-slate-700">
+                Usa cliente, strumento cliente, luogo prove, strumenti campione, misure e rapporto finale completo.
+              </p>
+            </a>
+
+            <a
+              href="#vi"
+              className="rounded-2xl border border-sky-200 bg-sky-50 p-5 transition hover:-translate-y-0.5 hover:shadow-md"
+            >
+              <p className="text-sm font-black uppercase tracking-wide text-sky-700">
+                VI
+              </p>
+              <h2 className="mt-2 text-xl font-bold text-slate-950">
+                Verifiche Interne
+              </h2>
+              <p className="mt-2 text-sm leading-5 text-slate-700">
+                Usa strumenti interni, luogo verifica, tecnico, strumenti campione, misure e rapportino tecnico.
+              </p>
+            </a>
           </div>
         </section>
+
+        <ScopeSection scope="VT" modules={activeModules} />
+        <ScopeSection scope="VI" modules={activeModules} />
 
         {developmentModules.length > 0 && (
           <section className="space-y-4">
@@ -275,7 +376,7 @@ export default function NewVerificationPage() {
 
             <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
               {developmentModules.map((module) => (
-                <ModuleCard key={module.title} module={module} />
+                <ModuleCard key={module.title} module={module} scope="VT" />
               ))}
             </div>
           </section>

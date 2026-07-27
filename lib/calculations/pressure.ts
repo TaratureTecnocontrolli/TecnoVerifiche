@@ -7,7 +7,6 @@ export type PressurePointInput = {
   appliedValue: number;
   reading1: number;
   reading2: number;
-  reading3: number;
 };
 
 export type PressurePointResult = PressurePointInput & {
@@ -31,17 +30,17 @@ export function calculatePressurePoints(
   points: PressurePointInput[]
 ): PressurePointResult[] {
   return points.map((point) => {
-    const maxReading = Math.max(point.reading1, point.reading2, point.reading3);
-    const minReading = Math.min(point.reading1, point.reading2, point.reading3);
-    const averageReading = (point.reading1 + point.reading2 + point.reading3) / 3;
+    const readings = [point.reading1, point.reading2];
 
-    const meanError =
-      ((point.appliedValue * 3) -
-        (point.reading1 + point.reading2 + point.reading3)) /
-      3;
+    const maxReading = Math.max(...readings);
+    const minReading = Math.min(...readings);
+    const averageReading =
+      readings.reduce((sum, value) => sum + value, 0) / readings.length;
+
+    const meanError = averageReading - point.appliedValue;
 
     const accuracyErrorPercent = safePercent(
-      point.appliedValue - averageReading,
+      meanError,
       point.appliedValue
     );
 

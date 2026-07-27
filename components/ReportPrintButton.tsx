@@ -25,7 +25,7 @@ export default function ReportPrintButton({ fileName }: ReportPrintButtonProps) 
       onClick={handlePrint}
       className="rounded-xl bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-700"
     >
-      Stampa / Salva PDF
+      Salva PDF
     </button>
   );
 }

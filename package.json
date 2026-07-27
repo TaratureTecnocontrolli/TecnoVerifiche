@@ -9,12 +9,14 @@
     "lint": "eslint"
   },
   "dependencies": {
+    "@supabase/ssr": "^0.12.3",
     "@supabase/supabase-js": "^2.110.0",
     "date-fns": "^4.1.0",
-    "next": "latest",
+    "next": "^16.2.11",
     "react": "latest",
     "react-dom": "latest",
-    "recharts": "^3.9.1"
+    "recharts": "^3.9.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@eslint/eslintrc": "latest",

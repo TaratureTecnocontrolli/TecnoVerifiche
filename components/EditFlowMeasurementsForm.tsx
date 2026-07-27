@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import ReferenceInstrumentMultiSelect from "@/components/ReferenceInstrumentMultiSelect";
+import SimpleAccuracyChart from "@/components/SimpleAccuracyChart";
 
 type ReferenceInstrument = {
   id: string;
@@ -31,8 +31,6 @@ type InitialScale = {
   scale_range: string | null;
   reference_instrument_id: string | null;
   reference_instrument_snapshot: Record<string, unknown> | null;
-  reference_instrument_ids?: string[] | null;
-  reference_instruments_snapshot?: Record<string, unknown>[] | null;
   notes: string | null;
 };
 
@@ -61,7 +59,7 @@ type EditableFlowPoint = {
   id: string;
   measurementId: string | null;
   nominalVolume: string;
-  appliedVolume: string;
+  setVolume: string;
   reading1: string;
   reading2: string;
   reading3: string;
@@ -74,7 +72,7 @@ type EditableScale = {
   scaleId: string;
   scaleName: string;
   scaleRange: string;
-  referenceInstrumentIds: string[];
+  referenceInstrumentId: string;
   notes: string;
   points: EditableFlowPoint[];
 };
@@ -82,7 +80,7 @@ type EditableScale = {
 type CalculatedFlowPoint = {
   id: string;
   nominalVolume: number;
-  appliedVolume: number;
+  setVolume: number;
   reading1: number;
   reading2: number;
   reading3: number;
@@ -100,6 +98,7 @@ type EditFlowMeasurementsFormProps = {
   recordId: string;
   recordNumber: string | null;
   reportStatus: string | null;
+  isInternalVerification?: boolean;
   initialScales: InitialScale[];
   initialMeasurements: InitialMeasurement[];
   referenceInstruments: ReferenceInstrument[];
@@ -166,7 +165,7 @@ function numberToInputValue(value: number | null | undefined) {
   return String(value).replace(".", ",");
 }
 
-function formatItalianNumber(value: number | null | undefined, digits = 4) {
+function formatItalianNumber(value: number | null | undefined, digits = 3) {
   if (value === null || value === undefined || !Number.isFinite(value)) {
     return "-";
   }
@@ -270,7 +269,13 @@ function getRange(instrument: {
   return instrument.measurement_range || instrument.range || null;
 }
 
-function buildReferenceInstrumentSnapshot(instrument: ReferenceInstrument) {
+function buildReferenceInstrumentSnapshot(
+  instrument: ReferenceInstrument | undefined
+) {
+  if (!instrument) {
+    return null;
+  }
+
   return {
     instrument_id: instrument.id,
     name: instrument.name ?? null,
@@ -302,31 +307,75 @@ function buildEditableScale(
         .sort((a, b) => a.point_order - b.point_order)
     : [...measurements].sort((a, b) => a.point_order - b.point_order);
 
-  const referenceInstrumentIds =
-    firstScale?.reference_instrument_ids && firstScale.reference_instrument_ids.length > 0
-      ? firstScale.reference_instrument_ids
-      : firstScale?.reference_instrument_id
-        ? [firstScale.reference_instrument_id]
-        : [];
-
   return {
     id: firstScale?.id || "flow-scale",
     scaleId: firstScale?.id || "",
-    scaleName: firstScale?.scale_name || "Scala portata",
+    scaleName: firstScale?.scale_name || "Scala portata / volume",
     scaleRange: firstScale?.scale_range || "",
-    referenceInstrumentIds,
+    referenceInstrumentId: firstScale?.reference_instrument_id || "",
     notes: firstScale?.notes || "",
     points: scaleMeasurements.map((measurement) => ({
       id: measurement.id || crypto.randomUUID(),
       measurementId: measurement.id,
       nominalVolume: numberToInputValue(measurement.nominal_value),
-      appliedVolume: numberToInputValue(measurement.applied_value),
+      setVolume: numberToInputValue(measurement.applied_value),
       reading1: numberToInputValue(measurement.cycle_1),
       reading2: numberToInputValue(measurement.cycle_2),
       reading3: numberToInputValue(measurement.cycle_3),
       tolerancePercent: "",
       notes: measurement.notes || "",
     })),
+  };
+}
+
+function calculateFlowPoint(point: EditableFlowPoint): CalculatedFlowPoint {
+  const nominalVolume = toNumber(point.nominalVolume);
+  const setVolume = toNumber(point.setVolume);
+  const reading1 = toNumber(point.reading1);
+  const reading2 = toNumber(point.reading2);
+  const reading3 = toNumber(point.reading3);
+  const values = [reading1, reading2, reading3];
+
+  const average =
+    values.length > 0
+      ? values.reduce((sum, value) => sum + value, 0) / values.length
+      : 0;
+
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+
+  // Formula derivata dal rapporto contalitri:
+  // Errore = Media letture - Volume impostato
+  // Errore % = Errore / Volume impostato × 100
+  const error = average - setVolume;
+  const errorPercent = setVolume !== 0 ? (error / setVolume) * 100 : 0;
+  const repeatabilityPercent =
+    average !== 0 ? ((max - min) / average) * 100 : 0;
+
+  const tolerancePercent = nullableNumberFromInput(point.tolerancePercent);
+
+  let result: string | null = null;
+
+  if (tolerancePercent !== null) {
+    result =
+      Math.abs(errorPercent) <= tolerancePercent ? "CONFORME" : "NON CONFORME";
+  }
+
+  return {
+    id: point.id,
+    nominalVolume,
+    setVolume,
+    reading1,
+    reading2,
+    reading3,
+    average,
+    min,
+    max,
+    error,
+    errorPercent,
+    repeatabilityPercent,
+    tolerancePercent,
+    result,
   };
 }
 
@@ -350,59 +399,11 @@ function buildFinalResult(points: CalculatedFlowPoint[]) {
   return "DA VALUTARE";
 }
 
-function calculateFlowPoint(point: EditableFlowPoint): CalculatedFlowPoint {
-  const nominalVolume = toNumber(point.nominalVolume);
-  const appliedVolume = toNumber(point.appliedVolume);
-  const reading1 = toNumber(point.reading1);
-  const reading2 = toNumber(point.reading2);
-  const reading3 = toNumber(point.reading3);
-  const values = [reading1, reading2, reading3];
-
-  const average =
-    values.length > 0
-      ? values.reduce((sum, value) => sum + value, 0) / values.length
-      : 0;
-
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-  // Errore = Media letture - Volume impostato
-  // Errore % = Errore / Volume impostato x 100
-  // Errore ripetibilità % = (lettura max - lettura min) / media letture * 100
-  const error = average - appliedVolume;
-  const errorPercent =
-    appliedVolume !== 0 ? (error / appliedVolume) * 100 : 0;
-  const repeatabilityPercent =
-    average !== 0 ? ((max - min) / average) * 100 : 0;
-  const tolerancePercent = nullableNumberFromInput(point.tolerancePercent);
-
-  let result: string | null = null;
-
-  if (tolerancePercent !== null) {
-    result = Math.abs(errorPercent) <= tolerancePercent ? "CONFORME" : "NON CONFORME";
-  }
-
-  return {
-    id: point.id,
-    nominalVolume,
-    appliedVolume,
-    reading1,
-    reading2,
-    reading3,
-    average,
-    min,
-    max,
-    error,
-    errorPercent,
-    repeatabilityPercent,
-    tolerancePercent,
-    result,
-  };
-}
-
 export default function EditFlowMeasurementsForm({
   recordId,
   recordNumber,
   reportStatus,
+  isInternalVerification = false,
   initialScales,
   initialMeasurements,
   referenceInstruments,
@@ -416,20 +417,29 @@ export default function EditFlowMeasurementsForm({
   const [saveError, setSaveError] = useState("");
 
   const isReadOnly = reportStatus === "issued";
+  const detailsHref = isInternalVerification
+    ? "/verifiche/" + recordId + "/rapportino-interno"
+    : "/verifiche/" + recordId + "/rapporto";
+
+  const reportHref = isInternalVerification
+    ? "/verifiche/" + recordId + "/rapportino-interno"
+    : "/verifiche/" + recordId + "/rapporto/finale";
+
 
   const calculatedPoints = useMemo(() => {
     return scale.points.map(calculateFlowPoint);
   }, [scale.points]);
 
-  const selectedReferenceInstruments = useMemo(() => {
-    return referenceInstruments.filter((instrument) =>
-      scale.referenceInstrumentIds.includes(instrument.id)
-    );
-  }, [referenceInstruments, scale.referenceInstrumentIds]);
-
-  const hasBlockedReferenceInstrument = selectedReferenceInstruments.some(
-    (instrument) => isReferenceInstrumentBlocked(effectiveStatus(instrument))
+  const selectedReferenceInstrument = referenceInstruments.find(
+    (instrument) => instrument.id === scale.referenceInstrumentId
   );
+
+  const selectedReferenceStatus = selectedReferenceInstrument
+    ? effectiveStatus(selectedReferenceInstrument)
+    : null;
+
+  const hasBlockedReferenceInstrument =
+    selectedReferenceStatus && isReferenceInstrumentBlocked(selectedReferenceStatus);
 
   function resetSaveState() {
     setSaveMessage("");
@@ -437,23 +447,13 @@ export default function EditFlowMeasurementsForm({
   }
 
   function updateScaleField(
-    field: keyof Omit<EditableScale, "id" | "scaleId" | "points" | "referenceInstrumentIds">,
+    field: keyof Omit<EditableScale, "id" | "scaleId" | "points">,
     value: string
   ) {
     resetSaveState();
     setScale((currentScale) => ({
       ...currentScale,
       [field]: value,
-    }));
-  }
-
-  function toggleReferenceInstrument(instrumentId: string) {
-    resetSaveState();
-    setScale((currentScale) => ({
-      ...currentScale,
-      referenceInstrumentIds: currentScale.referenceInstrumentIds.includes(instrumentId)
-        ? currentScale.referenceInstrumentIds.filter((id) => id !== instrumentId)
-        : [...currentScale.referenceInstrumentIds, instrumentId],
     }));
   }
 
@@ -480,9 +480,9 @@ export default function EditFlowMeasurementsForm({
 
     setScale((currentScale) => {
       const lastPoint = currentScale.points[currentScale.points.length - 1];
-      const nextVolume = lastPoint
-        ? toNumber(lastPoint.nominalVolume) + 10
-        : 10;
+      const nextNominalValue = lastPoint
+        ? toNumber(lastPoint.nominalVolume) + 5
+        : 5;
 
       return {
         ...currentScale,
@@ -491,8 +491,8 @@ export default function EditFlowMeasurementsForm({
           {
             id: crypto.randomUUID(),
             measurementId: null,
-            nominalVolume: numberToInputValue(nextVolume),
-            appliedVolume: numberToInputValue(nextVolume),
+            nominalVolume: numberToInputValue(nextNominalValue),
+            setVolume: numberToInputValue(nextNominalValue),
             reading1: "",
             reading2: "",
             reading3: "",
@@ -502,6 +502,27 @@ export default function EditFlowMeasurementsForm({
         ],
       };
     });
+  }
+
+  function addStandardPoints() {
+    resetSaveState();
+
+    const standardValues = [5, 10, 25, 50, 75, 100];
+
+    setScale((currentScale) => ({
+      ...currentScale,
+      points: standardValues.map((value) => ({
+        id: crypto.randomUUID(),
+        measurementId: null,
+        nominalVolume: numberToInputValue(value),
+        setVolume: numberToInputValue(value),
+        reading1: "",
+        reading2: "",
+        reading3: "",
+        tolerancePercent: "",
+        notes: "",
+      })),
+    }));
   }
 
   function removePoint(pointId: string) {
@@ -518,24 +539,28 @@ export default function EditFlowMeasurementsForm({
       throw new Error("Inserisci il nome della scala.");
     }
 
-    if (selectedReferenceInstruments.length === 0) {
-      throw new Error("Seleziona almeno uno strumento campione usato.");
+    if (!scale.referenceInstrumentId) {
+      throw new Error("Seleziona lo strumento campione usato.");
+    }
+
+    if (!selectedReferenceInstrument) {
+      throw new Error("Strumento campione usato non trovato.");
     }
 
     if (hasBlockedReferenceInstrument) {
       throw new Error(
-        "Uno degli strumenti campione usati è scaduto o fuori servizio."
+        "Lo strumento campione usato è scaduto o fuori servizio."
       );
     }
 
     if (scale.points.length === 0) {
-      throw new Error("Inserisci almeno un punto di portata.");
+      throw new Error("Inserisci almeno un punto di verifica.");
     }
 
     const invalidPoint = scale.points.find((point) => {
       return (
         point.nominalVolume.trim() === "" ||
-        point.appliedVolume.trim() === "" ||
+        point.setVolume.trim() === "" ||
         point.reading1.trim() === "" ||
         point.reading2.trim() === "" ||
         point.reading3.trim() === ""
@@ -554,10 +579,9 @@ export default function EditFlowMeasurementsForm({
       return scale.scaleId;
     }
 
-    const referenceSnapshots = selectedReferenceInstruments.map(
-      buildReferenceInstrumentSnapshot
-    );
-    const primaryReference = selectedReferenceInstruments[0];
+    if (!selectedReferenceInstrument) {
+      throw new Error("Strumento campione usato non selezionato.");
+    }
 
     const { data: insertedScale, error: insertScaleError } = await supabase
       .from("calibration_record_scales")
@@ -566,12 +590,10 @@ export default function EditFlowMeasurementsForm({
         scale_order: 1,
         scale_name: scale.scaleName.trim(),
         scale_range: scale.scaleRange.trim() || null,
-        reference_instrument_id: primaryReference.id,
-        reference_instrument_snapshot: referenceSnapshots[0],
-        reference_instrument_ids: selectedReferenceInstruments.map(
-          (instrument) => instrument.id
+        reference_instrument_id: selectedReferenceInstrument.id,
+        reference_instrument_snapshot: buildReferenceInstrumentSnapshot(
+          selectedReferenceInstrument
         ),
-        reference_instruments_snapshot: referenceSnapshots,
         notes: scale.notes.trim() || null,
       })
       .select("id")
@@ -607,12 +629,11 @@ export default function EditFlowMeasurementsForm({
     try {
       validate();
 
-      const scaleId = await ensureScaleExists();
+      if (!selectedReferenceInstrument) {
+        throw new Error("Strumento campione usato non selezionato.");
+      }
 
-      const referenceSnapshots = selectedReferenceInstruments.map(
-        buildReferenceInstrumentSnapshot
-      );
-      const primaryReference = selectedReferenceInstruments[0];
+      const scaleId = await ensureScaleExists();
 
       const { error: scaleError } = await supabase
         .from("calibration_record_scales")
@@ -620,12 +641,10 @@ export default function EditFlowMeasurementsForm({
           scale_order: 1,
           scale_name: scale.scaleName.trim(),
           scale_range: scale.scaleRange.trim() || null,
-          reference_instrument_id: primaryReference.id,
-          reference_instrument_snapshot: referenceSnapshots[0],
-          reference_instrument_ids: selectedReferenceInstruments.map(
-            (instrument) => instrument.id
+          reference_instrument_id: selectedReferenceInstrument.id,
+          reference_instrument_snapshot: buildReferenceInstrumentSnapshot(
+            selectedReferenceInstrument
           ),
-          reference_instruments_snapshot: referenceSnapshots,
           notes: scale.notes.trim() || null,
         })
         .eq("id", scaleId);
@@ -671,7 +690,7 @@ export default function EditFlowMeasurementsForm({
           section: scale.scaleName.trim(),
           point_order: pointIndex + 1,
           nominal_value: calculatedPoint.nominalVolume,
-          applied_value: calculatedPoint.appliedVolume,
+          applied_value: calculatedPoint.setVolume,
           cycle_1: calculatedPoint.reading1,
           cycle_2: calculatedPoint.reading2,
           cycle_3: calculatedPoint.reading3,
@@ -749,7 +768,7 @@ export default function EditFlowMeasurementsForm({
       const message =
         error instanceof Error
           ? error.message
-          : "Errore durante il salvataggio delle misure di portata.";
+          : "Errore durante il salvataggio delle misure portata.";
 
       setSaveError(message);
     } finally {
@@ -773,7 +792,7 @@ export default function EditFlowMeasurementsForm({
         <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
           <div>
             <h2 className="text-lg font-semibold text-slate-900">
-              Dati tecnici portata
+              Dati tecnici portata / contalitri
             </h2>
             <p className="text-sm text-slate-500">
               Verifica interna: {recordNumber || "-"}
@@ -782,17 +801,17 @@ export default function EditFlowMeasurementsForm({
 
           <div className="flex flex-wrap gap-3">
             <Link
-              href={"/verifiche/" + recordId + "/rapporto"}
+              href={detailsHref}
               className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
             >
-              Dati rapporto
+              {isInternalVerification ? "Rapportino" : "Dati rapporto"}
             </Link>
 
             <Link
-              href={"/verifiche/" + recordId + "/rapporto/finale"}
+              href={reportHref}
               className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700"
             >
-              Rapporto
+              {isInternalVerification ? "Rapportino" : "Rapporto"}
             </Link>
           </div>
         </div>
@@ -802,10 +821,10 @@ export default function EditFlowMeasurementsForm({
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 p-5">
             <h2 className="text-lg font-semibold text-slate-900">
-              Scala portata
+              Scala portata / volume
             </h2>
 
-            <div className="mt-5 grid gap-4 md:grid-cols-2">
+            <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
               <label className="space-y-1">
                 <span className="text-sm font-medium text-slate-700">
                   Nome scala *
@@ -821,26 +840,45 @@ export default function EditFlowMeasurementsForm({
 
               <label className="space-y-1">
                 <span className="text-sm font-medium text-slate-700">
-                  Fondo scala
+                  Campo / fondo scala
                 </span>
                 <input
                   value={scale.scaleRange}
                   onChange={(event) =>
                     updateScaleField("scaleRange", event.target.value)
                   }
-                  placeholder="Es. 0,5 - 40 l/min"
+                  placeholder="Es. FS 500 l"
                   className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
                 />
               </label>
-            </div>
 
-            <div className="mt-4">
-              <ReferenceInstrumentMultiSelect
-                instruments={referenceInstruments}
-                selectedIds={scale.referenceInstrumentIds}
-                onToggle={toggleReferenceInstrument}
-                label="Strumenti campione usati *"
-              />
+              <label className="space-y-1 lg:col-span-2">
+                <span className="text-sm font-medium text-slate-700">
+                  Strumento campione usato *
+                </span>
+                <select
+                  value={scale.referenceInstrumentId}
+                  onChange={(event) =>
+                    updateScaleField("referenceInstrumentId", event.target.value)
+                  }
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+                >
+                  <option value="">Seleziona strumento campione</option>
+
+                  {referenceInstruments.map((instrument) => (
+                    <option key={instrument.id} value={instrument.id}>
+                      {instrument.name || "Strumento campione"}
+                      {instrument.internal_code
+                        ? " - " + instrument.internal_code
+                        : ""}
+                      {getRange(instrument) ? " - " + getRange(instrument) : ""}
+                      {instrument.serial_number
+                        ? " - Mat. " + instrument.serial_number
+                        : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
             </div>
 
             <label className="mt-4 block space-y-1">
@@ -857,91 +895,82 @@ export default function EditFlowMeasurementsForm({
               />
             </label>
 
-            {selectedReferenceInstruments.length > 0 && (
-              <div className="mt-5 space-y-3">
-                {selectedReferenceInstruments.map((instrument) => {
-                  const status = effectiveStatus(instrument);
-                  const blocked = isReferenceInstrumentBlocked(status);
+            {selectedReferenceInstrument && selectedReferenceStatus && (
+              <div
+                className={
+                  "mt-5 rounded-xl border p-4 text-sm " +
+                  statusClass(selectedReferenceStatus)
+                }
+              >
+                <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-5">
+                  <div>
+                    <p className="font-semibold">Stato</p>
+                    <p>{statusLabel(selectedReferenceStatus)}</p>
+                  </div>
 
-                  return (
-                    <div
-                      key={instrument.id}
-                      className={"rounded-xl border p-4 text-sm " + statusClass(status)}
-                    >
-                      <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-6">
-                        <div>
-                          <p className="font-semibold">Strumento</p>
-                          <p>{instrument.name || "-"}</p>
-                        </div>
+                  <div>
+                    <p className="font-semibold">Certificato</p>
+                    <p>{selectedReferenceInstrument.certificate_number ?? "-"}</p>
+                  </div>
 
-                        <div>
-                          <p className="font-semibold">Stato</p>
-                          <p>{statusLabel(status)}</p>
-                        </div>
-
-                        <div>
-                          <p className="font-semibold">Certificato</p>
-                          <p>{instrument.certificate_number ?? "-"}</p>
-                        </div>
-
-                        <div>
-                          <p className="font-semibold">Scadenza</p>
-                          <p>{formatItalianDate(instrument.certificate_expiry)}</p>
-                        </div>
-
-                        <div>
-                          <p className="font-semibold">Campo</p>
-                          <p>{getRange(instrument) ?? "-"}</p>
-                        </div>
-
-                        <div>
-                          <p className="font-semibold">File</p>
-                          {instrument.certificate_file_url ? (
-                            <a
-                              href={instrument.certificate_file_url}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="font-semibold hover:underline"
-                            >
-                              Apri certificato
-                            </a>
-                          ) : (
-                            <p>-</p>
-                          )}
-                        </div>
-                      </div>
-
-                      {blocked && (
-                        <p className="mt-3 font-medium">
-                          Blocco: questo strumento campione è scaduto o fuori
-                          servizio.
-                        </p>
+                  <div>
+                    <p className="font-semibold">Scadenza</p>
+                    <p>
+                      {formatItalianDate(
+                        selectedReferenceInstrument.certificate_expiry
                       )}
-                    </div>
-                  );
-                })}
+                    </p>
+                  </div>
+
+                  <div>
+                    <p className="font-semibold">Campo</p>
+                    <p>{getRange(selectedReferenceInstrument) ?? "-"}</p>
+                  </div>
+
+                  <div>
+                    <p className="font-semibold">File</p>
+                    {selectedReferenceInstrument.certificate_file_url ? (
+                      <a
+                        href={selectedReferenceInstrument.certificate_file_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="font-semibold hover:underline"
+                      >
+                        Apri certificato
+                      </a>
+                    ) : (
+                      <p>-</p>
+                    )}
+                  </div>
+                </div>
+
+                {hasBlockedReferenceInstrument && (
+                  <p className="mt-3 font-medium">
+                    Blocco: lo strumento campione è scaduto o fuori servizio.
+                  </p>
+                )}
               </div>
             )}
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1250px] text-sm">
+            <table className="w-full min-w-[1200px] text-sm">
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-4 py-3">Punto</th>
-                  <th className="px-4 py-3">Volume nominale</th>
-                  <th className="px-4 py-3">Volume impostato</th>
+                  <th className="px-4 py-3">Volume nominale l</th>
+                  <th className="px-4 py-3">Volume impostato l</th>
                   <th className="bg-amber-100 px-4 py-3 text-amber-900">
-                    Lettura 1
+                    Lettura I
                   </th>
                   <th className="bg-amber-100 px-4 py-3 text-amber-900">
-                    Lettura 2
+                    Lettura II
                   </th>
                   <th className="bg-amber-100 px-4 py-3 text-amber-900">
-                    Lettura 3
+                    Lettura III
                   </th>
                   <th className="px-4 py-3">Media</th>
-                  <th className="px-4 py-3">Errore</th>
+                  <th className="px-4 py-3">Errore l</th>
                   <th className="px-4 py-3">Errore %</th>
                   <th className="px-4 py-3">Ripetibilità %</th>
                   <th className="px-4 py-3">Toll. %</th>
@@ -972,7 +1001,7 @@ export default function EditFlowMeasurementsForm({
                               event.target.value
                             )
                           }
-                          className="w-28 rounded-lg border border-slate-300 px-2 py-1"
+                          className="w-24 rounded-lg border border-slate-300 px-2 py-1"
                         />
                       </td>
 
@@ -980,15 +1009,11 @@ export default function EditFlowMeasurementsForm({
                         <input
                           type="text"
                           inputMode="decimal"
-                          value={editablePoint?.appliedVolume ?? ""}
+                          value={editablePoint?.setVolume ?? ""}
                           onChange={(event) =>
-                            updatePoint(
-                              point.id,
-                              "appliedVolume",
-                              event.target.value
-                            )
+                            updatePoint(point.id, "setVolume", event.target.value)
                           }
-                          className="w-28 rounded-lg border border-slate-300 px-2 py-1"
+                          className="w-24 rounded-lg border border-slate-300 px-2 py-1"
                         />
                       </td>
 
@@ -1029,19 +1054,19 @@ export default function EditFlowMeasurementsForm({
                       </td>
 
                       <td className="px-4 py-3">
-                        {formatItalianNumber(point.average)}
+                        {formatItalianNumber(point.average, 3)}
                       </td>
 
                       <td className="px-4 py-3">
-                        {formatItalianNumber(point.error)}
+                        {formatItalianNumber(point.error, 3)}
                       </td>
 
                       <td className="px-4 py-3">
-                        {formatItalianNumber(point.errorPercent)}
+                        {formatItalianNumber(point.errorPercent, 3)}
                       </td>
 
                       <td className="px-4 py-3">
-                        {formatItalianNumber(point.repeatabilityPercent)}
+                        {formatItalianNumber(point.repeatabilityPercent, 3)}
                       </td>
 
                       <td className="px-4 py-3">
@@ -1056,7 +1081,7 @@ export default function EditFlowMeasurementsForm({
                               event.target.value
                             )
                           }
-                          placeholder="es. 4"
+                          placeholder="es. 10"
                           className="w-20 rounded-lg border border-slate-300 px-2 py-1"
                         />
                       </td>
@@ -1093,8 +1118,32 @@ export default function EditFlowMeasurementsForm({
             </table>
           </div>
 
+
+
           <div className="border-t border-slate-200 p-5">
-            <div className="flex justify-end">
+            <SimpleAccuracyChart
+              title="Grafico errore accuratezza % - Portata / contalitri"
+              lineColor="#0284c7"
+              points={calculatedPoints.map((point, index) => ({
+                label:
+                  point.setVolume
+                    ? formatItalianNumber(point.setVolume, 3)
+                    : "Punto " + String(index + 1),
+                value: point.errorPercent,
+              }))}
+            />
+          </div>
+
+          <div className="border-t border-slate-200 p-5">
+            <div className="flex flex-wrap justify-end gap-3">
+              <button
+                type="button"
+                onClick={addStandardPoints}
+                className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
+              >
+                Carica punti 5-10-25-50-75-100
+              </button>
+
               <button
                 type="button"
                 onClick={addPoint}
@@ -1113,16 +1162,15 @@ export default function EditFlowMeasurementsForm({
             Salva misure portata
           </h2>
           <p className="text-sm text-slate-500">
-            I valori vengono salvati nella tabella misure usando volume
-            nominale, volume impostato, tre letture, media, errore ed errore
-            percentuale.
+            I valori vengono salvati usando volume nominale, volume impostato,
+            tre letture, media, errore, errore percentuale e ripetibilità.
           </p>
         </div>
 
         <button
           type="button"
           onClick={saveMeasurements}
-          disabled={isSaving || isReadOnly || hasBlockedReferenceInstrument}
+          disabled={isSaving || isReadOnly || Boolean(hasBlockedReferenceInstrument)}
           className="rounded-xl bg-emerald-700 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-600 disabled:cursor-not-allowed disabled:bg-slate-400"
         >
           {isReadOnly

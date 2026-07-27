@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import ReferenceInstrumentMultiSelect from "@/components/ReferenceInstrumentMultiSelect";
+import MeasurementErrorChart from "@/components/MeasurementErrorChart";
 
 type ReferenceInstrument = {
   id: string;
@@ -98,6 +99,7 @@ type EditPullOffMeasurementsFormProps = {
   recordId: string;
   recordNumber: string | null;
   reportStatus: string | null;
+  isInternalVerification?: boolean;
   initialScales: InitialScale[];
   initialMeasurements: InitialMeasurement[];
   referenceInstruments: ReferenceInstrument[];
@@ -164,7 +166,7 @@ function numberToInputValue(value: number | null | undefined) {
   return String(value).replace(".", ",");
 }
 
-function formatItalianNumber(value: number | null | undefined, digits = 4) {
+function formatItalianNumber(value: number | null | undefined, digits = 3) {
   if (value === null || value === undefined || !Number.isFinite(value)) {
     return "-";
   }
@@ -397,6 +399,7 @@ export default function EditPullOffMeasurementsForm({
   recordId,
   recordNumber,
   reportStatus,
+  isInternalVerification = false,
   initialScales,
   initialMeasurements,
   referenceInstruments,
@@ -410,6 +413,14 @@ export default function EditPullOffMeasurementsForm({
   const [saveError, setSaveError] = useState("");
 
   const isReadOnly = reportStatus === "issued";
+  const detailsHref = isInternalVerification
+    ? "/verifiche/" + recordId + "/rapportino-interno"
+    : "/verifiche/" + recordId + "/rapporto";
+
+  const reportHref = isInternalVerification
+    ? "/verifiche/" + recordId + "/rapportino-interno"
+    : "/verifiche/" + recordId + "/rapporto/finale";
+
 
   const calculatedPoints = useMemo(() => {
     return scale.points.map(calculatePullOffPoint);
@@ -774,17 +785,17 @@ export default function EditPullOffMeasurementsForm({
 
           <div className="flex flex-wrap gap-3">
             <Link
-              href={"/verifiche/" + recordId + "/rapporto"}
+              href={detailsHref}
               className="rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
             >
-              Dati rapporto
+              {isInternalVerification ? "Rapportino" : "Dati rapporto"}
             </Link>
 
             <Link
-              href={"/verifiche/" + recordId + "/rapporto/finale"}
+              href={reportHref}
               className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700"
             >
-              Rapporto
+              {isInternalVerification ? "Rapportino" : "Rapporto"}
             </Link>
           </div>
         </div>
@@ -922,13 +933,13 @@ export default function EditPullOffMeasurementsForm({
                 <tr>
                   <th className="px-4 py-3">Punto</th>
                   <th className="px-4 py-3">Carico applicato kN</th>
-                  <th className="bg-amber-100 px-4 py-3 text-amber-900">
+                  <th className="bg-red-100 px-4 py-3 text-red-900">
                     Lettura 1
                   </th>
-                  <th className="bg-amber-100 px-4 py-3 text-amber-900">
+                  <th className="bg-slate-100 px-4 py-3 text-slate-900">
                     Lettura 2
                   </th>
-                  <th className="bg-amber-100 px-4 py-3 text-amber-900">
+                  <th className="bg-red-100 px-4 py-3 text-red-900">
                     Lettura 3
                   </th>
                   <th className="px-4 py-3">Media</th>
@@ -967,7 +978,7 @@ export default function EditPullOffMeasurementsForm({
                         />
                       </td>
 
-                      <td className="bg-amber-50 px-4 py-3">
+                      <td className="bg-white px-4 py-3">
                         <input
                           type="text"
                           inputMode="decimal"
@@ -975,11 +986,11 @@ export default function EditPullOffMeasurementsForm({
                           onChange={(event) =>
                             updatePoint(point.id, "reading1", event.target.value)
                           }
-                          className="w-24 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 font-semibold text-amber-950 focus:border-amber-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-200"
+                          className="w-24 rounded-lg border border-red-300 bg-white px-2 py-1 font-semibold text-red-950 focus:border-red-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-red-200"
                         />
                       </td>
 
-                      <td className="bg-amber-50 px-4 py-3">
+                      <td className="bg-slate-50 px-4 py-3">
                         <input
                           type="text"
                           inputMode="decimal"
@@ -987,11 +998,11 @@ export default function EditPullOffMeasurementsForm({
                           onChange={(event) =>
                             updatePoint(point.id, "reading2", event.target.value)
                           }
-                          className="w-24 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 font-semibold text-amber-950 focus:border-amber-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-200"
+                          className="w-24 rounded-lg border border-slate-300 bg-slate-50 px-2 py-1 font-semibold text-slate-950 focus:border-slate-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-200"
                         />
                       </td>
 
-                      <td className="bg-amber-50 px-4 py-3">
+                      <td className="bg-white px-4 py-3">
                         <input
                           type="text"
                           inputMode="decimal"
@@ -999,7 +1010,7 @@ export default function EditPullOffMeasurementsForm({
                           onChange={(event) =>
                             updatePoint(point.id, "reading3", event.target.value)
                           }
-                          className="w-24 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 font-semibold text-amber-950 focus:border-amber-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-200"
+                          className="w-24 rounded-lg border border-red-300 bg-white px-2 py-1 font-semibold text-red-950 focus:border-red-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-red-200"
                         />
                       </td>
 
@@ -1078,6 +1089,20 @@ export default function EditPullOffMeasurementsForm({
                 Aggiungi punto
               </button>
             </div>
+          </div>
+
+          <div className="border-t border-slate-200 p-5">
+            <MeasurementErrorChart
+              title="Grafico errore accuratezza % - Pull-off"
+              lineColor="#dc2626"
+              measurements={calculatedPoints.map((point, index) => ({
+                id: point.id,
+                point_order: index + 1,
+                nominal_value: point.nominalLoad,
+                applied_value: point.nominalLoad,
+                accuracy_error_percent: point.errorPercent,
+              }))}
+            />
           </div>
         </section>
       </fieldset>

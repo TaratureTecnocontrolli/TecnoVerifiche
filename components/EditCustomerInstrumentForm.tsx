@@ -1,7 +1,7 @@
 "use client";
 
-import { useRouter } from "next/navigation";
 import { useMemo, useState } from "react";
+import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
 type Customer = {
@@ -40,8 +40,55 @@ type CustomerInstrumentInitialData = {
 type EditCustomerInstrumentFormProps = {
   instrument: CustomerInstrumentInitialData;
   customers: Customer[];
-  sites: CustomerSite[];
+  sites?: CustomerSite[];
 };
+
+type MeasurementOption = {
+  label: string;
+  quantity: string;
+};
+
+const measurementOptions: MeasurementOption[] = [
+  { label: "Forza", quantity: "Forza" },
+  { label: "Pressione", quantity: "Pressione" },
+  { label: "Coppia", quantity: "Coppia" },
+  { label: "Portata / volume", quantity: "Portata / volume" },
+  { label: "Temperatura", quantity: "Temperatura" },
+  { label: "Dimensionale", quantity: "Dimensionale" },
+  { label: "Massa", quantity: "Massa" },
+  { label: "Sclerometro / rimbalzo", quantity: "Sclerometro / rimbalzo" },
+  { label: "Pull-off", quantity: "Pull-off" },
+  { label: "Altro", quantity: "Altro" },
+];
+
+const unitOptions: string[] = [
+  "kN",
+  "N",
+  "daN",
+  "MN",
+  "bar",
+  "mbar",
+  "Pa",
+  "kPa",
+  "MPa",
+  "Nm",
+  "Ncm",
+  "l",
+  "ml",
+  "m³",
+  "l/min",
+  "l/h",
+  "m³/h",
+  "°C",
+  "mm",
+  "cm",
+  "m",
+  "kg",
+  "g",
+  "indice di rimbalzo",
+  "%",
+  "Altro",
+];
 
 function valueOrEmpty(value: string | null | undefined) {
   return value ?? "";
@@ -50,15 +97,14 @@ function valueOrEmpty(value: string | null | undefined) {
 export default function EditCustomerInstrumentForm({
   instrument,
   customers,
-  sites,
 }: EditCustomerInstrumentFormProps) {
   const router = useRouter();
 
+  const initialUnit = valueOrEmpty(instrument.unit);
+  const initialUnitIsListed = initialUnit === "" || unitOptions.includes(initialUnit);
+
   const [selectedCustomerId, setSelectedCustomerId] = useState(
     valueOrEmpty(instrument.customer_id)
-  );
-  const [selectedSiteId, setSelectedSiteId] = useState(
-    valueOrEmpty(instrument.site_id)
   );
 
   const [name, setName] = useState(instrument.name);
@@ -69,21 +115,15 @@ export default function EditCustomerInstrumentForm({
   const [serialNumber, setSerialNumber] = useState(
     valueOrEmpty(instrument.serial_number)
   );
-  const [internalCode, setInternalCode] = useState(
-    valueOrEmpty(instrument.internal_code)
-  );
   const [measurementQuantity, setMeasurementQuantity] = useState(
     valueOrEmpty(instrument.measurement_quantity)
   );
-  const [unit, setUnit] = useState(valueOrEmpty(instrument.unit));
+  const [unit, setUnit] = useState(initialUnitIsListed ? initialUnit : "Altro");
+  const [customUnit, setCustomUnit] = useState(
+    initialUnitIsListed ? "" : initialUnit
+  );
   const [measurementRange, setMeasurementRange] = useState(
     valueOrEmpty(instrument.measurement_range)
-  );
-  const [resolution, setResolution] = useState(
-    valueOrEmpty(instrument.resolution)
-  );
-  const [acceptanceClass, setAcceptanceClass] = useState(
-    valueOrEmpty(instrument.acceptance_class)
   );
   const [notes, setNotes] = useState(valueOrEmpty(instrument.notes));
 
@@ -91,21 +131,35 @@ export default function EditCustomerInstrumentForm({
   const [saveError, setSaveError] = useState("");
   const [saveMessage, setSaveMessage] = useState("");
 
-  const filteredSites = useMemo(() => {
-    return sites.filter((site) => site.customer_id === selectedCustomerId);
-  }, [sites, selectedCustomerId]);
+  const selectedCustomer = useMemo(() => {
+    return customers.find((customer) => customer.id === selectedCustomerId);
+  }, [customers, selectedCustomerId]);
 
-  const selectedCustomer = customers.find(
-    (customer) => customer.id === selectedCustomerId
-  );
+  const effectiveUnit = unit === "Altro" ? customUnit.trim() : unit;
 
-  const selectedSite = sites.find((site) => site.id === selectedSiteId);
+  function resetSaveState() {
+    setSaveMessage("");
+    setSaveError("");
+  }
 
   function handleCustomerChange(customerId: string) {
     setSelectedCustomerId(customerId);
-    setSelectedSiteId("");
-    setSaveMessage("");
-    setSaveError("");
+    resetSaveState();
+  }
+
+  function handleMeasurementQuantityChange(value: string) {
+    setMeasurementQuantity(value);
+    resetSaveState();
+  }
+
+  function handleUnitChange(value: string) {
+    setUnit(value);
+
+    if (value !== "Altro") {
+      setCustomUnit("");
+    }
+
+    resetSaveState();
   }
 
   async function saveInstrument(event: React.FormEvent<HTMLFormElement>) {
@@ -120,39 +174,37 @@ export default function EditCustomerInstrumentForm({
         throw new Error("Seleziona il cliente.");
       }
 
-      if (!selectedSite) {
-        throw new Error("Seleziona la sede del cliente.");
-      }
-
       if (!name.trim()) {
         throw new Error("Inserisci il nome dello strumento.");
       }
 
-      const siteLabel = [
-        selectedSite.name,
-        selectedSite.city,
-        selectedSite.province ? "(" + selectedSite.province + ")" : "",
-      ]
-        .filter(Boolean)
-        .join(" ");
+      if (unit === "Altro" && !customUnit.trim()) {
+        throw new Error("Inserisci l’unità di misura personalizzata.");
+      }
 
       const { error } = await supabase
         .from("customer_instruments")
         .update({
           customer_id: selectedCustomer.id,
-          site_id: selectedSite.id,
+
+          /*
+            Lo strumento cliente resta collegato al cliente.
+            Il luogo prove viene scelto in fase di creazione della verifica.
+          */
+          site_id: null,
           customer_name: selectedCustomer.business_name,
-          site: siteLabel || selectedSite.name,
+          site: null,
+
           name: name.trim(),
           manufacturer: manufacturer.trim() || null,
           model: model.trim() || null,
           serial_number: serialNumber.trim() || null,
-          internal_code: internalCode.trim() || null,
+          internal_code: null,
           measurement_quantity: measurementQuantity.trim() || null,
-          unit: unit.trim() || null,
+          unit: effectiveUnit || null,
           measurement_range: measurementRange.trim() || null,
-          resolution: resolution.trim() || null,
-          acceptance_class: acceptanceClass.trim() || null,
+          resolution: null,
+          acceptance_class: null,
           notes: notes.trim() || null,
         })
         .eq("id", instrument.id);
@@ -180,9 +232,7 @@ export default function EditCustomerInstrumentForm({
   return (
     <form onSubmit={saveInstrument} className="space-y-6">
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold text-slate-900">
-          Cliente e sede
-        </h2>
+        <h2 className="text-lg font-semibold text-slate-900">Cliente</h2>
 
         <div className="mt-5 grid gap-4 md:grid-cols-2">
           <label className="space-y-1">
@@ -205,35 +255,19 @@ export default function EditCustomerInstrumentForm({
               ))}
             </select>
           </label>
-
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">Sede *</span>
-            <select
-              value={selectedSiteId}
-              onChange={(event) => {
-                setSelectedSiteId(event.target.value);
-                setSaveMessage("");
-                setSaveError("");
-              }}
-              disabled={!selectedCustomerId}
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100"
-            >
-              <option value="">
-                {!selectedCustomerId
-                  ? "Seleziona prima il cliente"
-                  : "Seleziona sede"}
-              </option>
-
-              {filteredSites.map((site) => (
-                <option key={site.id} value={site.id}>
-                  {site.name}
-                  {site.city ? " - " + site.city : ""}
-                  {site.province ? " (" + site.province + ")" : ""}
-                </option>
-              ))}
-            </select>
-          </label>
         </div>
+
+        {selectedCustomer && (
+          <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+            <p>
+              <strong>Cliente selezionato:</strong>{" "}
+              {selectedCustomer.customer_number
+                ? selectedCustomer.customer_number + " - "
+                : ""}
+              {selectedCustomer.business_name}
+            </p>
+          </div>
+        )}
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
@@ -248,20 +282,11 @@ export default function EditCustomerInstrumentForm({
             </span>
             <input
               value={name}
-              onChange={(event) => setName(event.target.value)}
+              onChange={(event) => {
+                setName(event.target.value);
+                resetSaveState();
+              }}
               placeholder="Es. Pressa, manometro, cella di carico..."
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
-          </label>
-
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">
-              Codice interno
-            </span>
-            <input
-              value={internalCode}
-              onChange={(event) => setInternalCode(event.target.value)}
-              placeholder="Codice interno cliente"
               className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
             />
           </label>
@@ -272,7 +297,10 @@ export default function EditCustomerInstrumentForm({
             </span>
             <input
               value={manufacturer}
-              onChange={(event) => setManufacturer(event.target.value)}
+              onChange={(event) => {
+                setManufacturer(event.target.value);
+                resetSaveState();
+              }}
               placeholder="Costruttore"
               className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
             />
@@ -282,7 +310,10 @@ export default function EditCustomerInstrumentForm({
             <span className="text-sm font-medium text-slate-700">Modello</span>
             <input
               value={model}
-              onChange={(event) => setModel(event.target.value)}
+              onChange={(event) => {
+                setModel(event.target.value);
+                resetSaveState();
+              }}
               placeholder="Modello"
               className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
             />
@@ -294,33 +325,75 @@ export default function EditCustomerInstrumentForm({
             </span>
             <input
               value={serialNumber}
-              onChange={(event) => setSerialNumber(event.target.value)}
+              onChange={(event) => {
+                setSerialNumber(event.target.value);
+                resetSaveState();
+              }}
               placeholder="Matricola / serial number"
               className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
             />
           </label>
+        </div>
+      </section>
 
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="text-lg font-semibold text-slate-900">
+          Caratteristiche metrologiche
+        </h2>
+
+        <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           <label className="space-y-1">
             <span className="text-sm font-medium text-slate-700">
               Grandezza misurata
             </span>
-            <input
+            <select
               value={measurementQuantity}
-              onChange={(event) => setMeasurementQuantity(event.target.value)}
-              placeholder="Es. forza, pressione"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
+              onChange={(event) =>
+                handleMeasurementQuantityChange(event.target.value)
+              }
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+            >
+              <option value="">Seleziona grandezza</option>
+              {measurementOptions.map((option) => (
+                <option key={option.quantity} value={option.quantity}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </label>
 
           <label className="space-y-1">
             <span className="text-sm font-medium text-slate-700">Unità</span>
-            <input
+            <select
               value={unit}
-              onChange={(event) => setUnit(event.target.value)}
-              placeholder="Es. kN, bar"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
+              onChange={(event) => handleUnitChange(event.target.value)}
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+            >
+              <option value="">Seleziona unità</option>
+              {unitOptions.map((unitOption) => (
+                <option key={unitOption} value={unitOption}>
+                  {unitOption}
+                </option>
+              ))}
+            </select>
           </label>
+
+          {unit === "Altro" && (
+            <label className="space-y-1">
+              <span className="text-sm font-medium text-slate-700">
+                Unità personalizzata
+              </span>
+              <input
+                value={customUnit}
+                onChange={(event) => {
+                  setCustomUnit(event.target.value);
+                  resetSaveState();
+                }}
+                placeholder="Inserisci unità"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+              />
+            </label>
+          )}
 
           <label className="space-y-1">
             <span className="text-sm font-medium text-slate-700">
@@ -328,32 +401,11 @@ export default function EditCustomerInstrumentForm({
             </span>
             <input
               value={measurementRange}
-              onChange={(event) => setMeasurementRange(event.target.value)}
+              onChange={(event) => {
+                setMeasurementRange(event.target.value);
+                resetSaveState();
+              }}
               placeholder="Es. 0 - 300 kN"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
-          </label>
-
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">
-              Risoluzione
-            </span>
-            <input
-              value={resolution}
-              onChange={(event) => setResolution(event.target.value)}
-              placeholder="Es. 0,1 bar"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
-          </label>
-
-          <label className="space-y-1 lg:col-span-2">
-            <span className="text-sm font-medium text-slate-700">
-              Classe / tolleranza
-            </span>
-            <input
-              value={acceptanceClass}
-              onChange={(event) => setAcceptanceClass(event.target.value)}
-              placeholder="Es. classe 1 / tolleranza interna"
               className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
             />
           </label>
@@ -363,7 +415,10 @@ export default function EditCustomerInstrumentForm({
           <span className="text-sm font-medium text-slate-700">Note</span>
           <textarea
             value={notes}
-            onChange={(event) => setNotes(event.target.value)}
+            onChange={(event) => {
+              setNotes(event.target.value);
+              resetSaveState();
+            }}
             rows={3}
             placeholder="Note sullo strumento"
             className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"

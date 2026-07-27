@@ -1,8 +1,9 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { getReportDefaultsByModule } from "@/lib/report-defaults";
 
 type ReportDetailsInitialData = {
   id: string | null;
@@ -60,6 +61,28 @@ type ReportSignature = {
   display_name: string;
   signature_url_snapshot: string | null;
   sort_order: number;
+};
+
+type ReportPhotoCategory = "instrument" | "test_phase";
+
+type ReportPhoto = {
+  id: string;
+  calibration_record_id: string;
+  photo_category: ReportPhotoCategory;
+  photo_url: string;
+  photo_path: string | null;
+  file_name?: string | null;
+  caption: string | null;
+  sort_order: number | null;
+  created_at: string | null;
+};
+
+type PendingReportPhoto = {
+  id: string;
+  photo_category: ReportPhotoCategory;
+  file: File;
+  previewUrl: string;
+  caption: string;
 };
 
 type TechnicalCompletenessState = {
@@ -165,243 +188,38 @@ function getFileExtension(file: File) {
   return "jpg";
 }
 
-function buildAutoPremise(params: {
-  testDate: string;
-  customerName: string;
-  siteDescription: string;
-  instrumentName: string;
-  manufacturer: string;
-  model: string;
-  serialNumber: string;
-  range: string;
-  verificationModule?: string;
+
+function buildReportDefaults(params: {
+  autoPremiseData?: AutoPremiseData;
+  customerName?: string;
+  siteDescription?: string;
+  testDate?: string;
 }) {
-  const italianTestDate = formatItalianDateFromInput(params.testDate);
-  const customerName = params.customerName || "committente indicato nel rapporto";
-  const siteDescription =
-    params.siteDescription || "sede indicata nel rapporto";
-  const instrumentLabel =
-    [
-      params.instrumentName,
-      params.manufacturer,
-      params.model,
-    ]
-      .filter(Boolean)
-      .join(" ") || "strumento verificato";
+  const autoPremiseData = params.autoPremiseData;
 
-  if (params.verificationModule === "PRESSURE") {
-    return `Il giorno ${italianTestDate}, presso ${siteDescription}, è stato sottoposto a verifica di taratura lo strumento di misura della pressione ${instrumentLabel} (s/n ${params.serialNumber || "non indicato"}), per conto di ${customerName}. La strumentazione interessata dalla verifica presenta campo/fondo scala ${params.range || "non indicato"}.`;
-  }
-
-  if (params.verificationModule === "TORQUE") {
-    return `Il giorno ${italianTestDate}, presso ${siteDescription}, è stato sottoposto a verifica di taratura lo strumento di coppia ${instrumentLabel} (s/n ${params.serialNumber || "non indicato"}), per conto di ${customerName}. La strumentazione interessata dalla verifica presenta campo ${params.range || "non indicato"}.`;
-  }
-
-  if (params.verificationModule === "FLOW") {
-    return `Il giorno ${italianTestDate}, presso ${siteDescription}, è stato sottoposto a verifica di taratura lo strumento di portata / contalitri ${instrumentLabel} (s/n ${params.serialNumber || "non indicato"}), per conto di ${customerName}. La strumentazione interessata dalla verifica presenta campo ${params.range || "non indicato"}.`;
-  }
-
-  if (params.verificationModule === "SCLEROMETRIC") {
-    return `Il giorno ${italianTestDate}, presso ${siteDescription}, è stato sottoposto a verifica di taratura lo sclerometro ${instrumentLabel} (s/n ${params.serialNumber || "non indicato"}), per conto di ${customerName}.`;
-  }
-
-  if (params.verificationModule === "MASS") {
-    return `Il giorno ${italianTestDate}, presso ${siteDescription}, è stata sottoposta a verifica di taratura la bilancia ${instrumentLabel} (s/n ${params.serialNumber || "non indicato"}), per conto di ${customerName}. La strumentazione interessata dalla verifica presenta portata ${params.range || "non indicata"}.`;
-  }
-
-  if (params.verificationModule === "DIMENSIONAL") {
-    return `Il giorno ${italianTestDate}, presso ${siteDescription}, è stato sottoposto a verifica di taratura lo strumento dimensionale ${instrumentLabel} (s/n ${params.serialNumber || "non indicato"}), per conto di ${customerName}. La strumentazione interessata dalla verifica presenta campo ${params.range || "non indicato"}.`;
-  }
-
-  if (params.verificationModule === "TEMPERATURE") {
-    return `Il giorno ${italianTestDate}, presso ${siteDescription}, è stato sottoposto a monitoraggio della temperatura lo strumento ${instrumentLabel} (s/n ${params.serialNumber || "non indicato"}), per conto di ${customerName}.`;
-  }
-
-  if (params.verificationModule === "PULLOFF") {
-    return `Il giorno ${italianTestDate}, presso ${siteDescription}, è stata sottoposta a verifica di taratura la strumentazione pull-off ${instrumentLabel} (s/n ${params.serialNumber || "non indicato"}), per conto di ${customerName}.`;
-  }
-
-  return `Il giorno ${italianTestDate} tecnici di questo Laboratorio tecnologico hanno sottoposto, per conto di ${customerName} presso la sede di ${siteDescription}, una ${instrumentLabel} (s/n ${params.serialNumber}) a verifica di taratura. La macchina ha un Fondo Scala di ${params.range}.`;
-}
-
-function defaultRequestedTests(verificationModule?: string) {
-  if (verificationModule === "PRESSURE") {
-    return "Verifica taratura dello strumento di misura della pressione mediante confronto con strumento campione.";
-  }
-
-  if (verificationModule === "TORQUE") {
-    return "Verifica taratura di chiave dinamometrica / strumento di coppia mediante confronto con strumento campione.";
-  }
-
-  if (verificationModule === "FLOW") {
-    return "Verifica taratura di contalitri / strumento di misura volume-portata mediante confronto con strumento campione.";
-  }
-
-  if (verificationModule === "SCLEROMETRIC") {
-    return "Verifica taratura di sclerometro / strumento di prova non distruttiva a rimbalzo mediante confronto con incudine di riferimento.";
-  }
-
-  if (verificationModule === "MASS") {
-    return "Verifica taratura di bilancia / strumento di misura della massa mediante prove di ripetibilità, eccentricità e linearità con masse campione.";
-  }
-
-  if (verificationModule === "DIMENSIONAL") {
-    return "Verifica taratura di calibro / strumento dimensionale mediante confronto con campioni di riferimento.";
-  }
-
-  if (verificationModule === "TEMPERATURE") {
-    return "Monitoraggio della temperatura mediante confronto con termometro/termostato di riferimento.";
-  }
-
-  if (verificationModule === "PULLOFF") {
-    return "Verifica taratura di strumentazione pull-off mediante confronto con cella di carico campione.";
-  }
-
-  return "";
-}
-
-function defaultScopeText(verificationModule?: string) {
-  if (verificationModule === "PRESSURE") {
-    return "La prova ha come scopo la verifica dello strumento di misura della pressione sui punti previsti della propria portata, con particolare riferimento ai quattro quinti superiori della portata massima quando applicabile. Tale verifica rappresenta il procedimento di controllo per determinare gli errori dello strumento. Gli errori presi in considerazione sono: a) errore di ripetibilità; b) errore di accuratezza.";
-  }
-
-  if (verificationModule === "TORQUE") {
-    return "La prova ha come scopo la verifica dello strumento di coppia sui punti di coppia previsti, rilevando tre letture per ciascun punto e calcolando media, errore medio, errore di accuratezza percentuale e ripetibilità.";
-  }
-
-  if (verificationModule === "FLOW") {
-    return "La prova ha come scopo la verifica del contalitri / strumento di misura volume-portata confrontando il volume impostato sullo strumento in verifica con le letture rilevate sullo strumento campione, su tre cicli di misura.";
-  }
-
-  if (verificationModule === "SCLEROMETRIC") {
-    return "La prova ha come scopo la verifica dello sclerometro mediante battute ripetute su un'incudine di riferimento a valore nominale fisso, rilevando tre letture per battuta e calcolando media, errore medio ed errore percentuale.";
-  }
-
-  if (verificationModule === "MASS") {
-    return "La prova ha come scopo la verifica della bilancia tramite tre prove distinte: ripetibilità su un unico punto, eccentricità su più zone del piatto di pesata e linearità su più punti dell'intero campo di pesata, rilevando tre letture per ciascun punto.";
-  }
-
-  if (verificationModule === "DIMENSIONAL") {
-    return "La prova ha come scopo la verifica dello strumento dimensionale sui punti previsti, rilevando tre scostamenti per ciascun punto e calcolando media, errore medio, errore di accuratezza percentuale, ripetibilità e incertezza strumentale.";
-  }
-
-  if (verificationModule === "TEMPERATURE") {
-    return "La prova ha come scopo il monitoraggio della temperatura di un ambiente, rilevando a orari prefissati la temperatura misurata dallo strumento in prova e confrontandola con la temperatura rilevata dal termometro/termostato di riferimento.";
-  }
-
-  if (verificationModule === "PULLOFF") {
-    return "La prova ha come scopo la verifica della strumentazione pull-off sui punti di carico previsti, rilevando tre letture per ciascun punto tramite ancoraggio a cella di carico e calcolando media, errore medio, errore di accuratezza percentuale e ripetibilità.";
-  }
-
-  return "";
-}
-
-function defaultApparatusDescription(verificationModule?: string) {
-  if (verificationModule === "PRESSURE") {
-    return "L’apparato utilizzato per la verifica è costituito dal sistema di generazione/applicazione della pressione e dallo strumento campione indicato nella sezione tecnica del presente rapporto. Lo strumento campione risulta identificato con i relativi dati di matricola, codice interno, campo di misura e certificato di taratura in corso di validità alla data della prova.";
-  }
-
-  if (verificationModule === "TORQUE") {
-    return "L’apparato utilizzato per la verifica è costituito dallo strumento campione indicato nella sezione tecnica del presente rapporto e dagli eventuali accessori necessari all’applicazione controllata della coppia. Lo strumento campione risulta identificato con i relativi dati di matricola, codice interno, campo di misura e certificato di taratura in corso di validità alla data della prova.";
-  }
-
-  if (verificationModule === "FLOW") {
-    return "L’apparato utilizzato per la verifica è costituito dallo strumento campione indicato nella sezione tecnica del presente rapporto, con confronto dei risultati su tre cicli di misura. Lo strumento campione risulta identificato con i relativi dati di matricola, codice interno, campo di misura e certificato di taratura in corso di validità alla data della prova.";
-  }
-
-  if (verificationModule === "SCLEROMETRIC") {
-    return "L’apparato utilizzato per la verifica è costituito dall'incudine di riferimento indicata nella sezione tecnica del presente rapporto, a valore nominale certificato. L'incudine risulta identificata con i relativi dati di matricola, codice interno e certificato di taratura in corso di validità alla data della prova.";
-  }
-
-  if (verificationModule === "MASS") {
-    return "L’apparato utilizzato per la verifica è costituito dalle masse campione indicate nella sezione tecnica del presente rapporto. Le masse campione risultano identificate con i relativi dati di matricola, codice interno e certificato di taratura in corso di validità alla data della prova.";
-  }
-
-  if (verificationModule === "DIMENSIONAL") {
-    return "L’apparato utilizzato per la verifica è costituito dai campioni di riferimento indicati nella sezione tecnica del presente rapporto. I campioni di riferimento risultano identificati con i relativi dati di matricola, codice interno e certificato di taratura in corso di validità alla data della prova.";
-  }
-
-  if (verificationModule === "TEMPERATURE") {
-    return "L’apparato utilizzato per la verifica è costituito dal termometro/termostato di riferimento indicato nella sezione tecnica del presente rapporto. Lo strumento di riferimento risulta identificato con i relativi dati di matricola, codice interno e certificato di taratura in corso di validità alla data della prova.";
-  }
-
-  if (verificationModule === "PULLOFF") {
-    return "L’apparato utilizzato per la verifica è costituito dalla cella di carico campione indicata nella sezione tecnica del presente rapporto, con relativo sistema di ancoraggio per la prova a trazione. La cella di carico campione risulta identificata con i relativi dati di matricola, codice interno, campo di misura e certificato di taratura in corso di validità alla data della prova.";
-  }
-
-  return "";
-}
-
-function defaultExecutionMethod(verificationModule?: string) {
-  if (verificationModule === "PRESSURE") {
-    return "La verifica di taratura è stata eseguita installando lo strumento da verificare sull’apparato di generazione della pressione, in collegamento/confronto con lo strumento campione. Prima dell’inizio della verifica il sistema può essere portato al valore massimo previsto per stabilizzare il circuito e verificare il corretto funzionamento dell’insieme di prova. La verifica è stata effettuata sui punti prefissati, regolarmente distribuiti sul campo di misura, sia in fase di carico fino al raggiungimento del valore massimo previsto sia in fase di scarico sugli stessi punti a scendere. Per ciascun punto sono state registrate tre letture/cicli. Per ogni punto sono stati calcolati lettura massima, lettura minima, media delle letture, errore medio, errore di accuratezza percentuale ed errore di ripetibilità percentuale. Temperatura e umidità ambientali sono riportate nel presente rapporto.";
-  }
-
-  if (verificationModule === "TORQUE") {
-    return "La verifica di taratura è stata eseguita applicando i punti di coppia previsti e rilevando, per ciascun punto, tre letture consecutive dello strumento in prova. Per ogni punto sono stati determinati il valore massimo, il valore minimo, la media delle letture, l’errore medio, l’errore di accuratezza percentuale e l’errore di ripetibilità percentuale.";
-  }
-
-  if (verificationModule === "FLOW") {
-    return "La verifica di taratura è stata eseguita impostando sullo strumento in prova i volumi nominali previsti e rilevando tre letture per ciascun punto. Per ciascun punto sono stati determinati media delle letture, errore ed errore percentuale, calcolati come Errore = Media letture - Volume impostato ed Errore % = Errore / Volume impostato x 100.";
-  }
-
-  if (verificationModule === "SCLEROMETRIC") {
-    return "La verifica di taratura è stata eseguita effettuando un numero prestabilito di battute sull'incudine di riferimento a valore nominale fisso e rilevando, per ciascuna battuta, tre letture consecutive dello strumento in prova. Per ciascuna battuta sono stati determinati media delle letture, errore medio ed errore percentuale, calcolati come Errore medio = Media letture - Valore nominale incudine ed Errore % = Errore medio / Valore nominale incudine x 100.";
-  }
-
-  if (verificationModule === "MASS") {
-    return "La verifica di taratura è stata eseguita mediante tre prove distinte. Ripetibilità: tre letture su un unico punto di carico. Eccentricità: tre letture su cinque zone del piatto di pesata (centro e periferia). Linearità: tre letture su più punti distribuiti sull'intero campo di pesata. Per ciascun punto sono stati determinati media delle letture, errore ed errore di ripetibilità percentuale; per la sola prova di linearità è calcolato anche l'errore percentuale rispetto al peso campione.";
-  }
-
-  if (verificationModule === "DIMENSIONAL") {
-    return "La verifica di taratura è stata eseguita confrontando lo strumento in prova con i campioni di riferimento sui punti previsti, rilevando tre scostamenti consecutivi per ciascun punto. Per ogni punto sono stati determinati il valore massimo, il valore minimo, la media degli scostamenti, l'errore medio, l'errore di accuratezza percentuale, l'errore di ripetibilità percentuale e l'incertezza strumentale.";
-  }
-
-  if (verificationModule === "TEMPERATURE") {
-    return "Il monitoraggio è stato eseguito rilevando, a orari prefissati, la temperatura indicata dallo strumento in prova e la temperatura indicata dal termometro/termostato di riferimento. I valori sono riportati come rilevati, senza calcolo di errore o esito automatico.";
-  }
-
-  if (verificationModule === "PULLOFF") {
-    return "La verifica di taratura è stata eseguita applicando i punti di carico previsti tramite la cella di carico campione e rilevando, per ciascun punto, tre letture consecutive dello strumento in prova. Per ogni punto sono stati determinati il valore massimo, il valore minimo, la media delle letture, l’errore medio, l’errore di accuratezza percentuale e l’errore di ripetibilità percentuale.";
-  }
-
-  return "";
-}
-
-function defaultResultsText(verificationModule?: string) {
-  if (verificationModule === "PRESSURE") {
-    return "I risultati della verifica sono riportati nella sezione tecnica del presente rapporto. Le tabelle riportano, separatamente per la prova in carico e per la prova in scarico, i punti di verifica, il carico applicato, le letture dei tre cicli, la lettura massima, la lettura minima, la media delle letture, l’errore medio, l’errore di accuratezza e l’errore di ripetibilità. I grafici riportano l’andamento dell’errore di accuratezza per le due fasi di prova.";
-  }
-
-  if (verificationModule === "TORQUE") {
-    return "I risultati della verifica sono riportati nella sezione tecnica del presente rapporto. Per ciascun punto di coppia sono indicati il valore applicato, le tre letture rilevate, la media, l’errore medio, l’errore di accuratezza percentuale e l’errore di ripetibilità percentuale.";
-  }
-
-  if (verificationModule === "FLOW") {
-    return "I risultati della verifica sono riportati nella sezione tecnica del presente rapporto. Per ciascun punto sono indicati volume nominale, volume impostato nello strumento in verifica, tre letture, media letture, errore ed errore percentuale.";
-  }
-
-  if (verificationModule === "SCLEROMETRIC") {
-    return "I risultati della verifica sono riportati nella sezione tecnica del presente rapporto. Per ciascuna battuta sono indicati il valore nominale dell'incudine di riferimento, le tre letture rilevate, la media, l'errore medio e l'errore percentuale.";
-  }
-
-  if (verificationModule === "MASS") {
-    return "I risultati della verifica sono riportati nella sezione tecnica del presente rapporto, distinti per prova di ripetibilità, eccentricità e linearità. Per ciascun punto sono indicati il peso nominale, il peso campione, le tre letture rilevate, la media, l'errore e la ripetibilità percentuale (l'errore percentuale rispetto al peso campione è indicato solo per la prova di linearità).";
-  }
-
-  if (verificationModule === "DIMENSIONAL") {
-    return "I risultati della verifica sono riportati nella sezione tecnica del presente rapporto. Per ciascun punto sono indicati il valore nominale, i tre scostamenti rilevati, la media, l'errore medio, l'errore di accuratezza percentuale, l'errore di ripetibilità percentuale e l'incertezza strumentale.";
-  }
-
-  if (verificationModule === "TEMPERATURE") {
-    return "I risultati del monitoraggio sono riportati nella sezione tecnica del presente rapporto. Per ciascuna rilevazione sono indicati data, orario, temperatura misurata dallo strumento in prova e temperatura rilevata dal termometro/termostato di riferimento.";
-  }
-
-  if (verificationModule === "PULLOFF") {
-    return "I risultati della verifica sono riportati nella sezione tecnica del presente rapporto. Per ciascun punto di carico sono indicati il valore applicato, le tre letture rilevate, la media, l'errore medio, l'errore di accuratezza percentuale e l'errore di ripetibilità percentuale.";
-  }
-
-  return "";
+  return getReportDefaultsByModule(
+    autoPremiseData?.verificationModule,
+    null,
+    {
+      customerName:
+        params.customerName ||
+        autoPremiseData?.customerName ||
+        null,
+      instrumentName: autoPremiseData?.instrumentName ?? null,
+      instrumentManufacturer: autoPremiseData?.manufacturer ?? null,
+      instrumentModel: autoPremiseData?.model ?? null,
+      instrumentSerial: autoPremiseData?.serialNumber ?? null,
+      instrumentRange: autoPremiseData?.range ?? null,
+      location:
+        params.siteDescription ||
+        autoPremiseData?.siteDescription ||
+        null,
+      testDate:
+        params.testDate ||
+        autoPremiseData?.verificationDate ||
+        null,
+    }
+  );
 }
 
 function joinTechnicianNames(technicians: Technician[], ids: string[]) {
@@ -423,6 +241,21 @@ export default function CalibrationReportDetailsForm({
 
   const safeInitialData = initialData ?? buildEmptyInitialData(recordId);
   const currentReportStatus = reportStatus ?? "draft";
+  const initialDefaultTexts = buildReportDefaults({
+    autoPremiseData,
+    customerName:
+      valueOrEmpty(safeInitialData.customer_name) ||
+      autoPremiseData?.customerName ||
+      "",
+    siteDescription:
+      valueOrEmpty(safeInitialData.site_description) ||
+      autoPremiseData?.siteDescription ||
+      "",
+    testDate:
+      valueOrEmpty(safeInitialData.test_date) ||
+      autoPremiseData?.verificationDate ||
+      "",
+  });
 
   const [mainReportNumber, setMainReportNumber] = useState(
     initialMainReportNumber(safeInitialData.main_report_number)
@@ -456,118 +289,101 @@ export default function CalibrationReportDetailsForm({
       ""
   );
   const [workObject, setWorkObject] = useState(
-    valueOrEmpty(safeInitialData.work_object) ||
-      (autoPremiseData?.verificationModule === "PRESSURE"
-        ? "Verifica strumento di misura della pressione"
-        : autoPremiseData?.verificationModule === "TORQUE"
-          ? "Verifica strumento di coppia / chiave dinamometrica"
-          : autoPremiseData?.verificationModule === "FLOW"
-            ? "Verifica strumento di portata / contalitri"
-            : autoPremiseData?.verificationModule === "SCLEROMETRIC"
-              ? "Verifica sclerometro"
-              : autoPremiseData?.verificationModule === "MASS"
-                ? "Verifica bilancia / strumento di misura della massa"
-                : autoPremiseData?.verificationModule === "DIMENSIONAL"
-                  ? "Verifica strumento dimensionale"
-                  : autoPremiseData?.verificationModule === "TEMPERATURE"
-                    ? "Monitoraggio temperatura"
-                    : autoPremiseData?.verificationModule === "PULLOFF"
-                      ? "Verifica strumentazione pull-off"
-                      : "")
+    valueOrEmpty(safeInitialData.work_object) || initialDefaultTexts.work_object
   );
   const [requestedTests, setRequestedTests] = useState(
     valueOrEmpty(safeInitialData.requested_tests) ||
-      defaultRequestedTests(autoPremiseData?.verificationModule)
+      initialDefaultTexts.requested_tests
   );
-
-  const initialPremiseText =
+  const [premiseText, setPremiseText] = useState(
     valueOrEmpty(safeInitialData.premise_text) ||
-    buildAutoPremise({
-      testDate:
-        valueOrEmpty(safeInitialData.test_date) ||
-        autoPremiseData?.verificationDate ||
-        "",
-      customerName:
-        valueOrEmpty(safeInitialData.customer_name) ||
-        autoPremiseData?.customerName ||
-        "",
-      siteDescription:
-        valueOrEmpty(safeInitialData.site_description) ||
-        autoPremiseData?.siteDescription ||
-        "",
-      instrumentName: autoPremiseData?.instrumentName ?? "",
-      manufacturer: autoPremiseData?.manufacturer ?? "",
-      model: autoPremiseData?.model ?? "",
-      serialNumber: autoPremiseData?.serialNumber ?? "",
-      range: autoPremiseData?.range ?? "",
-      verificationModule: autoPremiseData?.verificationModule,
-    });
-
-  const [premiseText, setPremiseText] = useState(initialPremiseText);
+      initialDefaultTexts.premise_text
+  );
   const [scopeText, setScopeText] = useState(
     valueOrEmpty(safeInitialData.scope_text) ||
-      defaultScopeText(autoPremiseData?.verificationModule)
+      initialDefaultTexts.scope_text
   );
   const [apparatusDescription, setApparatusDescription] = useState(
     valueOrEmpty(safeInitialData.apparatus_description) ||
-      defaultApparatusDescription(autoPremiseData?.verificationModule)
+      initialDefaultTexts.apparatus_description
   );
   const [executionMethod, setExecutionMethod] = useState(
     valueOrEmpty(safeInitialData.execution_method) ||
-      defaultExecutionMethod(autoPremiseData?.verificationModule)
+      initialDefaultTexts.execution_method
   );
   const [resultsText, setResultsText] = useState(
     valueOrEmpty(safeInitialData.results_text) ||
-      defaultResultsText(autoPremiseData?.verificationModule)
+      initialDefaultTexts.results_text
   );
 
   useEffect(() => {
-    if (valueOrEmpty(safeInitialData.premise_text)) {
-      return;
+    const nextDefaults = buildReportDefaults({
+      autoPremiseData,
+      customerName,
+      siteDescription,
+      testDate,
+    });
+
+    if (!valueOrEmpty(safeInitialData.work_object)) {
+      setWorkObject(nextDefaults.work_object);
     }
 
-    setPremiseText(
-      buildAutoPremise({
-        testDate,
-        customerName: customerName || autoPremiseData?.customerName || "",
-        siteDescription:
-          siteDescription || autoPremiseData?.siteDescription || "",
-        instrumentName: autoPremiseData?.instrumentName ?? "",
-        manufacturer: autoPremiseData?.manufacturer ?? "",
-        model: autoPremiseData?.model ?? "",
-        serialNumber: autoPremiseData?.serialNumber ?? "",
-        range: autoPremiseData?.range ?? "",
-        verificationModule: autoPremiseData?.verificationModule,
-      })
-    );
+    if (!valueOrEmpty(safeInitialData.requested_tests)) {
+      setRequestedTests(nextDefaults.requested_tests);
+    }
+
+    if (!valueOrEmpty(safeInitialData.premise_text)) {
+      setPremiseText(nextDefaults.premise_text);
+    }
+
+    if (!valueOrEmpty(safeInitialData.scope_text)) {
+      setScopeText(nextDefaults.scope_text);
+    }
+
+    if (!valueOrEmpty(safeInitialData.apparatus_description)) {
+      setApparatusDescription(nextDefaults.apparatus_description);
+    }
+
+    if (!valueOrEmpty(safeInitialData.execution_method)) {
+      setExecutionMethod(nextDefaults.execution_method);
+    }
+
+    if (!valueOrEmpty(safeInitialData.results_text)) {
+      setResultsText(nextDefaults.results_text);
+    }
   }, [
-    autoPremiseData?.customerName,
-    autoPremiseData?.instrumentName,
-    autoPremiseData?.manufacturer,
-    autoPremiseData?.model,
-    autoPremiseData?.range,
-    autoPremiseData?.serialNumber,
-    autoPremiseData?.siteDescription,
-    autoPremiseData?.verificationModule,
-    autoPremiseData?.verificationDate,
+    autoPremiseData,
     customerName,
+    safeInitialData.apparatus_description,
+    safeInitialData.execution_method,
     safeInitialData.premise_text,
+    safeInitialData.requested_tests,
+    safeInitialData.results_text,
+    safeInitialData.scope_text,
+    safeInitialData.work_object,
     siteDescription,
     testDate,
   ]);
-
-  const [temperature, setTemperature] = useState(
-    valueOrEmpty(safeInitialData.temperature)
-  );
-  const [humidity, setHumidity] = useState(
-    valueOrEmpty(safeInitialData.humidity)
-  );
 
   const [instrumentPhotoUrl, setInstrumentPhotoUrl] = useState(
     valueOrEmpty(safeInitialData.instrument_photo_url)
   );
   const [selectedPhotoFile, setSelectedPhotoFile] = useState<File | null>(null);
   const [selectedPhotoPreview, setSelectedPhotoPreview] = useState("");
+  const [reportPhotos, setReportPhotos] = useState<ReportPhoto[]>([]);
+  const [uploadingReportPhotos, setUploadingReportPhotos] = useState<
+    PendingReportPhoto[]
+  >([]);
+  const [pendingReportPhotos, setPendingReportPhotos] = useState<
+    PendingReportPhoto[]
+  >([]);
+  const [reportPhotoLoadError, setReportPhotoLoadError] = useState("");
+  const [cameraError, setCameraError] = useState("");
+  const [activeCameraCategory, setActiveCameraCategory] =
+    useState<ReportPhotoCategory | null>(null);
+  const [isCameraStarting, setIsCameraStarting] = useState(false);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const cameraStreamRef = useRef<MediaStream | null>(null);
 
   const [notes, setNotes] = useState(valueOrEmpty(safeInitialData.notes));
 
@@ -591,6 +407,52 @@ export default function CalibrationReportDetailsForm({
       scalesWithoutReferenceCount: 0,
       scalesWithoutMeasurementsCount: 0,
     });
+
+  useEffect(() => {
+    let isMounted = true;
+
+    async function loadReportPhotos() {
+      setReportPhotoLoadError("");
+
+      const { data, error } = await supabase
+        .from("calibration_report_photos")
+        .select(
+          "id, calibration_record_id, photo_category, photo_url, photo_path, file_name, caption, sort_order, created_at"
+        )
+        .eq("calibration_record_id", recordId)
+        .order("sort_order", { ascending: true })
+        .order("created_at", { ascending: true });
+
+      if (!isMounted) {
+        return;
+      }
+
+      if (error) {
+        setReportPhotoLoadError(
+          "Tabella foto rapporto non disponibile o errore caricamento: " +
+            error.message
+        );
+        setReportPhotos([]);
+        return;
+      }
+
+      setReportPhotos((data ?? []) as ReportPhoto[]);
+    }
+
+    loadReportPhotos();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [recordId]);
+
+  useEffect(() => {
+    return () => {
+      if (cameraStreamRef.current) {
+        cameraStreamRef.current.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, []);
 
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState("");
@@ -654,18 +516,10 @@ export default function CalibrationReportDetailsForm({
         warning: "Oggetto dei lavori mancante",
       },
       {
-        label: "Temperatura ambientale",
-        isComplete: temperature.trim().length > 0,
-        warning: "Temperatura mancante",
-      },
-      {
-        label: "Umidità ambientale",
-        isComplete: humidity.trim().length > 0,
-        warning: "Umidità mancante",
-      },
-      {
         label: "Foto strumento",
-        isComplete: Boolean(selectedPhotoPreview || instrumentPhotoUrl),
+        isComplete: reportPhotos.some(
+          (photo) => photo.photo_category === "instrument"
+        ),
         warning: "Foto strumento mancante",
       },
       {
@@ -729,10 +583,7 @@ export default function CalibrationReportDetailsForm({
     testDate,
     customerName,
     workObject,
-    temperature,
-    humidity,
-    selectedPhotoPreview,
-    instrumentPhotoUrl,
+    reportPhotos,
     testingTechnicianIds,
     reviewerTechnicianIds,
     directorTechnicianId,
@@ -920,20 +771,25 @@ export default function CalibrationReportDetailsForm({
 
   function handleTestDateChange(nextDate: string) {
     setTestDate(nextDate);
+  }
 
-    const updatedPremise = buildAutoPremise({
-      testDate: nextDate,
-      customerName: customerName || autoPremiseData?.customerName || "",
-      siteDescription: siteDescription || autoPremiseData?.siteDescription || "",
-      instrumentName: autoPremiseData?.instrumentName ?? "strumento",
-      manufacturer: autoPremiseData?.manufacturer ?? "",
-      model: autoPremiseData?.model ?? "",
-      serialNumber: autoPremiseData?.serialNumber ?? "",
-      range: autoPremiseData?.range ?? "",
-      verificationModule: autoPremiseData?.verificationModule,
+  function regenerateDefaultTexts() {
+    const nextDefaults = buildReportDefaults({
+      autoPremiseData,
+      customerName,
+      siteDescription,
+      testDate,
     });
 
-    setPremiseText(updatedPremise);
+    setWorkObject(nextDefaults.work_object);
+    setRequestedTests(nextDefaults.requested_tests);
+    setPremiseText(nextDefaults.premise_text);
+    setScopeText(nextDefaults.scope_text);
+    setApparatusDescription(nextDefaults.apparatus_description);
+    setExecutionMethod(nextDefaults.execution_method);
+    setResultsText(nextDefaults.results_text);
+    setSaveMessage("");
+    setSaveError("");
   }
 
   function handlePhotoChange(file: File | null) {
@@ -946,6 +802,327 @@ export default function CalibrationReportDetailsForm({
 
     const previewUrl = URL.createObjectURL(file);
     setSelectedPhotoPreview(previewUrl);
+  }
+
+  async function saveReportPhotoFilesImmediately(
+    files: File[],
+    category: ReportPhotoCategory
+  ) {
+    if (files.length === 0) {
+      return;
+    }
+
+    const temporaryPhotos: PendingReportPhoto[] = files.map((file, index) => ({
+      id:
+        "uploading-" +
+        category +
+        "-" +
+        Date.now() +
+        "-" +
+        String(index + 1),
+      photo_category: category,
+      file,
+      previewUrl: URL.createObjectURL(file),
+      caption: category === "instrument" ? "Foto strumento" : "Fase prova",
+    }));
+
+    setUploadingReportPhotos((currentPhotos) => [
+      ...currentPhotos,
+      ...temporaryPhotos,
+    ]);
+
+    setIsSaving(true);
+    setSaveMessage("Caricamento foto in corso...");
+    setSaveError("");
+    setReportPhotoLoadError("");
+
+    try {
+      const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+      const maxSizeBytes = 10 * 1024 * 1024;
+
+      const insertedRows: ReportPhoto[] = [];
+
+      for (let index = 0; index < files.length; index += 1) {
+        const file = files[index];
+
+        if (!allowedTypes.includes(file.type)) {
+          throw new Error(
+            "Formato foto non valido per " +
+              file.name +
+              ". Usa JPG, PNG oppure WEBP."
+          );
+        }
+
+        if (file.size > maxSizeBytes) {
+          throw new Error(
+            "La foto " +
+              file.name +
+              " è troppo grande. Dimensione massima: 10 MB."
+          );
+        }
+
+        const extension = getFileExtension(file);
+        const filePath =
+          recordId +
+          "/" +
+          category +
+          "-" +
+          Date.now() +
+          "-" +
+          String(index + 1) +
+          "." +
+          extension;
+
+        const { error: uploadError } = await supabase.storage
+          .from("calibration-photos")
+          .upload(filePath, file, {
+            cacheControl: "3600",
+            upsert: true,
+          });
+
+        if (uploadError) {
+          throw new Error(
+            "Errore caricamento foto nello storage: " + uploadError.message
+          );
+        }
+
+        const { data } = supabase.storage
+          .from("calibration-photos")
+          .getPublicUrl(filePath);
+
+        if (!data.publicUrl) {
+          throw new Error(
+            "Foto caricata nello storage, ma URL pubblico non disponibile."
+          );
+        }
+
+        const row = {
+          calibration_record_id: recordId,
+          photo_category: category,
+          photo_url: data.publicUrl,
+          photo_path: filePath,
+          file_name: file.name,
+          caption: category === "instrument" ? "Foto strumento" : "Fase prova",
+          sort_order: reportPhotos.length + insertedRows.length + 1,
+        };
+
+        const { data: insertedPhoto, error: insertError } = await supabase
+          .from("calibration_report_photos")
+          .insert(row)
+          .select(
+            "id, calibration_record_id, photo_category, photo_url, photo_path, file_name, caption, sort_order, created_at"
+          )
+          .single();
+
+        if (insertError) {
+          throw new Error(
+            "Errore salvataggio foto nel rapporto: " + insertError.message
+          );
+        }
+
+        insertedRows.push(insertedPhoto as ReportPhoto);
+      }
+
+      setReportPhotos((currentPhotos) => [
+        ...currentPhotos,
+        ...insertedRows,
+      ]);
+      setPendingReportPhotos([]);
+      setSaveMessage(
+        files.length === 1
+          ? "Foto caricata e salvata nel rapporto."
+          : "Foto caricate e salvate nel rapporto."
+      );
+      setSaveError("");
+
+      router.refresh();
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Errore imprevisto durante il caricamento foto.";
+
+      setSaveError(message);
+      setReportPhotoLoadError(message);
+      setSaveMessage("");
+    } finally {
+      setUploadingReportPhotos((currentPhotos) =>
+        currentPhotos.filter(
+          (photo) =>
+            !temporaryPhotos.some(
+              (temporaryPhoto) => temporaryPhoto.id === photo.id
+            )
+        )
+      );
+
+      temporaryPhotos.forEach((photo) => {
+        URL.revokeObjectURL(photo.previewUrl);
+      });
+
+      setIsSaving(false);
+    }
+  }
+
+  function handleAdditionalPhotoFiles(
+    files: FileList | null,
+    category: ReportPhotoCategory
+  ) {
+    if (!files || files.length === 0) {
+      return;
+    }
+
+    void saveReportPhotoFilesImmediately(Array.from(files), category);
+  }
+
+  async function stopCamera() {
+    if (cameraStreamRef.current) {
+      cameraStreamRef.current.getTracks().forEach((track) => track.stop());
+      cameraStreamRef.current = null;
+    }
+
+    if (videoRef.current) {
+      videoRef.current.srcObject = null;
+    }
+
+    setActiveCameraCategory(null);
+    setCameraError("");
+  }
+
+  async function startCamera(category: ReportPhotoCategory) {
+    setCameraError("");
+
+    if (
+      typeof navigator === "undefined" ||
+      !navigator.mediaDevices ||
+      !navigator.mediaDevices.getUserMedia
+    ) {
+      setCameraError(
+        "Fotocamera non disponibile su questo dispositivo/browser. Usa il caricamento da archivio."
+      );
+      return;
+    }
+
+    setIsCameraStarting(true);
+    setActiveCameraCategory(category);
+
+    try {
+      if (cameraStreamRef.current) {
+        cameraStreamRef.current.getTracks().forEach((track) => track.stop());
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: {
+          facingMode: { ideal: "environment" },
+          width: { ideal: 1600 },
+          height: { ideal: 1200 },
+        },
+        audio: false,
+      });
+
+      cameraStreamRef.current = stream;
+
+      setTimeout(() => {
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          void videoRef.current.play();
+        }
+      }, 0);
+    } catch (error) {
+      const message =
+        error instanceof Error
+          ? error.message
+          : "Errore durante l'avvio della fotocamera.";
+
+      setCameraError(
+        "Impossibile avviare la fotocamera/webcam. Controlla i permessi del browser. Dettaglio: " +
+          message
+      );
+      setActiveCameraCategory(null);
+    } finally {
+      setIsCameraStarting(false);
+    }
+  }
+
+  async function captureCameraPhoto() {
+    if (!activeCameraCategory || !videoRef.current) {
+      return;
+    }
+
+    setCameraError("");
+
+    const video = videoRef.current;
+    const width = video.videoWidth || 1280;
+    const height = video.videoHeight || 720;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+
+    const context = canvas.getContext("2d");
+
+    if (!context) {
+      setCameraError("Impossibile acquisire l'immagine dalla fotocamera.");
+      return;
+    }
+
+    context.drawImage(video, 0, 0, width, height);
+
+    canvas.toBlob(
+      (blob) => {
+        if (!blob) {
+          setCameraError("Impossibile generare il file immagine.");
+          return;
+        }
+
+        const file = new File(
+          [blob],
+          "foto_" + activeCameraCategory + "_" + Date.now() + ".jpg",
+          { type: "image/jpeg" }
+        );
+
+        const capturedCategory = activeCameraCategory;
+
+        void saveReportPhotoFilesImmediately([file], capturedCategory).then(() => {
+          void stopCamera();
+        });
+      },
+      "image/jpeg",
+      0.9
+    );
+  }
+
+  function updatePendingPhotoCaption(photoId: string, caption: string) {
+    setPendingReportPhotos((currentPhotos) =>
+      currentPhotos.map((photo) =>
+        photo.id === photoId ? { ...photo, caption } : photo
+      )
+    );
+  }
+
+  function removePendingReportPhoto(photoId: string) {
+    setPendingReportPhotos((currentPhotos) =>
+      currentPhotos.filter((photo) => photo.id !== photoId)
+    );
+  }
+
+  async function removeSavedReportPhoto(photoId: string) {
+    setSaveMessage("");
+    setSaveError("");
+
+    const { error } = await supabase
+      .from("calibration_report_photos")
+      .delete()
+      .eq("id", photoId)
+      .eq("calibration_record_id", recordId);
+
+    if (error) {
+      setSaveError("Errore eliminazione foto: " + error.message);
+      return;
+    }
+
+    setReportPhotos((currentPhotos) =>
+      currentPhotos.filter((photo) => photo.id !== photoId)
+    );
   }
 
   function toggleTechnicianSelection(
@@ -1006,6 +1183,107 @@ export default function CalibrationReportDetailsForm({
 
     setInstrumentPhotoUrl(data.publicUrl);
     return data.publicUrl;
+  }
+
+  async function uploadAdditionalPhotosIfNeeded() {
+    if (pendingReportPhotos.length === 0) {
+      return;
+    }
+
+    const allowedTypes = ["image/jpeg", "image/png", "image/webp"];
+    const maxSizeBytes = 10 * 1024 * 1024;
+
+    const rows: Array<{
+      calibration_record_id: string;
+      photo_category: ReportPhotoCategory;
+      photo_url: string;
+      photo_path: string;
+      file_name: string;
+      caption: string | null;
+      sort_order: number;
+    }> = [];
+
+    for (let index = 0; index < pendingReportPhotos.length; index += 1) {
+      const photo = pendingReportPhotos[index];
+
+      if (!allowedTypes.includes(photo.file.type)) {
+        throw new Error(
+          "Formato foto non valido per " +
+            photo.file.name +
+            ". Usa JPG, PNG oppure WEBP."
+        );
+      }
+
+      if (photo.file.size > maxSizeBytes) {
+        throw new Error(
+          "La foto " +
+            photo.file.name +
+            " è troppo grande. Dimensione massima: 10 MB."
+        );
+      }
+
+      const extension = getFileExtension(photo.file);
+      const filePath =
+        recordId +
+        "/" +
+        photo.photo_category +
+        "-" +
+        Date.now() +
+        "-" +
+        String(index + 1) +
+        "." +
+        extension;
+
+      const { error: uploadError } = await supabase.storage
+        .from("calibration-photos")
+        .upload(filePath, photo.file, {
+          cacheControl: "3600",
+          upsert: true,
+        });
+
+      if (uploadError) {
+        throw new Error(
+          "Errore caricamento foto " + photo.file.name + ": " + uploadError.message
+        );
+      }
+
+      const { data } = supabase.storage
+        .from("calibration-photos")
+        .getPublicUrl(filePath);
+
+      if (!data.publicUrl) {
+        throw new Error(
+          "Foto caricata, ma URL pubblico non disponibile: " + photo.file.name
+        );
+      }
+
+      rows.push({
+        calibration_record_id: recordId,
+        photo_category: photo.photo_category,
+        photo_url: data.publicUrl,
+        photo_path: filePath,
+        file_name: photo.file.name,
+        caption: photo.caption.trim() || null,
+        sort_order: reportPhotos.length + index + 1,
+      });
+    }
+
+    const { data: insertedPhotos, error: insertError } = await supabase
+      .from("calibration_report_photos")
+      .insert(rows)
+      .select(
+        "id, calibration_record_id, photo_category, photo_url, photo_path, file_name, caption, sort_order, created_at"
+      );
+
+    if (insertError) {
+      throw new Error("Errore salvataggio foto rapporto: " + insertError.message);
+    }
+
+    setReportPhotos((currentPhotos) => [
+      ...currentPhotos,
+      ...((insertedPhotos ?? []) as ReportPhoto[]),
+    ]);
+    setPendingReportPhotos([]);
   }
 
   function removePhoto() {
@@ -1098,7 +1376,8 @@ export default function CalibrationReportDetailsForm({
         );
       }
 
-      const finalPhotoUrl = await uploadPhotoIfNeeded();
+      const finalPhotoUrl = instrumentPhotoUrl || null;
+      await uploadAdditionalPhotosIfNeeded();
 
       const technicianName = joinTechnicianNames(
         technicians,
@@ -1119,7 +1398,7 @@ export default function CalibrationReportDetailsForm({
 
         customer_name: customerName.trim() || null,
         site_description: siteDescription.trim() || null,
-        work_object: workObject.trim() || null,
+        work_object: "Verifica di taratura",
         requested_tests: requestedTests.trim() || null,
 
         premise_text: premiseText.trim() || null,
@@ -1128,8 +1407,10 @@ export default function CalibrationReportDetailsForm({
         execution_method: executionMethod.trim() || null,
         results_text: resultsText.trim() || null,
 
-        temperature: temperature.trim() || null,
-        humidity: humidity.trim() || null,
+        // Le condizioni ambientali vengono inserite nella nuova verifica.
+        // Qui manteniamo i valori già salvati, senza richiederli una seconda volta.
+        temperature: safeInitialData.temperature || null,
+        humidity: safeInitialData.humidity || null,
 
         technician_name: technicianName || null,
         reviewer_name: reviewerName || null,
@@ -1172,8 +1453,6 @@ export default function CalibrationReportDetailsForm({
       }
 
       setSaveMessage("Dati rapporto e firme salvati correttamente.");
-      setSelectedPhotoFile(null);
-      setSelectedPhotoPreview("");
       await loadTechnicalCompletenessData();
       router.refresh();
     } catch (error) {
@@ -1309,7 +1588,7 @@ export default function CalibrationReportDetailsForm({
 
           <label className="space-y-1">
             <span className="text-sm font-medium text-slate-700">
-              Cantiere / sede prova
+              Luogo prove
             </span>
             <input
               value={siteDescription}
@@ -1326,7 +1605,7 @@ export default function CalibrationReportDetailsForm({
             <input
               value={workObject}
               onChange={(event) => setWorkObject(event.target.value)}
-              placeholder="Es. Verifica taratura di PRESSA CONTROLS C44L2"
+              placeholder="Verifica di taratura"
               className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
             />
           </label>
@@ -1338,7 +1617,7 @@ export default function CalibrationReportDetailsForm({
             <input
               value={requestedTests}
               onChange={(event) => setRequestedTests(event.target.value)}
-              placeholder="Es. Verifica taratura PRESSA CONTROLS C44L2"
+              placeholder="Verifica di taratura dello strumento"
               className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
             />
           </label>
@@ -1347,93 +1626,294 @@ export default function CalibrationReportDetailsForm({
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-900">
-          Foto strumento
+          Foto strumento e fasi prova
         </h2>
 
         <p className="mt-1 text-sm text-slate-500">
-          Da telefono o tablet puoi scattare direttamente la foto dello
-          strumento. Da PC puoi caricare una foto già salvata.
+          Puoi acquisire foto dello strumento e delle fasi prova da smartphone,
+          tablet o webcam collegata al laptop, oppure caricare immagini salvate.
+          Le foto vengono salvate subito nel rapporto.
         </p>
 
-        <div className="mt-5 grid gap-5 md:grid-cols-[320px_1fr]">
-          <div className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
-            {selectedPhotoPreview || instrumentPhotoUrl ? (
-              <img
-                src={selectedPhotoPreview || instrumentPhotoUrl}
-                alt="Foto strumento"
-                className="h-[240px] w-full bg-white object-contain"
-              />
-            ) : (
-              <div className="flex h-[240px] items-center justify-center text-center text-sm text-slate-500">
-                Nessuna foto caricata
+        {reportPhotoLoadError && (
+          <div className="mt-4 rounded-xl border border-red-300 bg-red-50 p-4 text-sm font-semibold text-red-900">
+            {reportPhotoLoadError}
+          </div>
+        )}
+
+        {saveMessage && saveMessage.toLowerCase().includes("foto") && (
+          <div className="mt-4 rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-900">
+            {saveMessage}
+          </div>
+        )}
+
+        {saveError && (
+          <div className="mt-4 rounded-xl border border-red-300 bg-red-50 p-4 text-sm font-semibold text-red-900">
+            {saveError}
+          </div>
+        )}
+
+        <div className="mt-5 grid gap-4 lg:grid-cols-2">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <h3 className="font-semibold text-slate-900">Foto strumento</h3>
+            <p className="mt-1 text-xs text-slate-500">
+              Per foto aggiuntive dello strumento, targhette, dettagli, accessori
+              o condizioni prima/dopo la prova.
+            </p>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <div className="block space-y-2">
+                <span className="text-sm font-medium text-slate-700">
+                  Acquisisci in diretta
+                </span>
+                <button
+                  type="button"
+                  onClick={() => startCamera("instrument")}
+                  className="block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                >
+                  Apri fotocamera / webcam
+                </button>
               </div>
-            )}
+
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-slate-700">
+                  Carica da archivio
+                </span>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/*"
+                  multiple
+                  onChange={(event) => {
+                    handleAdditionalPhotoFiles(
+                      event.target.files,
+                      "instrument"
+                    );
+                    event.target.value = "";
+                  }}
+                  className="block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+                />
+              </label>
+            </div>
           </div>
 
-          <div className="space-y-4">
-            <label className="block space-y-2">
-              <span className="text-sm font-medium text-slate-700">
-                Scatta o carica foto
-              </span>
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <h3 className="font-semibold text-slate-900">Foto fasi prova</h3>
+            <p className="mt-1 text-xs text-slate-500">
+              Per documentare allestimento, collegamenti, fasi operative,
+              letture, posizionamenti o eventuali particolari utili.
+            </p>
 
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/webp,image/*"
-                capture="environment"
-                onChange={(event) =>
-                  handlePhotoChange(event.target.files?.[0] ?? null)
-                }
-                className="block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
-              />
-            </label>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <div className="block space-y-2">
+                <span className="text-sm font-medium text-slate-700">
+                  Acquisisci in diretta
+                </span>
+                <button
+                  type="button"
+                  onClick={() => startCamera("test_phase")}
+                  className="block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-left text-sm font-semibold text-slate-800 hover:bg-slate-50"
+                >
+                  Apri fotocamera / webcam
+                </button>
+              </div>
 
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-              La foto viene caricata solo quando premi{" "}
-              <strong>Salva dati rapporto</strong>.
+              <label className="block space-y-2">
+                <span className="text-sm font-medium text-slate-700">
+                  Carica da archivio
+                </span>
+                <input
+                  type="file"
+                  accept="image/jpeg,image/png,image/webp,image/*"
+                  multiple
+                  onChange={(event) => {
+                    handleAdditionalPhotoFiles(
+                      event.target.files,
+                      "test_phase"
+                    );
+                    event.target.value = "";
+                  }}
+                  className="block w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+                />
+              </label>
             </div>
-
-            {(selectedPhotoPreview || instrumentPhotoUrl) && (
-              <button
-                type="button"
-                onClick={removePhoto}
-                className="rounded-xl border border-red-200 bg-white px-4 py-2 text-sm font-semibold text-red-700 hover:bg-red-50"
-              >
-                Rimuovi foto
-              </button>
-            )}
           </div>
         </div>
+
+        {activeCameraCategory && (
+          <div className="mt-5 rounded-2xl border border-slate-300 bg-slate-950 p-4 text-white shadow-sm">
+            <div className="flex flex-col justify-between gap-3 md:flex-row md:items-center">
+              <div>
+                <h3 className="font-semibold">
+                  Acquisizione in diretta -{" "}
+                  {activeCameraCategory === "instrument"
+                    ? "Foto strumento"
+                    : "Foto fasi prova"}
+                </h3>
+                <p className="text-xs text-slate-300">
+                  Consenti l'accesso alla fotocamera/webcam dal browser, poi
+                  premi “Scatta foto”.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => stopCamera()}
+                className="rounded-xl border border-white/30 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10"
+              >
+                Chiudi fotocamera
+              </button>
+            </div>
+
+            {cameraError && (
+              <div className="mt-4 rounded-xl border border-red-300 bg-red-50 p-3 text-sm text-red-900">
+                {cameraError}
+              </div>
+            )}
+
+            <div className="mt-4 overflow-hidden rounded-2xl border border-white/20 bg-black">
+              <video
+                ref={videoRef}
+                playsInline
+                muted
+                autoPlay
+                className="max-h-[520px] w-full bg-black object-contain"
+              />
+            </div>
+
+            <div className="mt-4 flex flex-wrap justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => startCamera(activeCameraCategory)}
+                disabled={isCameraStarting}
+                className="rounded-xl border border-white/30 px-4 py-2 text-sm font-semibold text-white hover:bg-white/10 disabled:opacity-60"
+              >
+                {isCameraStarting ? "Avvio..." : "Riavvia fotocamera"}
+              </button>
+
+              <button
+                type="button"
+                onClick={captureCameraPhoto}
+                disabled={isCameraStarting}
+                className="rounded-xl bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+              >
+                Scatta foto
+              </button>
+            </div>
+          </div>
+        )}
+
+        {(reportPhotos.length > 0 ||
+          uploadingReportPhotos.length > 0 ||
+          pendingReportPhotos.length > 0) && (
+          <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+            {uploadingReportPhotos.map((photo) => (
+              <div
+                key={photo.id}
+                className="overflow-hidden rounded-2xl border border-blue-200 bg-blue-50"
+              >
+                <img
+                  src={photo.previewUrl}
+                  alt={photo.caption}
+                  className="h-48 w-full bg-white object-contain"
+                />
+                <div className="space-y-2 p-3 text-sm">
+                  <span className="rounded-full bg-blue-100 px-2 py-1 text-xs font-semibold text-blue-800">
+                    Caricamento... {photo.photo_category === "instrument"
+                      ? "Strumento"
+                      : "Fase prova"}
+                  </span>
+                  <p className="text-blue-900">
+                    Salvataggio della foto in corso...
+                  </p>
+                </div>
+              </div>
+            ))}
+
+            {reportPhotos.map((photo) => (
+              <div
+                key={photo.id}
+                className="overflow-hidden rounded-2xl border border-slate-200 bg-slate-50"
+              >
+                <img
+                  src={photo.photo_url}
+                  alt={photo.caption || "Foto rapporto"}
+                  className="h-48 w-full bg-white object-contain"
+                />
+                <div className="space-y-2 p-3 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="rounded-full bg-slate-200 px-2 py-1 text-xs font-semibold text-slate-700">
+                      {photo.photo_category === "instrument"
+                        ? "Strumento"
+                        : "Fase prova"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removeSavedReportPhoto(photo.id)}
+                      className="text-xs font-semibold text-red-700 hover:underline"
+                    >
+                      Elimina
+                    </button>
+                  </div>
+                  <p className="text-slate-700">{photo.caption || "-"}</p>
+                </div>
+              </div>
+            ))}
+
+            {pendingReportPhotos.map((photo) => (
+              <div
+                key={photo.id}
+                className="overflow-hidden rounded-2xl border border-amber-200 bg-amber-50"
+              >
+                <img
+                  src={photo.previewUrl}
+                  alt={photo.caption}
+                  className="h-48 w-full bg-white object-contain"
+                />
+                <div className="space-y-3 p-3 text-sm">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="rounded-full bg-amber-100 px-2 py-1 text-xs font-semibold text-amber-800">
+                      Da salvare - {photo.photo_category === "instrument"
+                        ? "Strumento"
+                        : "Fase prova"}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => removePendingReportPhoto(photo.id)}
+                      className="text-xs font-semibold text-red-700 hover:underline"
+                    >
+                      Rimuovi
+                    </button>
+                  </div>
+                  <input
+                    value={photo.caption}
+                    onChange={(event) =>
+                      updatePendingPhotoCaption(photo.id, event.target.value)
+                    }
+                    placeholder="Didascalia foto"
+                    className="w-full rounded-xl border border-amber-200 bg-white px-3 py-2 text-sm"
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {pendingReportPhotos.length > 0 && (
+          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+            Le foto vengono caricate e salvate subito nel rapporto.
+          </div>
+        )}
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-900">
-          Ambiente e firme
+          Firme e note
         </h2>
 
-        <div className="mt-5 grid gap-4 md:grid-cols-2">
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">
-              Temperatura ambientale °C
-            </span>
-            <input
-              value={temperature}
-              onChange={(event) => setTemperature(event.target.value)}
-              placeholder="Es. 21"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
-          </label>
-
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">
-              Umidità ambientale %
-            </span>
-            <input
-              value={humidity}
-              onChange={(event) => setHumidity(event.target.value)}
-              placeholder="Es. 50"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
-          </label>
+        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+          Le condizioni ambientali vengono inserite in fase di nuova verifica e
+          riportate automaticamente nel rapporto. In questa pagina non vengono
+          richieste una seconda volta.
         </div>
 
         {signatureLoadError && (
@@ -1589,10 +2069,24 @@ export default function CalibrationReportDetailsForm({
           Modifica avanzata testi tecnici del rapporto
         </summary>
 
-        <p className="mt-2 text-sm text-slate-500">
-          Questi testi sono preimpostati dal sistema. Modificarli solo se serve
-          davvero, perché finiscono nel rapporto finale.
-        </p>
+        <div className="mt-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+          <p>
+            I testi standard vengono presi da <strong>lib/report-defaults.ts</strong>.
+            I campi qui sotto possono essere modificati per la singola verifica.
+          </p>
+          <p className="mt-1">
+            Usa il pulsante solo se vuoi sostituire i testi attuali con quelli
+            preimpostati del modulo.
+          </p>
+
+          <button
+            type="button"
+            onClick={regenerateDefaultTexts}
+            className="mt-3 rounded-xl border border-slate-300 bg-white px-4 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-100"
+          >
+            Rigenera testi preimpostati
+          </button>
+        </div>
 
         <div className="mt-5 space-y-4">
           <label className="block space-y-1">

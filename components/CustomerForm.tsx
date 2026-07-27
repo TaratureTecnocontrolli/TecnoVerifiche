@@ -9,8 +9,6 @@ export default function CustomerForm() {
 
   const [customerNumber, setCustomerNumber] = useState("");
   const [businessName, setBusinessName] = useState("");
-  const [vatNumber, setVatNumber] = useState("");
-  const [taxCode, setTaxCode] = useState("");
   const [address, setAddress] = useState("");
   const [city, setCity] = useState("");
   const [province, setProvince] = useState("");
@@ -18,11 +16,6 @@ export default function CustomerForm() {
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [contactPerson, setContactPerson] = useState("");
-  const [siteName, setSiteName] = useState("Sede principale");
-  const [siteAddress, setSiteAddress] = useState("");
-  const [siteCity, setSiteCity] = useState("");
-  const [siteProvince, setSiteProvince] = useState("");
-  const [sitePostalCode, setSitePostalCode] = useState("");
   const [notes, setNotes] = useState("");
 
   const [isSaving, setIsSaving] = useState(false);
@@ -39,62 +32,34 @@ export default function CustomerForm() {
         throw new Error("Inserisci almeno la ragione sociale del cliente.");
       }
 
-      if (!siteName.trim()) {
-        throw new Error("Inserisci almeno il nome della sede.");
-      }
+      const { error: customerError } = await supabase.from("customers").insert({
+        customer_number: customerNumber.trim() || null,
+        business_name: businessName.trim(),
+        vat_number: null,
+        tax_code: null,
+        address: address.trim() || null,
+        city: city.trim() || null,
+        province: province.trim() || null,
+        postal_code: postalCode.trim() || null,
+        email: email.trim() || null,
+        phone: phone.trim() || null,
+        contact_person: contactPerson.trim() || null,
+        notes: notes.trim() || null,
+        is_active: true,
+      });
 
-      const { data: customer, error: customerError } = await supabase
-        .from("customers")
-        .insert({
-          customer_number: customerNumber.trim() || null,
-          business_name: businessName.trim(),
-          vat_number: vatNumber.trim() || null,
-          tax_code: taxCode.trim() || null,
-          address: address.trim() || null,
-          city: city.trim() || null,
-          province: province.trim() || null,
-          postal_code: postalCode.trim() || null,
-          email: email.trim() || null,
-          phone: phone.trim() || null,
-          contact_person: contactPerson.trim() || null,
-          notes: notes.trim() || null,
-          is_active: true,
-        })
-        .select("id")
-        .single();
-
-      if (customerError || !customer) {
+      if (customerError) {
         if (
-          customerError?.message?.toLowerCase().includes("duplicate") ||
-          customerError?.code === "23505"
+          customerError.message?.toLowerCase().includes("duplicate") ||
+          customerError.code === "23505"
         ) {
           throw new Error(
-            "Numero cliente già presente. Inserisci un numero cliente diverso."
+            "Codice cliente già presente. Inserisci un codice cliente diverso."
           );
         }
 
         throw new Error(
-          customerError?.message || "Errore durante il salvataggio del cliente."
-        );
-      }
-
-      const { error: siteError } = await supabase.from("customer_sites").insert({
-        customer_id: customer.id,
-        name: siteName.trim(),
-        address: siteAddress.trim() || address.trim() || null,
-        city: siteCity.trim() || city.trim() || null,
-        province: siteProvince.trim() || province.trim() || null,
-        postal_code: sitePostalCode.trim() || postalCode.trim() || null,
-        contact_person: contactPerson.trim() || null,
-        phone: phone.trim() || null,
-        email: email.trim() || null,
-        is_active: true,
-      });
-
-      if (siteError) {
-        throw new Error(
-          siteError.message ||
-            "Cliente creato, ma errore durante il salvataggio della sede."
+          customerError.message || "Errore durante il salvataggio del cliente."
         );
       }
 
@@ -122,7 +87,7 @@ export default function CustomerForm() {
         <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           <label className="space-y-1">
             <span className="text-sm font-medium text-slate-700">
-              Numero cliente
+              Codice Cliente
             </span>
             <input
               value={customerNumber}
@@ -134,36 +99,12 @@ export default function CustomerForm() {
 
           <label className="space-y-1 lg:col-span-2">
             <span className="text-sm font-medium text-slate-700">
-              Ragione sociale *
+              Ragione Sociale*
             </span>
             <input
               value={businessName}
               onChange={(event) => setBusinessName(event.target.value)}
               placeholder="Es. Cliente S.r.l."
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
-          </label>
-
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">
-              Partita IVA
-            </span>
-            <input
-              value={vatNumber}
-              onChange={(event) => setVatNumber(event.target.value)}
-              placeholder="Partita IVA"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
-          </label>
-
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">
-              Codice fiscale
-            </span>
-            <input
-              value={taxCode}
-              onChange={(event) => setTaxCode(event.target.value)}
-              placeholder="Codice fiscale"
               className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
             />
           </label>
@@ -175,7 +116,7 @@ export default function CustomerForm() {
             <input
               value={address}
               onChange={(event) => setAddress(event.target.value)}
-              placeholder="Indirizzo sede legale"
+              placeholder="Indirizzo sede legale / principale"
               className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
             />
           </label>
@@ -216,9 +157,7 @@ export default function CustomerForm() {
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold text-slate-900">
-          Contatti
-        </h2>
+        <h2 className="text-lg font-semibold text-slate-900">Contatti</h2>
 
         <div className="mt-5 grid gap-4 md:grid-cols-3">
           <label className="space-y-1">
@@ -258,79 +197,7 @@ export default function CustomerForm() {
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-        <h2 className="text-lg font-semibold text-slate-900">
-          Prima sede operativa
-        </h2>
-
-        <p className="mt-1 text-sm text-slate-500">
-          Ogni cliente deve avere almeno una sede. Potrà essere modificata o
-          ampliata più avanti.
-        </p>
-
-        <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">
-              Nome sede *
-            </span>
-            <input
-              value={siteName}
-              onChange={(event) => setSiteName(event.target.value)}
-              placeholder="Sede principale"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
-          </label>
-
-          <label className="space-y-1 lg:col-span-2">
-            <span className="text-sm font-medium text-slate-700">
-              Indirizzo sede
-            </span>
-            <input
-              value={siteAddress}
-              onChange={(event) => setSiteAddress(event.target.value)}
-              placeholder="Se vuoto, usa l’indirizzo del cliente"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
-          </label>
-
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">
-              Città sede
-            </span>
-            <input
-              value={siteCity}
-              onChange={(event) => setSiteCity(event.target.value)}
-              placeholder="Se vuoto, usa la città del cliente"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
-          </label>
-
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">
-              Provincia sede
-            </span>
-            <input
-              value={siteProvince}
-              onChange={(event) => setSiteProvince(event.target.value)}
-              placeholder="BO"
-              maxLength={2}
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm uppercase"
-            />
-          </label>
-
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">
-              CAP sede
-            </span>
-            <input
-              value={sitePostalCode}
-              onChange={(event) => setSitePostalCode(event.target.value)}
-              placeholder="Se vuoto, usa il CAP del cliente"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
-          </label>
-        </div>
-
-        <label className="mt-4 block space-y-1">
+        <label className="block space-y-1">
           <span className="text-sm font-medium text-slate-700">Note</span>
           <textarea
             value={notes}

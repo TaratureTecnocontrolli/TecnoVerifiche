@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
 
@@ -12,14 +12,61 @@ type ReferenceInstrumentFormState = {
   internal_code: string;
   measurement_quantity: string;
   unit: string;
+  custom_unit: string;
   measurement_range: string;
-  resolution: string;
   certificate_number: string;
   certificate_date: string;
   certificate_expiry: string;
   status: string;
   notes: string;
 };
+
+type MeasurementOption = {
+  label: string;
+  quantity: string;
+};
+
+const measurementOptions: MeasurementOption[] = [
+  { label: "Forza", quantity: "Forza" },
+  { label: "Pressione", quantity: "Pressione" },
+  { label: "Coppia", quantity: "Coppia" },
+  { label: "Portata / volume", quantity: "Portata / volume" },
+  { label: "Temperatura", quantity: "Temperatura" },
+  { label: "Dimensionale", quantity: "Dimensionale" },
+  { label: "Massa", quantity: "Massa" },
+  { label: "Sclerometro / rimbalzo", quantity: "Sclerometro / rimbalzo" },
+  { label: "Pull-off", quantity: "Pull-off" },
+  { label: "Altro", quantity: "Altro" },
+];
+
+const unitOptions: string[] = [
+  "kN",
+  "N",
+  "daN",
+  "MN",
+  "bar",
+  "mbar",
+  "Pa",
+  "kPa",
+  "MPa",
+  "Nm",
+  "Ncm",
+  "l",
+  "ml",
+  "m³",
+  "l/min",
+  "l/h",
+  "m³/h",
+  "°C",
+  "mm",
+  "cm",
+  "m",
+  "kg",
+  "g",
+  "indice di rimbalzo",
+  "%",
+  "Altro",
+];
 
 const initialState: ReferenceInstrumentFormState = {
   name: "",
@@ -29,8 +76,8 @@ const initialState: ReferenceInstrumentFormState = {
   internal_code: "",
   measurement_quantity: "",
   unit: "",
+  custom_unit: "",
   measurement_range: "",
-  resolution: "",
   certificate_number: "",
   certificate_date: "",
   certificate_expiry: "",
@@ -76,6 +123,44 @@ function validateCertificateFile(file: File) {
   }
 }
 
+function getEffectiveStatus(status: string, certificateExpiry: string) {
+  if (status === "dismissed") return "dismissed";
+  if (status === "out_of_service") return "out_of_service";
+  if (!certificateExpiry) return "valid";
+
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+
+  const expiry = new Date(certificateExpiry);
+  expiry.setHours(0, 0, 0, 0);
+
+  if (expiry.getTime() < today.getTime()) return "expired";
+
+  return "valid";
+}
+
+function statusLabel(status: string) {
+  if (status === "valid") return "Operativo";
+  if (status === "expired") return "Disattivato per certificato scaduto";
+  if (status === "out_of_service") return "Fuori servizio";
+  if (status === "dismissed") return "Dismesso";
+
+  return status;
+}
+
+function statusClass(status: string) {
+  if (status === "valid") return "border-emerald-200 bg-emerald-50 text-emerald-900";
+  if (status === "expired") return "border-red-200 bg-red-50 text-red-900";
+  if (status === "out_of_service") return "border-amber-200 bg-amber-50 text-amber-900";
+  if (status === "dismissed") return "border-slate-300 bg-slate-100 text-slate-800";
+
+  return "border-slate-200 bg-slate-50 text-slate-700";
+}
+
+function isPreviewableFile(file: File) {
+  return file.type === "application/pdf" || file.type.startsWith("image/");
+}
+
 async function uploadCertificateFile(file: File) {
   validateCertificateFile(file);
 
@@ -108,17 +193,56 @@ export default function ReferenceInstrumentForm() {
 
   const [form, setForm] = useState<ReferenceInstrumentFormState>(initialState);
   const [certificateFile, setCertificateFile] = useState<File | null>(null);
+  const [certificatePreviewUrl, setCertificatePreviewUrl] = useState("");
   const [isSaving, setIsSaving] = useState(false);
   const [message, setMessage] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
 
-  function updateField(
-    field: keyof ReferenceInstrumentFormState,
-    value: string
-  ) {
+  const effectiveUnit = form.unit === "Altro" ? form.custom_unit.trim() : form.unit;
+
+  const effectiveStatus = useMemo(() => {
+    return getEffectiveStatus(form.status, form.certificate_expiry);
+  }, [form.status, form.certificate_expiry]);
+
+  useEffect(() => {
+    if (!certificateFile) {
+      setCertificatePreviewUrl("");
+      return;
+    }
+
+    const objectUrl = URL.createObjectURL(certificateFile);
+    setCertificatePreviewUrl(objectUrl);
+
+    return () => {
+      URL.revokeObjectURL(objectUrl);
+    };
+  }, [certificateFile]);
+
+  function updateField(field: keyof ReferenceInstrumentFormState, value: string) {
     setForm((currentForm) => ({
       ...currentForm,
       [field]: value,
+    }));
+
+    setMessage("");
+    setErrorMessage("");
+  }
+
+  function updateMeasurementQuantity(value: string) {
+    setForm((currentForm) => ({
+      ...currentForm,
+      measurement_quantity: value,
+    }));
+
+    setMessage("");
+    setErrorMessage("");
+  }
+
+  function updateUnit(value: string) {
+    setForm((currentForm) => ({
+      ...currentForm,
+      unit: value,
+      custom_unit: value === "Altro" ? currentForm.custom_unit : "",
     }));
 
     setMessage("");
@@ -159,6 +283,10 @@ export default function ReferenceInstrumentForm() {
         throw new Error("Inserisci il nome dello strumento campione.");
       }
 
+      if (form.unit === "Altro" && !form.custom_unit.trim()) {
+        throw new Error("Inserisci l’unità di misura personalizzata.");
+      }
+
       let uploadedCertificate: {
         url: string | null;
         name: string | null;
@@ -171,27 +299,64 @@ export default function ReferenceInstrumentForm() {
         uploadedCertificate = await uploadCertificateFile(certificateFile);
       }
 
-      const { error } = await supabase.from("reference_instruments").insert({
-        name: form.name.trim(),
-        manufacturer: form.manufacturer.trim() || null,
-        model: form.model.trim() || null,
-        serial_number: form.serial_number.trim() || null,
-        internal_code: form.internal_code.trim() || null,
-        measurement_quantity: form.measurement_quantity.trim() || null,
-        unit: form.unit.trim() || null,
-        measurement_range: form.measurement_range.trim() || null,
-        resolution: form.resolution.trim() || null,
-        certificate_number: form.certificate_number.trim() || null,
-        certificate_date: form.certificate_date || null,
-        certificate_expiry: form.certificate_expiry || null,
-        certificate_file_url: uploadedCertificate.url,
-        certificate_file_name: uploadedCertificate.name,
-        status: form.status,
-        notes: form.notes.trim() || null,
-      });
+      const statusToSave =
+        form.status === "dismissed" || form.status === "out_of_service"
+          ? form.status
+          : "valid";
 
-      if (error) {
-        throw new Error(error.message);
+      const { data: insertedInstrument, error } = await supabase
+        .from("reference_instruments")
+        .insert({
+          name: form.name.trim(),
+          manufacturer: form.manufacturer.trim() || null,
+          model: form.model.trim() || null,
+          serial_number: form.serial_number.trim() || null,
+          internal_code: form.internal_code.trim() || null,
+          measurement_quantity: form.measurement_quantity.trim() || null,
+          unit: effectiveUnit || null,
+          measurement_range: form.measurement_range.trim() || null,
+          resolution: null,
+          certificate_number: form.certificate_number.trim() || null,
+          certificate_date: form.certificate_date || null,
+          certificate_expiry: form.certificate_expiry || null,
+          certificate_file_url: uploadedCertificate.url,
+          certificate_file_name: uploadedCertificate.name,
+          status: statusToSave,
+          notes: form.notes.trim() || null,
+        })
+        .select("id")
+        .single();
+
+      if (error || !insertedInstrument) {
+        throw new Error(error?.message || "Errore durante il salvataggio.");
+      }
+
+      if (
+        uploadedCertificate.url ||
+        form.certificate_number.trim() ||
+        form.certificate_date ||
+        form.certificate_expiry
+      ) {
+        const { error: certificateHistoryError } = await supabase
+          .from("reference_instrument_certificates")
+          .insert({
+            reference_instrument_id: insertedInstrument.id,
+            certificate_number: form.certificate_number.trim() || null,
+            certificate_date: form.certificate_date || null,
+            certificate_expiry: form.certificate_expiry || null,
+            file_url: uploadedCertificate.url,
+            file_name: uploadedCertificate.name,
+            is_current: true,
+            notes:
+              "Certificato attualmente valido al momento della registrazione dello strumento.",
+          });
+
+        if (certificateHistoryError) {
+          throw new Error(
+            certificateHistoryError.message ||
+              "Strumento salvato, ma errore nello storico certificati."
+          );
+        }
       }
 
       setMessage("Strumento campione salvato correttamente.");
@@ -291,48 +456,88 @@ export default function ReferenceInstrumentForm() {
               onChange={(event) => updateField("status", event.target.value)}
               className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
             >
-              <option value="valid">Valido</option>
-              <option value="expiring">In scadenza</option>
-              <option value="expired">Scaduto</option>
+              <option value="valid">Operativo</option>
               <option value="out_of_service">Fuori servizio</option>
+              <option value="dismissed">Dismesso</option>
             </select>
           </label>
+        </div>
+
+        <div
+          className={
+            "mt-5 rounded-xl border p-4 text-sm " + statusClass(effectiveStatus)
+          }
+        >
+          <p className="font-semibold">
+            Stato effettivo: {statusLabel(effectiveStatus)}
+          </p>
+          <p className="mt-1">
+            Se lo strumento è operativo ma il certificato risulta scaduto, il
+            sistema lo considera disattivato ai fini dell’utilizzo nelle
+            verifiche. “Dismesso” resta invece una scelta manuale definitiva.
+          </p>
         </div>
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-900">
-          Dati metrologici
+          Caratteristiche metrologiche
         </h2>
 
-        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <label className="space-y-1">
             <span className="text-sm font-medium text-slate-700">
               Grandezza misurata
             </span>
-            <input
+            <select
               value={form.measurement_quantity}
-              onChange={(event) =>
-                updateField("measurement_quantity", event.target.value)
-              }
-              placeholder="Es. Portata, Pressione, Coppia"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
+              onChange={(event) => updateMeasurementQuantity(event.target.value)}
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+            >
+              <option value="">Seleziona grandezza</option>
+              {measurementOptions.map((option) => (
+                <option key={option.quantity} value={option.quantity}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
           </label>
 
           <label className="space-y-1">
             <span className="text-sm font-medium text-slate-700">Unità</span>
-            <input
+            <select
               value={form.unit}
-              onChange={(event) => updateField("unit", event.target.value)}
-              placeholder="Es. l, l/min, bar, N·m"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
+              onChange={(event) => updateUnit(event.target.value)}
+              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+            >
+              <option value="">Seleziona unità</option>
+              {unitOptions.map((unitOption) => (
+                <option key={unitOption} value={unitOption}>
+                  {unitOption}
+                </option>
+              ))}
+            </select>
           </label>
+
+          {form.unit === "Altro" && (
+            <label className="space-y-1">
+              <span className="text-sm font-medium text-slate-700">
+                Unità personalizzata
+              </span>
+              <input
+                value={form.custom_unit}
+                onChange={(event) =>
+                  updateField("custom_unit", event.target.value)
+                }
+                placeholder="Inserisci unità"
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+              />
+            </label>
+          )}
 
           <label className="space-y-1 xl:col-span-1">
             <span className="text-sm font-medium text-slate-700">
-              Campo di misura
+              Fondo scala
             </span>
             <input
               value={form.measurement_range}
@@ -343,25 +548,19 @@ export default function ReferenceInstrumentForm() {
               className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
             />
           </label>
-
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">
-              Risoluzione
-            </span>
-            <input
-              value={form.resolution}
-              onChange={(event) => updateField("resolution", event.target.value)}
-              placeholder="Es. 0,1 l"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
-          </label>
         </div>
       </section>
 
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-900">
-          Certificato di taratura
+          Certificato di taratura attualmente valido
         </h2>
+
+        <p className="mt-1 text-sm text-slate-500">
+          Inserisci qui il certificato in corso di validità. Quando in futuro
+          caricherai un nuovo certificato, quello precedente dovrà finire nello
+          storico certificati.
+        </p>
 
         <div className="mt-5 grid gap-4 md:grid-cols-3">
           <label className="space-y-1">
@@ -410,7 +609,7 @@ export default function ReferenceInstrumentForm() {
         <div className="mt-5 rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-5">
           <label className="block space-y-2">
             <span className="text-sm font-semibold text-slate-700">
-              File certificato
+              File certificato attualmente valido
             </span>
 
             <input
@@ -433,6 +632,56 @@ export default function ReferenceInstrumentForm() {
               <span className="font-semibold">{certificateFile.name}</span>
             </div>
           )}
+
+          {certificateFile && certificatePreviewUrl && (
+            <div className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white">
+              <div className="border-b border-slate-200 px-4 py-3">
+                <p className="text-sm font-semibold text-slate-900">
+                  Anteprima certificato
+                </p>
+                <p className="text-xs text-slate-500">
+                  Anteprima locale del file selezionato, senza scaricarlo.
+                </p>
+              </div>
+
+              {isPreviewableFile(certificateFile) ? (
+                certificateFile.type === "application/pdf" ? (
+                  <iframe
+                    src={certificatePreviewUrl}
+                    title="Anteprima certificato"
+                    className="h-[520px] w-full"
+                  />
+                ) : (
+                  <img
+                    src={certificatePreviewUrl}
+                    alt="Anteprima certificato"
+                    className="max-h-[520px] w-full object-contain"
+                  />
+                )
+              ) : (
+                <div className="p-4 text-sm text-slate-600">
+                  Anteprima non disponibile per questo formato.
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="text-lg font-semibold text-slate-900">
+          Storico certificati passati
+        </h2>
+
+        <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+          <p className="font-semibold">
+            Nessun certificato passato in fase di nuovo inserimento.
+          </p>
+          <p className="mt-1">
+            Lo storico verrà popolato quando, dalla scheda/modifica dello
+            strumento campione, verrà sostituito il certificato attualmente
+            valido con uno nuovo.
+          </p>
         </div>
       </section>
 

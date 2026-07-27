@@ -2,30 +2,54 @@ import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import ForceCalibrationTable from "@/components/ForceCalibrationTable";
 
-export default function NewCtCalibrationPage() {
+type PageProps = {
+  searchParams?: Promise<{
+    scope?: string;
+  }>;
+};
+
+export default async function NewCtCalibrationPage({ searchParams }: PageProps) {
+  const resolvedSearchParams = searchParams ? await searchParams : undefined;
+  const verificationScope = resolvedSearchParams?.scope === "VI" ? "VI" : "VT";
+
   return (
     <AppShell>
       <div className="space-y-6">
         <div>
           <Link
-            href="/"
+            href="/nuova-verifica"
             className="text-sm font-medium text-slate-500 hover:text-slate-950"
           >
-            ← Torna alla dashboard
+            ← Torna alla scelta verifica
           </Link>
 
-          <h1 className="mt-3 text-3xl font-bold text-slate-950">
-            Nuova verifica compressione/trazione
-          </h1>
+          <div className="mt-3 flex flex-col justify-between gap-4 md:flex-row md:items-start">
+            <div>
+              <h1 className="text-3xl font-bold text-slate-950">
+                Nuova verifica compressione/trazione
+              </h1>
 
-          <p className="mt-2 max-w-3xl text-slate-600">
-            Primo modulo operativo di TecnoTarature. Inserisci i valori rilevati
-            durante la verifica: il sistema calcola automaticamente media,
-            errore, accuratezza e ripetibilità.
-          </p>
+              <p className="mt-1 max-w-4xl text-slate-600">
+                Inserisci i valori rilevati durante la verifica: il sistema calcola automaticamente media, errore, accuratezza e ripetibilità.
+              </p>
+            </div>
+
+            <div
+              className={
+                "w-fit rounded-2xl border px-4 py-3 text-sm font-semibold " +
+                (verificationScope === "VI"
+                  ? "border-sky-200 bg-sky-50 text-sky-900"
+                  : "border-emerald-200 bg-emerald-50 text-emerald-900")
+              }
+            >
+              {verificationScope === "VI"
+                ? "VI - Verifica interna"
+                : "VT - Verifica/Taratura cliente"}
+            </div>
+          </div>
         </div>
 
-        <ForceCalibrationTable />
+        <ForceCalibrationTable verificationScope={verificationScope} />
       </div>
     </AppShell>
   );

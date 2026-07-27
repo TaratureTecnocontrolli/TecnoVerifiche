@@ -14,6 +14,10 @@ type CalibrationRecord = {
   id: string;
   record_number: string | null;
   mode: string | null;
+  verification_module: string | null;
+  verification_scope: string | null;
+  verified_instrument_type: string | null;
+  output_type: string | null;
   report_status: string | null;
 };
 
@@ -22,7 +26,7 @@ export default async function EditMeasurementsPage({ params }: PageProps) {
 
   const { data: recordData, error: recordError } = await supabase
     .from("calibration_records")
-    .select("id, record_number, mode, report_status")
+    .select("id, record_number, mode, verification_module, verification_scope, verified_instrument_type, output_type, report_status")
     .eq("id", id)
     .single();
 
@@ -31,6 +35,21 @@ export default async function EditMeasurementsPage({ params }: PageProps) {
   }
 
   const record = recordData as CalibrationRecord;
+  const isInternalVerification =
+    record.verification_scope === "VI" ||
+    record.output_type === "rapportino" ||
+    record.output_type === "rapportino_interno" ||
+    record.verified_instrument_type === "internal" ||
+    record.verified_instrument_type === "interno";
+
+  const detailsHref = isInternalVerification
+    ? "/verifiche/" + id + "/rapportino-interno"
+    : "/verifiche/" + id + "/rapporto";
+
+  const reportHref = isInternalVerification
+    ? "/verifiche/" + id + "/rapportino-interno"
+    : "/verifiche/" + id + "/rapporto/finale";
+
 
   const { data: scalesData, error: scalesError } = await supabase
     .from("calibration_record_scales")
@@ -121,17 +140,17 @@ export default async function EditMeasurementsPage({ params }: PageProps) {
 
           <div className="flex flex-wrap gap-3">
             <Link
-              href={"/verifiche/" + id + "/rapporto"}
+              href={detailsHref}
               className="rounded-xl border border-slate-300 bg-white px-5 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50"
             >
-              Dati rapporto
+              {isInternalVerification ? "Rapportino" : "Dati rapporto"}
             </Link>
 
             <Link
-              href={"/verifiche/" + id + "/rapporto/finale"}
+              href={reportHref}
               className="rounded-xl bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-700"
             >
-              Rapporto
+              {isInternalVerification ? "Rapportino" : "Rapporto"}
             </Link>
           </div>
         </div>
@@ -157,6 +176,7 @@ export default async function EditMeasurementsPage({ params }: PageProps) {
           initialScales={scalesData ?? []}
           initialMeasurements={measurementsData ?? []}
           referenceInstruments={referenceInstrumentsData ?? []}
+          isInternalVerification={isInternalVerification}
         />
       </div>
     </AppShell>

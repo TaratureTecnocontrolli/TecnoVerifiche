@@ -3,8 +3,10 @@ import { notFound } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import MeasurementErrorChart from "@/components/MeasurementErrorChart";
 import ReportPrintButton from "@/components/ReportPrintButton";
+import FinalReportPhotosInline from "@/components/FinalReportPhotosInline";
+import ReportStatusActions from "@/components/ReportStatusActions";
 import { hasValidChartMeasurements, type MeasurementLike } from "@/lib/chart-utils";
-import { supabase } from "@/lib/supabase";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
 
 type PageProps = {
   params: Promise<{
@@ -25,6 +27,17 @@ type ChartPageInfo = {
   key: string;
   title: string;
   measurements: (MeasurementLike & { section: string | null })[];
+};
+
+type ReportPhoto = {
+  id: string;
+  photo_category: string | null;
+  photo_url: string;
+  photo_path: string | null;
+  file_name: string | null;
+  caption: string | null;
+  sort_order: number | null;
+  created_at: string | null;
 };
 
 type ScalePlan = {
@@ -63,6 +76,21 @@ function textValue(value: unknown, fallback = "-") {
   return text || fallback;
 }
 
+
+function safeFileNameSegment(value: unknown, fallback = "Senza_nome") {
+  const rawValue = textValue(value, fallback);
+
+  return (
+    rawValue
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/[^a-zA-Z0-9_-]+/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 80) || fallback
+  );
+}
+
 function formatDate(value: unknown) {
   if (!value) {
     return "-";
@@ -78,7 +106,7 @@ function formatDate(value: unknown) {
   return new Intl.DateTimeFormat("it-IT").format(new Date(text));
 }
 
-function formatNumber(value: unknown, digits = 4) {
+function formatNumber(value: unknown, digits = 3) {
   if (value === null || value === undefined || value === "") {
     return "-";
   }
@@ -90,8 +118,40 @@ function formatNumber(value: unknown, digits = 4) {
   }
 
   return new Intl.NumberFormat("it-IT", {
-    maximumFractionDigits: digits,
+    minimumFractionDigits: 3,
+    maximumFractionDigits: 3,
   }).format(number);
+}
+
+function hasNumericValue(value: unknown) {
+  if (value === null || value === undefined || value === "") {
+    return false;
+  }
+
+  return Number.isFinite(Number(value));
+}
+
+function hasAnyNumericValue(measurements: GenericRecord[], field: string) {
+  return measurements.some((measurement) => hasNumericValue(measurement[field]));
+}
+
+function maxAbsoluteValue(measurements: GenericRecord[], field: string) {
+  const values = measurements
+    .map((measurement) => measurement[field])
+    .filter(hasNumericValue)
+    .map((value) => Math.abs(Number(value)));
+
+  if (values.length === 0) {
+    return null;
+  }
+
+  return Math.max(...values);
+}
+
+function formatNumberWithUnit(value: unknown, unit: string) {
+  const formattedValue = formatNumber(value);
+
+  return formattedValue === "-" ? "-" : formattedValue + " " + unit;
 }
 
 function splitText(value: unknown) {
@@ -105,6 +165,134 @@ function splitText(value: unknown) {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter(Boolean);
+}
+
+function isTestPhasePhoto(photo: ReportPhoto) {
+  const category = String(photo.photo_category ?? "").trim().toLowerCase();
+
+  return (
+    category === "test_phase" ||
+    category === "fase_prova" ||
+    category === "fasi_prova" ||
+    category === "prova" ||
+    category.includes("fase")
+  );
+}
+
+function isInstrumentPhoto(photo: ReportPhoto) {
+  const category = String(photo.photo_category ?? "").trim().toLowerCase();
+
+  if (!category) {
+    return true;
+  }
+
+  return (
+    category === "instrument" ||
+    category === "instrument_photo" ||
+    category === "strumento" ||
+    category === "foto_strumento" ||
+    category.includes("strumento")
+  );
+}
+
+function ReportPhotosInline({
+  title,
+  photos,
+}: {
+  title: string;
+  photos: Array<{
+    id: string;
+    photo_url: string;
+    file_name?: string | null;
+    caption?: string | null;
+  }>;
+}) {
+  if (photos.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="mt-3 break-inside-avoid">
+      <h3 className="mb-2 text-[12px] font-black uppercase">{title}</h3>
+
+      <div className="grid grid-cols-2 gap-3">
+        {photos.map((photo, index) => (
+          <figure
+            key={photo.id || String(index)}
+            className="break-inside-avoid rounded-sm border border-slate-300 bg-white/70 p-2"
+          >
+            <div className="flex h-[190px] items-center justify-center border border-slate-200 bg-white">
+              <img
+                src={photo.photo_url}
+                alt={photo.caption || photo.file_name || title}
+                className="h-full w-full object-contain"
+              />
+            </div>
+
+            <figcaption className="mt-1 text-center text-[8.5px] leading-tight text-slate-800">
+              {photo.caption || photo.file_name || title}
+            </figcaption>
+          </figure>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function buildCustomerFullAnagrafica(input: {
+  details: GenericRecord;
+  customerSnapshot: GenericRecord;
+  customerMaster: GenericRecord;
+}) {
+  const sources = [input.details, input.customerSnapshot, input.customerMaster];
+
+  function firstValue(keys: string[]) {
+    for (const key of keys) {
+      for (const source of sources) {
+        const value = source[key];
+
+        if (value !== null && value !== undefined && String(value).trim() !== "") {
+          return String(value).trim();
+        }
+      }
+    }
+
+    return "";
+  }
+
+  const name = firstValue([
+    "customer_name",
+    "business_name",
+    "company_name",
+    "ragione_sociale",
+    "name",
+  ]);
+  const vat = firstValue(["vat_number", "vat", "partita_iva", "p_iva", "piva"]);
+  const taxCode = firstValue(["tax_code", "fiscal_code", "codice_fiscale", "cf"]);
+  const address = firstValue(["address", "street", "via", "registered_office_address"]);
+  const postalCode = firstValue(["postal_code", "zip", "cap"]);
+  const city = firstValue(["city", "comune"]);
+  const province = firstValue(["province", "provincia"]);
+  const email = firstValue(["email", "mail"]);
+  const pec = firstValue(["pec", "certified_email"]);
+  const phone = firstValue(["phone", "telephone", "telefono"]);
+
+  const addressLine = [address, postalCode, city, province ? "(" + province + ")" : ""]
+    .filter(Boolean)
+    .join(" ")
+    .trim();
+
+  return [
+    name,
+    vat ? "P. IVA " + vat : null,
+    taxCode ? "C.F. " + taxCode : null,
+    addressLine || null,
+    pec ? "PEC " + pec : null,
+    email && email !== pec ? "Email " + email : null,
+    phone ? "Tel. " + phone : null,
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 function modeLabel(mode: unknown, verificationModule: unknown) {
@@ -170,12 +358,12 @@ function DataCell({
 }) {
   return (
     <>
-      <td className="border border-slate-300 bg-slate-50 px-2 py-1 font-bold text-slate-950">
+      <td className="border border-slate-300 bg-slate-100/75 px-2 py-0.5 font-bold text-slate-950">
         {label}
       </td>
       <td
         colSpan={colSpan}
-        className="border border-slate-300 px-2 py-1 text-slate-950"
+        className="border border-slate-300 bg-white/55 px-2 py-0.5 text-slate-950"
       >
         {textValue(value)}
       </td>
@@ -206,14 +394,14 @@ function PageShell({
       <img
         src={LETTERHEAD_IMAGE_SRC}
         alt="Carta intestata Tecnocontrolli"
-        className="absolute inset-0 h-[1123px] w-full object-cover"
+        className="pointer-events-none absolute inset-0 z-0 block h-[1135px] w-full object-cover print:block"
       />
 
       <div className="relative z-10 px-[60px] pb-16 pt-[132px]">
         {children}
       </div>
 
-      <div className="absolute bottom-[28px] left-[60px] right-[60px] z-10 border-t border-slate-300 pt-2 text-center text-[9px] leading-tight text-slate-700">
+      <div className="absolute bottom-[28px] left-[60px] right-[60px] z-10 border-t border-slate-300 pt-2 text-center text-[10px] leading-tight text-slate-700">
         <p>
           Pagina {pageNumber} di {totalPages} del Rapporto di Prova{" "}
           {reportNumber} del {formatDate(reportDate)}
@@ -231,6 +419,7 @@ function CoverPage({
   record,
   details,
   customerSnapshot,
+  customerMaster,
   reportNumber,
   reportDate,
   pageNumber,
@@ -239,6 +428,7 @@ function CoverPage({
   record: GenericRecord;
   details: GenericRecord;
   customerSnapshot: GenericRecord;
+  customerMaster: GenericRecord;
   reportNumber: string;
   reportDate: unknown;
   pageNumber: number;
@@ -256,6 +446,10 @@ function CoverPage({
     customerSnapshot.business_name ??
     "-";
 
+  const customerFullAnagrafica =
+    buildCustomerFullAnagrafica({ details, customerSnapshot, customerMaster }) ||
+    textValue(customerName);
+
   const acceptance = [
     details.acceptance_number,
     details.acceptance_date ? "del " + formatDate(details.acceptance_date) : null,
@@ -270,87 +464,87 @@ function CoverPage({
       reportNumber={reportNumber}
       reportDate={reportDate}
     >
-      <div className="text-right text-[13px] font-semibold text-slate-950">
+      <div className="mt-10 text-right text-[13px] font-semibold text-slate-950">
         Calderara di Reno, {formatDate(reportDate)}
       </div>
 
-      <table className="mt-10 w-full border-collapse text-[13px]">
+      <table className="mt-15 w-full border-collapse text-[13px]">
         <tbody>
           <tr>
-            <td className="w-[185px] border border-slate-900 px-3 py-4 font-black uppercase">
+            <td className="w-[185px] border border-slate-900 bg-white/70 px-3 py-4 font-black uppercase">
               Rapporto di prova
             </td>
-            <td className="border border-slate-900 px-3 py-4 font-black">
+            <td className="border border-slate-900 bg-white/60 px-3 py-4 font-black">
               {reportNumber}
             </td>
           </tr>
 
           <tr>
-            <td className="border border-slate-900 px-3 py-4 font-black uppercase">
-              N. cliente
+            <td className="border border-slate-900 bg-white/70 px-3 py-4 font-black uppercase">
+              Codice cliente
             </td>
-            <td className="border border-slate-900 px-3 py-4 font-black">
+            <td className="border border-slate-900 bg-white/60 px-3 py-4 font-black">
               {textValue(customerNumber)}
             </td>
           </tr>
 
           <tr>
-            <td className="border border-slate-900 px-3 py-4 font-black uppercase">
+            <td className="border border-slate-900 bg-white/70 px-3 py-4 font-black uppercase">
               Committente
             </td>
-            <td className="border border-slate-900 px-3 py-4 font-black">
-              {textValue(customerName)}
+            <td className="whitespace-pre-line border border-slate-900 bg-white/60 px-3 py-3 text-[11px] font-bold leading-4">
+              {customerFullAnagrafica}
             </td>
           </tr>
 
           <tr>
-            <td className="border border-slate-900 px-3 py-4 font-black uppercase">
+            <td className="border border-slate-900 bg-white/70 px-3 py-4 font-black uppercase">
               Oggetto dei lavori
             </td>
-            <td className="border border-slate-900 px-3 py-4 font-black">
-              {textValue(details.work_object)}
+            <td className="border border-slate-900 bg-white/60 px-3 py-4 font-black">
+              Verifica di taratura
             </td>
           </tr>
 
           <tr>
-            <td className="border border-slate-900 px-3 py-4 font-black uppercase">
-              Cantiere
+            <td className="border border-slate-900 bg-white/70 px-3 py-4 font-black uppercase">
+              Luogo prove
             </td>
-            <td className="border border-slate-900 px-3 py-4 font-black">
+            <td className="border border-slate-900 bg-white/60 px-3 py-4 font-black">
               {textValue(details.site_description ?? record.location)}
             </td>
           </tr>
 
           <tr>
-            <td className="border border-slate-900 px-3 py-4 font-black uppercase">
+            <td className="border border-slate-900 bg-white/70 px-3 py-4 font-black uppercase">
               Prove richieste
             </td>
-            <td className="border border-slate-900 px-3 py-4 font-black">
+            <td className="border border-slate-900 bg-white/60 px-3 py-4 font-black">
               {textValue(details.requested_tests)}
             </td>
           </tr>
 
           <tr>
-            <td className="border border-slate-900 px-3 py-4 font-black uppercase">
+            <td className="border border-slate-900 bg-white/70 px-3 py-4 font-black uppercase">
               Data delle prove
             </td>
-            <td className="border border-slate-900 px-3 py-4 font-black">
+            <td className="border border-slate-900 bg-white/60 px-3 py-4 font-black">
               {formatDate(details.test_date ?? record.verification_date)}
             </td>
           </tr>
 
           <tr>
-            <td className="border border-slate-900 px-3 py-4 font-black uppercase">
+            <td className="border border-slate-900 bg-white/70 px-3 py-4 font-black uppercase">
               Accettazione int.
             </td>
-            <td className="border border-slate-900 px-3 py-4 font-black">
+            <td className="border border-slate-900 bg-white/60 px-3 py-4 font-black">
               {acceptance || "-"}
             </td>
           </tr>
         </tbody>
       </table>
 
-      <p className="mt-32 text-center text-[12px] font-bold">
+      <p className="mt-28 text-center text-[12px] font-bold">
         (il presente rapporto di prova si compone di n. {totalPages} pagine)
       </p>
     </PageShell>
@@ -360,6 +554,7 @@ function CoverPage({
 function TextPage({
   record,
   details,
+  reportPhotos,
   reportNumber,
   reportDate,
   pageNumber,
@@ -367,11 +562,34 @@ function TextPage({
 }: {
   record: GenericRecord;
   details: GenericRecord;
+  reportPhotos: ReportPhoto[];
   reportNumber: string;
   reportDate: unknown;
   pageNumber: number;
   totalPages: number;
 }) {
+  const testPhasePhotos = reportPhotos.filter(isTestPhasePhoto);
+  const instrumentPhotosFromTable = reportPhotos.filter(
+    (photo) => isInstrumentPhoto(photo) || !isTestPhasePhoto(photo)
+  );
+
+  const legacyInstrumentPhoto =
+    typeof details.instrument_photo_url === "string" &&
+    details.instrument_photo_url.trim()
+      ? [
+          {
+            id: "legacy-instrument-photo",
+            photo_url: details.instrument_photo_url,
+            file_name: "Foto strumento",
+            caption: "Foto strumento",
+          },
+        ]
+      : [];
+
+  const instrumentPhotos =
+    instrumentPhotosFromTable.length > 0
+      ? instrumentPhotosFromTable
+      : legacyInstrumentPhoto;
   return (
     <PageShell
       pageNumber={pageNumber}
@@ -379,24 +597,20 @@ function TextPage({
       reportNumber={reportNumber}
       reportDate={reportDate}
     >
-      <section className="space-y-6 text-[13px] leading-7 text-slate-950">
+      <section className="space-y-6 text-justify text-[13px] leading-5 text-slate-950">
         <div>
-          <h2 className="mb-3 text-[15px] font-black uppercase">1. Premessa</h2>
+          <h2 className="mt-5 mb-1 text-[15px] font-black uppercase">1. Premessa</h2>
           {splitText(details.premise_text).map((paragraph, index) => (
-            <p key={index} className="mb-2">
+            <p key={index} className="mb-0.5 text-justify">
               {paragraph}
             </p>
           ))}
 
-          {details.instrument_photo_url && (
-            <div className="mx-auto mt-6 flex h-[260px] w-[470px] items-center justify-center border border-slate-200">
-              <img
-                src={details.instrument_photo_url}
-                alt="Strumento in prova"
-                className="h-full w-full object-contain"
-              />
-            </div>
-          )}
+          <FinalReportPhotosInline
+            recordId={String(record.id)}
+            category="instrument"
+            title="Foto strumento"
+          />
         </div>
 
         <div>
@@ -404,7 +618,7 @@ function TextPage({
             2. Scopo della prova
           </h2>
           {splitText(details.scope_text).map((paragraph, index) => (
-            <p key={index} className="mb-2">
+            <p key={index} className="mb-0.5 text-justify">
               {paragraph}
             </p>
           ))}
@@ -415,7 +629,7 @@ function TextPage({
             3. Descrizione dell&apos;apparato di verifica
           </h2>
           {splitText(details.apparatus_description).map((paragraph, index) => (
-            <p key={index} className="mb-2">
+            <p key={index} className="mb-0.5 text-justify">
               {paragraph}
             </p>
           ))}
@@ -426,10 +640,16 @@ function TextPage({
             4. Descrizione e modalità di esecuzione della verifica di taratura
           </h2>
           {splitText(details.execution_method).map((paragraph, index) => (
-            <p key={index} className="mb-2">
+            <p key={index} className="mb-0.5 text-justify">
               {paragraph}
             </p>
           ))}
+
+          <FinalReportPhotosInline
+            recordId={String(record.id)}
+            category="test_phase"
+            title="Foto fasi prova"
+          />
         </div>
       </section>
     </PageShell>
@@ -463,6 +683,7 @@ function FormulaPage({
     record.verification_module === "DIMENSIONAL" || record.mode === "dimensionale";
   const isTemperature =
     record.verification_module === "TEMPERATURE" || record.mode === "temperatura";
+
   const isPullOff =
     record.verification_module === "PULLOFF" || record.mode === "pulloff";
 
@@ -475,9 +696,9 @@ function FormulaPage({
   if (isPressure) {
     formulaText = [
       "La verifica viene eseguita confrontando i valori indicati dallo strumento in prova con i valori applicati tramite lo strumento campione.",
-      "Per ogni punto vengono rilevate tre letture dello strumento in prova.",
-      "Errore medio = Carico applicato - Media letture.",
-      "Errore accuratezza % = [(Carico applicato - Media letture) / Carico applicato] × 100.",
+      "Per ogni punto vengono rilevate due letture dello strumento in prova.",
+      "Errore medio = Media letture - Carico applicato.",
+      "Errore accuratezza % = [(Media letture - Carico applicato) / Carico applicato] × 100.",
       "Errore ripetibilità % = [(Lettura massima - Lettura minima) / Media letture] × 100.",
     ];
   }
@@ -511,7 +732,7 @@ function FormulaPage({
     formulaText = [
       "La verifica è composta da tre prove distinte: ripetibilità (un punto, tre letture), eccentricità (cinque zone del piatto di pesata, tre letture ciascuna) e linearità (più punti sull'intero campo di pesata, tre letture ciascuno).",
       "Errore = Media letture - Peso nominale.",
-      "Errore % (solo prova di linearità) = (Media letture / Peso campione - 1) × 100.",
+      "Errore % (solo prova di linearità) = (Media letture / Peso nominale - 1) × 100.",
       "Errore ripetibilità % = [(Lettura massima - Lettura minima) / Media letture] × 100.",
       "Eccentricità (zona centrale) = Media delle ripetibilità delle cinque zone - Ripetibilità della zona centrale.",
     ];
@@ -550,14 +771,14 @@ function FormulaPage({
       reportNumber={reportNumber}
       reportDate={reportDate}
     >
-      <section className="space-y-6 text-[13px] leading-7 text-slate-950">
+      <section className="space-y-6 text-justify text-[13px] leading-5 text-slate-950">
         <div>
-          <h2 className="mb-4 text-[15px] font-black uppercase">
+          <h2 className="mt-5 mb-2 text-[15px] font-black uppercase">
             5. Espressione dei risultati
           </h2>
 
           {formulaText.map((paragraph, index) => (
-            <p key={index} className="mb-2">
+            <p key={index} className="mb-0.5 text-justify">
               {paragraph}
             </p>
           ))}
@@ -570,21 +791,21 @@ function FormulaPage({
 
           <table className="w-full border-collapse text-center text-[12px]">
             <thead>
-              <tr className="bg-slate-700 text-white">
-                <th className="border border-slate-900 p-2">
+              <tr className="bg-slate-700/65 text-slate-950">
+                <th className="border border-slate-900 px-2 py-0.5">
                   Temperatura ambientale (°C)
                 </th>
-                <th className="border border-slate-900 p-2">
+                <th className="border border-slate-900 px-2 py-0.5">
                   Umidità ambientale (%)
                 </th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td className="border border-slate-900 p-2 font-bold">
+                <td className="border border-slate-900 px-2 py-1 font-bold">
                   {textValue(details.temperature)}
                 </td>
-                <td className="border border-slate-900 p-2 font-bold">
+                <td className="border border-slate-900 px-2 py-1 font-bold">
                   {textValue(details.humidity)}
                 </td>
               </tr>
@@ -592,7 +813,7 @@ function FormulaPage({
           </table>
 
           <div className="mt-8 rounded-lg border border-slate-200 p-4 text-[12px] leading-6">
-            Nota: la sezione tecnica di verifica della taratura costituisce
+            Nota: la sezione tecnica di verifica taratura costituisce
             parte integrante del presente Rapporto di Prova ed è riportata nelle
             pagine successive prima della sottoscrizione finale.
           </div>
@@ -606,40 +827,75 @@ function TechnicalTable({
   measurements,
   showNominalColumn,
   showUncertaintyColumn,
+  showThirdCycleColumn = true,
   nominalLabel = "Volume nominale",
   appliedLabel = "Carico applicato",
 }: {
   measurements: GenericRecord[];
   showNominalColumn: boolean;
   showUncertaintyColumn?: boolean;
+  showThirdCycleColumn?: boolean;
   nominalLabel?: string;
   appliedLabel?: string;
 }) {
+  const showThirdCycle =
+    showThirdCycleColumn && hasAnyNumericValue(measurements, "cycle_3");
+  const showMaxColumn = hasAnyNumericValue(measurements, "max_value");
+  const showMinColumn = hasAnyNumericValue(measurements, "min_value");
+  const showAverageColumn = hasAnyNumericValue(measurements, "average_value");
+  const showMeanErrorColumn = hasAnyNumericValue(measurements, "mean_error");
+  const showAccuracyColumn = hasAnyNumericValue(
+    measurements,
+    "accuracy_error_percent"
+  );
+  const showRepeatabilityColumn = hasAnyNumericValue(
+    measurements,
+    "repeatability_error_percent"
+  );
+  const showInstrumentalUncertaintyColumn =
+    Boolean(showUncertaintyColumn) &&
+    hasAnyNumericValue(measurements, "instrumental_uncertainty");
+
   const columnCount =
-    11 + (showNominalColumn ? 1 : 0) + (showUncertaintyColumn ? 1 : 0);
+    3 +
+    (showNominalColumn ? 1 : 0) +
+    (showThirdCycle ? 1 : 0) +
+    (showMaxColumn ? 1 : 0) +
+    (showMinColumn ? 1 : 0) +
+    (showAverageColumn ? 1 : 0) +
+    (showMeanErrorColumn ? 1 : 0) +
+    (showAccuracyColumn ? 1 : 0) +
+    (showRepeatabilityColumn ? 1 : 0) +
+    (showInstrumentalUncertaintyColumn ? 1 : 0);
 
   return (
-    <table className="w-full border-collapse text-center text-[8px]">
+    <table className="w-full border-collapse bg-white/35 text-center text-[8px]">
       <thead>
-        <tr className="bg-slate-700 text-white">
-          <th className="border border-slate-600 p-1">Punto di verifica</th>
+        <tr className="bg-slate-700/65 text-slate-950">
+          <th className="border border-slate-600 px-1 py-0.5">Punto di verifica</th>
           {showNominalColumn && (
-            <th className="border border-slate-600 p-1">{nominalLabel}</th>
+            <th className="border border-slate-600 px-1 py-0.5">{nominalLabel}</th>
           )}
-          <th className="border border-slate-600 p-1">{appliedLabel}</th>
-          <th className="border border-slate-600 p-1">Lettura I° ciclo</th>
-          <th className="border border-slate-600 p-1">Lettura II° ciclo</th>
-          <th className="border border-slate-600 p-1">Lettura III° ciclo</th>
-          <th className="border border-slate-600 p-1">Lettura massima</th>
-          <th className="border border-slate-600 p-1">Lettura minima</th>
-          <th className="border border-slate-600 p-1">Media letture</th>
-          <th className="border border-slate-600 p-1">Errore medio</th>
-          <th className="border border-slate-600 p-1">Errore accuratezza %</th>
-          <th className="border border-slate-600 p-1">
-            Errore ripetibilità %
-          </th>
-          {showUncertaintyColumn && (
-            <th className="border border-slate-600 p-1">
+          <th className="border border-slate-600 px-1 py-0.5">{appliedLabel}</th>
+          <th className="border border-slate-600 px-1 py-0.5">Lettura I° ciclo</th>
+          <th className="border border-slate-600 px-1 py-0.5">Lettura II° ciclo</th>
+          {showThirdCycle && (
+            <th className="border border-slate-600 px-1 py-0.5">
+              Lettura III° ciclo
+            </th>
+          )}
+          {showMaxColumn && <th className="border border-slate-600 px-1 py-0.5">Lettura massima</th>}
+          {showMinColumn && <th className="border border-slate-600 px-1 py-0.5">Lettura minima</th>}
+          {showAverageColumn && <th className="border border-slate-600 px-1 py-0.5">Media letture</th>}
+          {showMeanErrorColumn && <th className="border border-slate-600 px-1 py-0.5">Errore medio</th>}
+          {showAccuracyColumn && <th className="border border-slate-600 px-1 py-0.5">Errore accuratezza %</th>}
+          {showRepeatabilityColumn && (
+            <th className="border border-slate-600 px-1 py-0.5">
+              Errore ripetibilità %
+            </th>
+          )}
+          {showInstrumentalUncertaintyColumn && (
+            <th className="border border-slate-600 px-1 py-0.5">
               Incertezza strumentale
             </th>
           )}
@@ -647,54 +903,47 @@ function TechnicalTable({
       </thead>
       <tbody>
         {measurements.length === 0 ? (
-          <tr>
-            <td colSpan={columnCount} className="border border-slate-300 p-3">
+          <tr className="bg-white/65">
+            <td colSpan={columnCount} className="border border-slate-300 px-2 py-1">
               Nessun punto di misura salvato per questa scala.
             </td>
           </tr>
         ) : (
-          measurements.map((measurement) => (
-            <tr key={measurement.id}>
-              <td className="border border-slate-300 p-1">
+          measurements.map((measurement, index) => (
+            <tr
+              key={measurement.id}
+              className={index % 2 === 0 ? "bg-white/65" : "bg-slate-100/55"}
+            >
+              <td className="border border-slate-300 px-1 py-0.5">
                 {textValue(measurement.point_order)}
               </td>
               {showNominalColumn && (
-                <td className="border border-slate-300 p-1">
+                <td className="border border-slate-300 px-1 py-0.5">
                   {formatNumber(measurement.nominal_value)}
                 </td>
               )}
-              <td className="border border-slate-300 p-1">
+              <td className="border border-slate-300 px-1 py-0.5">
                 {formatNumber(measurement.applied_value)}
               </td>
-              <td className="border border-slate-300 p-1">
+              <td className="border border-slate-300 px-1 py-0.5">
                 {formatNumber(measurement.cycle_1)}
               </td>
-              <td className="border border-slate-300 p-1">
+              <td className="border border-slate-300 px-1 py-0.5">
                 {formatNumber(measurement.cycle_2)}
               </td>
-              <td className="border border-slate-300 p-1">
-                {formatNumber(measurement.cycle_3)}
-              </td>
-              <td className="border border-slate-300 p-1">
-                {formatNumber(measurement.max_value)}
-              </td>
-              <td className="border border-slate-300 p-1">
-                {formatNumber(measurement.min_value)}
-              </td>
-              <td className="border border-slate-300 p-1 font-bold">
-                {formatNumber(measurement.average_value)}
-              </td>
-              <td className="border border-slate-300 p-1">
-                {formatNumber(measurement.mean_error)}
-              </td>
-              <td className="border border-slate-300 p-1">
-                {formatNumber(measurement.accuracy_error_percent)}
-              </td>
-              <td className="border border-slate-300 p-1">
-                {formatNumber(measurement.repeatability_error_percent)}
-              </td>
-              {showUncertaintyColumn && (
-                <td className="border border-slate-300 p-1">
+              {showThirdCycle && (
+                <td className="border border-slate-300 px-1 py-0.5">
+                  {formatNumber(measurement.cycle_3)}
+                </td>
+              )}
+              {showMaxColumn && <td className="border border-slate-300 px-1 py-0.5">{formatNumber(measurement.max_value)}</td>}
+              {showMinColumn && <td className="border border-slate-300 px-1 py-0.5">{formatNumber(measurement.min_value)}</td>}
+              {showAverageColumn && <td className="border border-slate-300 p-1 font-bold">{formatNumber(measurement.average_value)}</td>}
+              {showMeanErrorColumn && <td className="border border-slate-300 px-1 py-0.5">{formatNumber(measurement.mean_error)}</td>}
+              {showAccuracyColumn && <td className="border border-slate-300 px-1 py-0.5">{formatNumber(measurement.accuracy_error_percent)}</td>}
+              {showRepeatabilityColumn && <td className="border border-slate-300 px-1 py-0.5">{formatNumber(measurement.repeatability_error_percent)}</td>}
+              {showInstrumentalUncertaintyColumn && (
+                <td className="border border-slate-300 px-1 py-0.5">
                   {formatNumber(measurement.instrumental_uncertainty)}
                 </td>
               )}
@@ -731,29 +980,28 @@ function TechnicalPage({
   pageNumber: number;
   totalPages: number;
 }) {
+  const isPressure =
+    record.verification_module === "PRESSURE" || record.mode === "pressione";
   const isFlow = record.verification_module === "FLOW" || record.mode === "portata";
   const isMass = record.verification_module === "MASS" || record.mode === "massa";
   const isDimensional =
     record.verification_module === "DIMENSIONAL" || record.mode === "dimensionale";
-  const showNominalColumn = isFlow || isMass;
-  const nominalLabel = isMass ? "Peso nominale" : "Volume nominale";
+  const showNominalColumn = isFlow;
+  const nominalLabel = "Volume nominale";
   const appliedLabel = isFlow
     ? "Volume impostato"
     : isMass
-      ? "Peso campione"
+      ? "Peso nominale"
       : isDimensional
         ? "Valore nominale"
         : "Carico applicato";
 
-  const maxAccuracy = measurements.reduce((current, measurement) => {
-    const value = Math.abs(Number(measurement.accuracy_error_percent ?? 0));
-    return Math.max(current, value);
-  }, 0);
+  const maxAccuracy = maxAbsoluteValue(measurements, "accuracy_error_percent");
 
-  const maxRepeatability = measurements.reduce((current, measurement) => {
-    const value = Math.abs(Number(measurement.repeatability_error_percent ?? 0));
-    return Math.max(current, value);
-  }, 0);
+  const maxRepeatability = maxAbsoluteValue(
+    measurements,
+    "repeatability_error_percent"
+  );
 
   return (
     <PageShell
@@ -762,23 +1010,23 @@ function TechnicalPage({
       reportNumber={reportNumber}
       reportDate={reportDate}
     >
-      <div className="text-right text-[11px] font-semibold text-slate-900">
+      <div className="mt-10 text-right text-[11px] font-semibold text-slate-900">
         Sezione tecnica integrante del Rapporto di Prova {reportNumber}
       </div>
 
       <h2 className="mt-6 text-center text-[18px] font-black uppercase tracking-wide">
-        Sezione tecnica di verifica della taratura
+        Sezione tecnica di verifica di taratura
       </h2>
 
       <p className="mt-2 text-center text-[12px] font-bold">
         {textValue(scale.scale_name)}
       </p>
 
-      <div className="mt-5 grid grid-cols-2 gap-3 text-[9px]">
-        <table className="border-collapse">
+      <div className="mt-5 text-[9px]">
+        <table className="w-full border-collapse">
           <thead>
-            <tr className="bg-slate-700 text-left text-white">
-              <th colSpan={2} className="border border-slate-900 px-2 py-1">
+            <tr className="bg-slate-700/65 text-left text-slate-950">
+              <th colSpan={2} className="border border-slate-900 px-2 py-0.5">
                 Dati generali
               </th>
             </tr>
@@ -786,7 +1034,7 @@ function TechnicalPage({
           <tbody>
             <tr>
               <DataCell
-                label="N. cliente"
+                label="Codice cliente"
                 value={customerSnapshot.customer_number}
               />
             </tr>
@@ -795,7 +1043,7 @@ function TechnicalPage({
             </tr>
             <tr>
               <DataCell
-                label="Sede prova"
+                label="Luogo prove"
                 value={details.site_description ?? record.location}
               />
             </tr>
@@ -811,51 +1059,14 @@ function TechnicalPage({
                 value={modeLabel(record.mode, record.verification_module)}
               />
             </tr>
-            <tr>
-              <DataCell label="Operatore" value={record.operator_name} />
-            </tr>
-          </tbody>
+           </tbody>
         </table>
-
-        <table className="border-collapse">
-          <thead>
-            <tr className="bg-slate-700 text-left text-white">
-              <th colSpan={2} className="border border-slate-900 px-2 py-1">
-                Procedura e condizioni
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <DataCell
-                label="Procedura"
-                value={
-                  textValue(procedureSnapshot.code) +
-                  " - Rev. " +
-                  textValue(procedureSnapshot.revision)
-                }
-              />
-            </tr>
-            <tr>
-              <DataCell
-                label="Calcolo"
-                value={procedureSnapshot.calculation_engine_version}
-              />
-            </tr>
-            <tr>
-              <DataCell label="Temp." value={details.temperature} />
-            </tr>
-            <tr>
-              <DataCell label="Umidità" value={details.humidity} />
-            </tr>
-          </tbody>
-        </table>
-      </div>
+       </div>
 
       <table className="mt-3 w-full border-collapse text-[9px]">
         <thead>
-          <tr className="bg-slate-700 text-left text-white">
-            <th colSpan={4} className="border border-slate-900 px-2 py-1">
+          <tr className="bg-slate-700/65 text-left text-slate-950">
+            <th colSpan={4} className="border border-slate-900 px-2 py-0.5">
               Strumento in prova
             </th>
           </tr>
@@ -874,8 +1085,8 @@ function TechnicalPage({
 
       <table className="mt-3 w-full border-collapse text-[9px]">
         <thead>
-          <tr className="bg-slate-700 text-left text-white">
-            <th colSpan={4} className="border border-slate-900 px-2 py-1">
+          <tr className="bg-slate-700/65 text-left text-slate-950">
+            <th colSpan={4} className="border border-slate-900 px-2 py-0.5">
               Scala verificata
             </th>
           </tr>
@@ -888,11 +1099,11 @@ function TechnicalPage({
           <tr>
             <DataCell
               label="Errore accuratezza max"
-              value={formatNumber(maxAccuracy) + " %"}
+              value={formatNumberWithUnit(maxAccuracy, "%")}
             />
             <DataCell
               label="Errore ripetibilità max"
-              value={formatNumber(maxRepeatability) + " %"}
+              value={formatNumberWithUnit(maxRepeatability, "%")}
             />
           </tr>
         </tbody>
@@ -904,8 +1115,8 @@ function TechnicalPage({
           className="mt-3 w-full border-collapse text-[9px]"
         >
           <thead>
-            <tr className="bg-slate-700 text-left text-white">
-              <th colSpan={4} className="border border-slate-900 px-2 py-1">
+            <tr className="bg-slate-700/65 text-left text-slate-950">
+              <th colSpan={4} className="border border-slate-900 px-2 py-0.5">
                 {referenceSnapshots.length > 1
                   ? "Strumento campione usato " + String(referenceIndex + 1)
                   : "Strumento campione usato"}
@@ -958,6 +1169,7 @@ function TechnicalPage({
           showUncertaintyColumn={isDimensional}
           nominalLabel={nominalLabel}
           appliedLabel={appliedLabel}
+          showThirdCycleColumn={!isPressure}
         />
       </div>
     </PageShell>
@@ -986,47 +1198,126 @@ function ChartPage({
       reportNumber={reportNumber}
       reportDate={reportDate}
     >
-      <div className="text-right text-[11px] font-semibold text-slate-900">
+      <div className="mt-10 text-right text-[11px] font-semibold text-slate-900">
         Sezione tecnica integrante del Rapporto di Prova {reportNumber}
       </div>
 
-      <div className="mt-8">
+      <div className="mt-8 rounded-2xl bg-white/45 p-2">
         <MeasurementErrorChart measurements={measurements} title={title} />
       </div>
     </PageShell>
   );
 }
 
-function SignatureCell({
+function SignatureEntryCard({ entry }: { entry: SignatureRow }) {
+  return (
+    <div className="flex min-h-[96px] min-w-[150px] flex-1 flex-col items-center justify-end rounded-lg border border-slate-200/70 bg-white/25 px-3 py-2">
+      {entry.signature_url_snapshot ? (
+        <img
+          src={entry.signature_url_snapshot}
+          alt={entry.display_name ?? "Firma"}
+          className="mb-1 h-14 max-w-[150px] object-contain mix-blend-multiply opacity-75"
+        />
+      ) : (
+        <div className="mb-1 h-14 w-full border-b border-slate-300" />
+      )}
+
+      <span className="text-center text-[10px] leading-tight">
+        {textValue(entry.display_name)}
+      </span>
+    </div>
+  );
+}
+
+function SignatureRoleSection({
+  title,
   entries,
   fallbackText,
 }: {
+  title: string;
   entries: SignatureRow[];
   fallbackText: unknown;
 }) {
-  if (entries.length > 0) {
-    return (
-      <div className="flex h-[115px] flex-col items-center justify-center px-2">
-        {entries.map((entry, index) => (
-          <div key={index} className="flex flex-col items-center">
-            {entry.signature_url_snapshot ? (
-              <img
-                src={entry.signature_url_snapshot}
-                alt={entry.display_name ?? "Firma"}
-                className="-mb-3 h-20 max-w-[210px] object-contain mix-blend-multiply"
-              />
-            ) : null}
-            <span className="text-[10px]">{textValue(entry.display_name)}</span>
-          </div>
-        ))}
-      </div>
-    );
-  }
+  const fallback = textValue(fallbackText, "");
 
   return (
-    <div className="flex h-[115px] items-center justify-center">
-      {textValue(fallbackText)}
+    <div className="overflow-hidden rounded-sm border border-slate-900 bg-white/35">
+      <div className="bg-slate-700/65 px-3 py-1 text-center text-[10px] font-bold text-slate-950">
+        {title}
+      </div>
+
+      <div className="bg-white/10 p-3">
+        {entries.length > 0 ? (
+          <div className="flex flex-wrap justify-center gap-3">
+            {entries.map((entry, index) => (
+              <SignatureEntryCard key={index} entry={entry} />
+            ))}
+          </div>
+        ) : (
+          <div className="flex min-h-[96px] items-end justify-center px-3 py-2">
+            <div className="w-[210px] border-b border-slate-300 pb-2 text-center text-[10px] leading-tight">
+              {fallback || "-"}
+            </div>
+          </div>
+        )}
+      </div>
     </div>
+  );
+}
+
+function PhotoDocumentationPage({
+  photos,
+  reportNumber,
+  reportDate,
+  pageNumber,
+  totalPages,
+}: {
+  photos: ReportPhoto[];
+  reportNumber: string;
+  reportDate: unknown;
+  pageNumber: number;
+  totalPages: number;
+}) {
+  return (
+    <PageShell
+      pageNumber={pageNumber}
+      totalPages={totalPages}
+      reportNumber={reportNumber}
+      reportDate={reportDate}
+    >
+      <section className="text-slate-950">
+        <h2 className="mt-5 mb-4 text-[15px] font-black uppercase">
+          Documentazione fotografica
+        </h2>
+
+        {photos.length === 0 ? (
+          <p className="text-[12px]">Nessuna foto allegata al rapporto.</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-4">
+            {photos.map((photo, index) => (
+              <figure
+                key={photo.id || String(index)}
+                className="break-inside-avoid rounded-sm border border-slate-300 bg-white/70 p-2"
+              >
+                <div className="flex h-[245px] items-center justify-center border border-slate-200 bg-white">
+                  <img
+                    src={photo.photo_url}
+                    alt={photo.caption || photo.file_name || "Foto rapporto"}
+                    className="h-full w-full object-contain"
+                  />
+                </div>
+                <figcaption className="mt-1 text-center text-[8.5px] leading-tight text-slate-800">
+                  {photo.caption ||
+                    (photo.photo_category === "test_phase"
+                      ? "Foto fase prova"
+                      : "Foto strumento")}
+                </figcaption>
+              </figure>
+            ))}
+          </div>
+        )}
+      </section>
+    </PageShell>
   );
 }
 
@@ -1056,8 +1347,8 @@ function SignaturePage({
       reportNumber={reportNumber}
       reportDate={reportDate}
     >
-      <section className="text-[13px] leading-7 text-slate-950">
-        <h2 className="mb-6 text-[15px] font-black uppercase">
+      <section className="text-[13px] leading-5 text-slate-950">
+        <h2 className="mt-10 mb-2 text-[15px] font-black uppercase">
           7. Sottoscrizione del rapporto
         </h2>
 
@@ -1068,36 +1359,24 @@ function SignaturePage({
           applicabili.
         </p>
 
-        <div className="mt-10 grid grid-cols-3 gap-4 text-center text-[11px]">
-          <div className="border border-slate-900">
-            <div className="bg-slate-700 p-2 font-bold text-white">
-              Il Tecnico addetto alle prove
-            </div>
-            <SignatureCell
-              entries={testingSignatures}
-              fallbackText={details.technician_name}
-            />
-          </div>
+        <div className="mt-10 space-y-5 text-center text-[11px]">
+          <SignatureRoleSection
+            title="Tecnico/i addetto/i alle prove"
+            entries={testingSignatures}
+            fallbackText={details.technician_name}
+          />
 
-          <div className="border border-slate-900">
-            <div className="bg-slate-700 p-2 font-bold text-white">
-              Redatto / verificato
-            </div>
-            <SignatureCell
-              entries={reviewerSignatures}
-              fallbackText={details.reviewer_name}
-            />
-          </div>
+          <SignatureRoleSection
+            title="Redatto / verificato"
+            entries={reviewerSignatures}
+            fallbackText={details.reviewer_name}
+          />
 
-          <div className="border border-slate-900">
-            <div className="bg-slate-700 p-2 font-bold text-white">
-              Il Direttore di laboratorio
-            </div>
-            <SignatureCell
-              entries={directorSignature ? [directorSignature] : []}
-              fallbackText={details.director_name}
-            />
-          </div>
+          <SignatureRoleSection
+            title="Direttore di laboratorio"
+            entries={directorSignature ? [directorSignature] : []}
+            fallbackText={details.director_name}
+          />
         </div>
       </section>
     </PageShell>
@@ -1107,7 +1386,9 @@ function SignaturePage({
 export default async function FinalReportPage({ params }: PageProps) {
   const { id } = await params;
 
-  const { data: recordData, error: recordError } = await supabase
+  
+  const supabase = await createServerSupabaseClient();
+const { data: recordData, error: recordError } = await supabase
     .from("calibration_records")
     .select("*")
     .eq("id", id)
@@ -1143,10 +1424,20 @@ export default async function FinalReportPage({ params }: PageProps) {
     .eq("calibration_record_id", id)
     .order("sort_order", { ascending: true });
 
+  const { data: reportPhotosData } = await supabase
+    .from("calibration_report_photos")
+    .select(
+      "id, photo_category, photo_url, photo_path, file_name, caption, sort_order, created_at"
+    )
+    .eq("calibration_record_id", id)
+    .order("sort_order", { ascending: true })
+    .order("created_at", { ascending: true });
+
   const details = asObject(detailsData);
   const scales = (scalesData ?? []) as GenericRecord[];
   const measurements = (measurementsData ?? []) as GenericRecord[];
   const signatureRows = (signaturesData ?? []) as SignatureRow[];
+  const reportPhotos = (reportPhotosData ?? []) as ReportPhoto[];
 
   const testingSignatures = signatureRows.filter(
     (row) => row.signature_role === "testing_technician"
@@ -1158,6 +1449,23 @@ export default async function FinalReportPage({ params }: PageProps) {
     signatureRows.find((row) => row.signature_role === "director") ?? null;
 
   const customerSnapshot = asObject(record.customer_instrument_snapshot);
+
+  const customerIdFromSnapshot =
+    typeof customerSnapshot.customer_id === "string"
+      ? customerSnapshot.customer_id
+      : typeof record.customer_id === "string"
+        ? record.customer_id
+        : "";
+
+  const { data: customerMasterData } = customerIdFromSnapshot
+    ? await supabase
+        .from("customers")
+        .select("*")
+        .eq("id", customerIdFromSnapshot)
+        .maybeSingle()
+    : { data: null };
+
+  const customerMaster = asObject(customerMasterData);
   const referenceSnapshot = asObject(record.reference_instrument_snapshot);
   const procedureSnapshot = asObject(record.procedure_snapshot);
 
@@ -1168,10 +1476,24 @@ export default async function FinalReportPage({ params }: PageProps) {
 
   const reportDate = details.report_date ?? new Date().toISOString().slice(0, 10);
 
+  const reportCustomerName =
+    textValue(details.customer_name, "") ||
+    textValue(customerSnapshot.customer_name, "") ||
+    textValue(customerSnapshot.business_name, "") ||
+    "Cliente";
+
+  const reportFileName =
+    "RdP_" +
+    safeFileNameSegment(reportNumber, "Senza_numero") +
+    "_" +
+    safeFileNameSegment(reportCustomerName, "Cliente");
+
   const isPressure =
     record.verification_module === "PRESSURE" || record.mode === "pressione";
   const isTemperature =
     record.verification_module === "TEMPERATURE" || record.mode === "temperatura";
+  const isSclerometric =
+    record.verification_module === "SCLEROMETRIC" || record.mode === "sclerometro";
 
   const scalePlans: ScalePlan[] = scales.map((scale) => {
     const scaleMeasurements = measurements.filter(
@@ -1221,7 +1543,7 @@ export default async function FinalReportPage({ params }: PageProps) {
 
     const chartPages: ChartPageInfo[] = [];
 
-    if (!isTemperature) {
+    if (!isTemperature && !isSclerometric) {
       if (isPressure) {
         const carico = chartMeasurements.filter(
           (measurement) => measurement.section?.toLowerCase() !== "scarico"
@@ -1278,7 +1600,6 @@ export default async function FinalReportPage({ params }: PageProps) {
   ];
 
   const totalPages = pageDescriptors.length;
-
   return (
     <AppShell>
       <div className="space-y-8 bg-slate-100 p-6 print:bg-white print:p-0">
@@ -1290,10 +1611,20 @@ export default async function FinalReportPage({ params }: PageProps) {
             ← Torna ai dati rapporto
           </Link>
 
-          <ReportPrintButton
-            fileName={"Rapporto di Prova " + reportNumber}
-          />
+          <div className="flex flex-wrap items-center gap-2">
+            <ReportPrintButton
+              fileName={reportFileName}
+            />
+          </div>
         </div>
+
+        <ReportStatusActions
+          recordId={id}
+          initialStatus={typeof record.report_status === "string" ? record.report_status : "draft"}
+          issuedAt={typeof record.issued_at === "string" ? record.issued_at : null}
+          reopenedAt={typeof record.reopened_at === "string" ? record.reopened_at : null}
+          documentLabel="rapporto VT"
+        />
 
         {pageDescriptors.map((descriptor, index) => {
           const pageNumber = index + 1;
@@ -1305,6 +1636,7 @@ export default async function FinalReportPage({ params }: PageProps) {
                 record={record}
                 details={details}
                 customerSnapshot={customerSnapshot}
+                customerMaster={customerMaster}
                 reportNumber={reportNumber}
                 reportDate={reportDate}
                 pageNumber={pageNumber}
@@ -1319,6 +1651,7 @@ export default async function FinalReportPage({ params }: PageProps) {
                 key="text"
                 record={record}
                 details={details}
+                reportPhotos={reportPhotos}
                 reportNumber={reportNumber}
                 reportDate={reportDate}
                 pageNumber={pageNumber}
