@@ -1,14 +1,11 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { supabase } from "@/lib/supabase";
 
-type ReportPhotoCategory = "instrument" | "test_phase";
-
-type ReportPhoto = {
+type FinalReportPhoto = {
   id: string;
-  calibration_record_id: string;
-  photo_category: ReportPhotoCategory | string | null;
+  photo_category: string | null;
   photo_url: string;
   photo_path: string | null;
   file_name: string | null;
@@ -19,35 +16,41 @@ type ReportPhoto = {
 
 type FinalReportPhotosInlineProps = {
   recordId: string;
-  category: ReportPhotoCategory;
+  category: "instrument" | "test_phase";
   title: string;
+  variant?: "default" | "clean-large";
 };
 
-function isTestPhasePhoto(photo: ReportPhoto) {
-  const category = String(photo.photo_category ?? "").trim().toLowerCase();
-
-  return (
-    category === "test_phase" ||
-    category === "fase_prova" ||
-    category === "fasi_prova" ||
-    category === "prova" ||
-    category.includes("fase")
-  );
+function normalizeCategory(value: string | null) {
+  return String(value ?? "").trim().toLowerCase();
 }
 
-function isInstrumentPhoto(photo: ReportPhoto) {
-  const category = String(photo.photo_category ?? "").trim().toLowerCase();
+function isMatchingCategory(
+  photo: FinalReportPhoto,
+  category: "instrument" | "test_phase"
+) {
+  const normalized = normalizeCategory(photo.photo_category);
 
-  if (!category) {
-    return true;
+  if (category === "instrument") {
+    if (!normalized) {
+      return true;
+    }
+
+    return (
+      normalized === "instrument" ||
+      normalized === "instrument_photo" ||
+      normalized === "strumento" ||
+      normalized === "foto_strumento" ||
+      normalized.includes("strumento")
+    );
   }
 
   return (
-    category === "instrument" ||
-    category === "instrument_photo" ||
-    category === "strumento" ||
-    category === "foto_strumento" ||
-    category.includes("strumento")
+    normalized === "test_phase" ||
+    normalized === "fase_prova" ||
+    normalized === "fasi_prova" ||
+    normalized === "prova" ||
+    normalized.includes("fase")
   );
 }
 
@@ -55,22 +58,18 @@ export default function FinalReportPhotosInline({
   recordId,
   category,
   title,
+  variant = "default",
 }: FinalReportPhotosInlineProps) {
-  const [photos, setPhotos] = useState<ReportPhoto[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
-  const [errorMessage, setErrorMessage] = useState("");
+  const [photos, setPhotos] = useState<FinalReportPhoto[]>([]);
 
   useEffect(() => {
     let isMounted = true;
 
     async function loadPhotos() {
-      setIsLoading(true);
-      setErrorMessage("");
-
-      const { data, error } = await supabase
+      const { data } = await supabase
         .from("calibration_report_photos")
         .select(
-          "id, calibration_record_id, photo_category, photo_url, photo_path, file_name, caption, sort_order, created_at"
+          "id, photo_category, photo_url, photo_path, file_name, caption, sort_order, created_at"
         )
         .eq("calibration_record_id", recordId)
         .order("sort_order", { ascending: true })
@@ -80,50 +79,38 @@ export default function FinalReportPhotosInline({
         return;
       }
 
-      if (error) {
-        setPhotos([]);
-        setErrorMessage(error.message);
-        setIsLoading(false);
-        return;
-      }
+      const filteredPhotos = ((data ?? []) as FinalReportPhoto[]).filter((photo) =>
+        isMatchingCategory(photo, category)
+      );
 
-      setPhotos((data ?? []) as ReportPhoto[]);
-      setIsLoading(false);
+      setPhotos(filteredPhotos);
     }
 
-    void loadPhotos();
+    loadPhotos();
 
     return () => {
       isMounted = false;
     };
-  }, [recordId]);
+  }, [recordId, category]);
 
-  const filteredPhotos = useMemo(() => {
-    if (category === "test_phase") {
-      return photos.filter(isTestPhasePhoto);
-    }
-
-    return photos.filter((photo) => isInstrumentPhoto(photo) || !isTestPhasePhoto(photo));
-  }, [category, photos]);
-
-  if (isLoading) {
-    return (
-      <div className="print-hidden mt-3 rounded-xl border border-blue-200 bg-blue-50 p-3 text-xs font-semibold text-blue-900">
-        Caricamento foto rapporto...
-      </div>
-    );
-  }
-
-  if (errorMessage) {
-    return (
-      <div className="print-hidden mt-3 rounded-xl border border-red-300 bg-red-50 p-3 text-xs font-semibold text-red-900">
-        Errore caricamento foto rapporto: {errorMessage}
-      </div>
-    );
-  }
-
-  if (filteredPhotos.length === 0) {
+  if (photos.length === 0) {
     return null;
+  }
+
+  if (variant === "clean-large") {
+    return (
+      <div className="mt-4 break-inside-avoid">
+        <h3 className="mb-2 text-[12px] font-black uppercase">{title}</h3>
+
+        <div className="flex w-full justify-center">
+          <img
+            src={photos[0].photo_url}
+            alt={photos[0].caption || photos[0].file_name || title}
+            className="max-h-[360px] w-auto max-w-full object-contain"
+          />
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -131,7 +118,7 @@ export default function FinalReportPhotosInline({
       <h3 className="mb-2 text-[12px] font-black uppercase">{title}</h3>
 
       <div className="grid grid-cols-2 gap-3">
-        {filteredPhotos.map((photo, index) => (
+        {photos.map((photo, index) => (
           <figure
             key={photo.id || String(index)}
             className="break-inside-avoid rounded-sm border border-slate-300 bg-white/70 p-2"

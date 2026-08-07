@@ -77,6 +77,35 @@ function textValue(value: unknown, fallback = "-") {
 }
 
 
+function normalizeUnit(value: unknown) {
+  const unit = textValue(value, "").trim();
+
+  if (!unit || unit === "-") {
+    return "";
+  }
+
+  return unit;
+}
+
+function firstTextValueFromSources(
+  sources: GenericRecord[],
+  keys: string[],
+  fallback = ""
+) {
+  for (const key of keys) {
+    for (const source of sources) {
+      const value = source[key];
+
+      if (value !== null && value !== undefined && String(value).trim() !== "") {
+        return String(value).trim();
+      }
+    }
+  }
+
+  return fallback;
+}
+
+
 function safeFileNameSegment(value: unknown, fallback = "Senza_nome") {
   const rawValue = textValue(value, fallback);
 
@@ -193,6 +222,87 @@ function isInstrumentPhoto(photo: ReportPhoto) {
     category === "foto_strumento" ||
     category.includes("strumento")
   );
+}
+
+function getMeasurementUnit(input: {
+  record?: GenericRecord;
+  customerSnapshot?: GenericRecord;
+  referenceSnapshots?: GenericRecord[];
+  scale?: GenericRecord;
+}) {
+  const referenceSnapshots = input.referenceSnapshots ?? [];
+  const sources = [
+    input.customerSnapshot ?? {},
+    input.scale ?? {},
+    ...referenceSnapshots,
+    input.record ?? {},
+  ];
+
+  return normalizeUnit(
+    firstTextValueFromSources(sources, [
+      "unit",
+      "measurement_unit",
+      "unita_misura",
+      "unit_of_measure",
+    ])
+  );
+}
+
+function addUnitToNumberText(text: string, unit: string) {
+  if (!text || !unit) {
+    return text;
+  }
+
+  const escapedUnit = unit.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+  return text
+    .replace(
+      new RegExp(
+        "(Fondo Scala di\\s+)(\\d+(?:[,.]\\d+)?)(?!\\s*" +
+          escapedUnit +
+          ")(\\s*)([.;,])",
+        "gi"
+      ),
+      "$1$2 " + unit + "$4"
+    )
+    .replace(
+      new RegExp(
+        "(fondo scala/campo\\s+)(\\d+(?:[,.]\\d+)?)(?!\\s*" +
+          escapedUnit +
+          ")(\\s*)([.;,])",
+        "gi"
+      ),
+      "$1$2 " + unit + "$4"
+    )
+    .replace(
+      new RegExp(
+        "(fondo scala\\s+)(\\d+(?:[,.]\\d+)?)(?!\\s*" +
+          escapedUnit +
+          ")(\\s*)([.;,])",
+        "gi"
+      ),
+      "$1$2 " + unit + "$4"
+    )
+    .replace(
+      new RegExp(
+        "(campo\\s+)(\\d+(?:[,.]\\d+)?)(?!\\s*" +
+          escapedUnit +
+          ")(\\s*)([.;,])",
+        "gi"
+      ),
+      "$1$2 " + unit + "$4"
+    );
+}
+
+function apparatusDescriptionText() {
+  return [
+    "L'apparato di verifica è costituito dagli strumenti campione indicati nella sezione tecnica del rapporto e accessori necessari all'esecuzione della prova.",
+    "I campioni utilizzati risultano identificati mediante codice interno, matricola, certificato e relativa scadenza, come riportato nello snapshot tecnico della verifica.",
+  ];
+}
+
+function labelWithUnit(label: string, unit: string) {
+  return unit ? label + " (" + unit + ")" : label;
 }
 
 function ReportPhotosInline({
@@ -464,11 +574,11 @@ function CoverPage({
       reportNumber={reportNumber}
       reportDate={reportDate}
     >
-      <div className="mt-10 text-right text-[13px] font-semibold text-slate-950">
+      <div className="mt-6 text-right text-[13px] font-semibold text-slate-950">
         Calderara di Reno, {formatDate(reportDate)}
       </div>
 
-      <table className="mt-15 w-full border-collapse text-[13px]">
+      <table className="mt-8 w-full border-collapse text-[13px]">
         <tbody>
           <tr>
             <td className="w-[185px] border border-slate-900 bg-white/70 px-3 py-4 font-black uppercase">
@@ -492,7 +602,7 @@ function CoverPage({
             <td className="border border-slate-900 bg-white/70 px-3 py-4 font-black uppercase">
               Committente
             </td>
-            <td className="whitespace-pre-line border border-slate-900 bg-white/60 px-3 py-3 text-[11px] font-bold leading-4">
+            <td className="whitespace-pre-line border border-slate-900 bg-white/60 px-3 py-3 text-[12px] font-black leading-4">
               {customerFullAnagrafica}
             </td>
           </tr>
@@ -544,8 +654,8 @@ function CoverPage({
         </tbody>
       </table>
 
-      <p className="mt-28 text-center text-[12px] font-bold">
-        (il presente rapporto di prova si compone di n. {totalPages} pagine)
+      <p className="mt-94 text-center text-[12px] font-bold">
+        Questo rapporto di prova è composto da n. {totalPages} pagine.
       </p>
     </PageShell>
   );
@@ -555,6 +665,7 @@ function TextPage({
   record,
   details,
   reportPhotos,
+  measurementUnit,
   reportNumber,
   reportDate,
   pageNumber,
@@ -563,33 +674,21 @@ function TextPage({
   record: GenericRecord;
   details: GenericRecord;
   reportPhotos: ReportPhoto[];
+  measurementUnit: string;
   reportNumber: string;
   reportDate: unknown;
   pageNumber: number;
   totalPages: number;
 }) {
-  const testPhasePhotos = reportPhotos.filter(isTestPhasePhoto);
-  const instrumentPhotosFromTable = reportPhotos.filter(
-    (photo) => isInstrumentPhoto(photo) || !isTestPhasePhoto(photo)
+  const premiseText = addUnitToNumberText(
+    textValue(details.premise_text, ""),
+    measurementUnit
+  );
+  const scopeText = addUnitToNumberText(
+    textValue(details.scope_text, ""),
+    measurementUnit
   );
 
-  const legacyInstrumentPhoto =
-    typeof details.instrument_photo_url === "string" &&
-    details.instrument_photo_url.trim()
-      ? [
-          {
-            id: "legacy-instrument-photo",
-            photo_url: details.instrument_photo_url,
-            file_name: "Foto strumento",
-            caption: "Foto strumento",
-          },
-        ]
-      : [];
-
-  const instrumentPhotos =
-    instrumentPhotosFromTable.length > 0
-      ? instrumentPhotosFromTable
-      : legacyInstrumentPhoto;
   return (
     <PageShell
       pageNumber={pageNumber}
@@ -600,7 +699,7 @@ function TextPage({
       <section className="space-y-6 text-justify text-[13px] leading-5 text-slate-950">
         <div>
           <h2 className="mt-5 mb-1 text-[15px] font-black uppercase">1. Premessa</h2>
-          {splitText(details.premise_text).map((paragraph, index) => (
+          {splitText(premiseText).map((paragraph, index) => (
             <p key={index} className="mb-0.5 text-justify">
               {paragraph}
             </p>
@@ -610,6 +709,7 @@ function TextPage({
             recordId={String(record.id)}
             category="instrument"
             title="Foto strumento"
+            variant="clean-large"
           />
         </div>
 
@@ -617,7 +717,7 @@ function TextPage({
           <h2 className="mb-3 text-[15px] font-black uppercase">
             2. Scopo della prova
           </h2>
-          {splitText(details.scope_text).map((paragraph, index) => (
+          {splitText(scopeText).map((paragraph, index) => (
             <p key={index} className="mb-0.5 text-justify">
               {paragraph}
             </p>
@@ -628,7 +728,7 @@ function TextPage({
           <h2 className="mb-3 text-[15px] font-black uppercase">
             3. Descrizione dell&apos;apparato di verifica
           </h2>
-          {splitText(details.apparatus_description).map((paragraph, index) => (
+          {apparatusDescriptionText().map((paragraph, index) => (
             <p key={index} className="mb-0.5 text-justify">
               {paragraph}
             </p>
@@ -830,6 +930,7 @@ function TechnicalTable({
   showThirdCycleColumn = true,
   nominalLabel = "Volume nominale",
   appliedLabel = "Carico applicato",
+  measurementUnit = "",
 }: {
   measurements: GenericRecord[];
   showNominalColumn: boolean;
@@ -837,6 +938,7 @@ function TechnicalTable({
   showThirdCycleColumn?: boolean;
   nominalLabel?: string;
   appliedLabel?: string;
+  measurementUnit?: string;
 }) {
   const showThirdCycle =
     showThirdCycleColumn && hasAnyNumericValue(measurements, "cycle_3");
@@ -872,22 +974,22 @@ function TechnicalTable({
     <table className="w-full border-collapse bg-white/35 text-center text-[8px]">
       <thead>
         <tr className="bg-slate-700/65 text-slate-950">
-          <th className="border border-slate-600 px-1 py-0.5">Punto di verifica</th>
+          <th className="border border-slate-600 px-1 py-0.5">{labelWithUnit("Punto di verifica", measurementUnit)}</th>
           {showNominalColumn && (
-            <th className="border border-slate-600 px-1 py-0.5">{nominalLabel}</th>
+            <th className="border border-slate-600 px-1 py-0.5">{labelWithUnit(nominalLabel, measurementUnit)}</th>
           )}
-          <th className="border border-slate-600 px-1 py-0.5">{appliedLabel}</th>
-          <th className="border border-slate-600 px-1 py-0.5">Lettura I° ciclo</th>
-          <th className="border border-slate-600 px-1 py-0.5">Lettura II° ciclo</th>
+          <th className="border border-slate-600 px-1 py-0.5">{labelWithUnit(appliedLabel, measurementUnit)}</th>
+          <th className="border border-slate-600 px-1 py-0.5">{labelWithUnit("Lettura I° ciclo", measurementUnit)}</th>
+          <th className="border border-slate-600 px-1 py-0.5">{labelWithUnit("Lettura II° ciclo", measurementUnit)}</th>
           {showThirdCycle && (
             <th className="border border-slate-600 px-1 py-0.5">
-              Lettura III° ciclo
+              {labelWithUnit("Lettura III° ciclo", measurementUnit)}
             </th>
           )}
-          {showMaxColumn && <th className="border border-slate-600 px-1 py-0.5">Lettura massima</th>}
-          {showMinColumn && <th className="border border-slate-600 px-1 py-0.5">Lettura minima</th>}
-          {showAverageColumn && <th className="border border-slate-600 px-1 py-0.5">Media letture</th>}
-          {showMeanErrorColumn && <th className="border border-slate-600 px-1 py-0.5">Errore medio</th>}
+          {showMaxColumn && <th className="border border-slate-600 px-1 py-0.5">{labelWithUnit("Lettura massima", measurementUnit)}</th>}
+          {showMinColumn && <th className="border border-slate-600 px-1 py-0.5">{labelWithUnit("Lettura minima", measurementUnit)}</th>}
+          {showAverageColumn && <th className="border border-slate-600 px-1 py-0.5">{labelWithUnit("Media letture", measurementUnit)}</th>}
+          {showMeanErrorColumn && <th className="border border-slate-600 px-1 py-0.5">{labelWithUnit("Errore medio", measurementUnit)}</th>}
           {showAccuracyColumn && <th className="border border-slate-600 px-1 py-0.5">Errore accuratezza %</th>}
           {showRepeatabilityColumn && (
             <th className="border border-slate-600 px-1 py-0.5">
@@ -896,7 +998,7 @@ function TechnicalTable({
           )}
           {showInstrumentalUncertaintyColumn && (
             <th className="border border-slate-600 px-1 py-0.5">
-              Incertezza strumentale
+              {labelWithUnit("Incertezza strumentale", measurementUnit)}
             </th>
           )}
         </tr>
@@ -995,6 +1097,12 @@ function TechnicalPage({
       : isDimensional
         ? "Valore nominale"
         : "Carico applicato";
+  const measurementUnit = getMeasurementUnit({
+    record,
+    customerSnapshot,
+    referenceSnapshots,
+    scale,
+  });
 
   const maxAccuracy = maxAbsoluteValue(measurements, "accuracy_error_percent");
 
@@ -1145,7 +1253,21 @@ function TechnicalPage({
               />
               <DataCell
                 label="Fondo scala"
-                value={referenceSnapshot.measurement_range}
+                value={
+                  [
+                    textValue(referenceSnapshot.measurement_range, ""),
+                    normalizeUnit(
+                      firstTextValueFromSources([referenceSnapshot], [
+                        "unit",
+                        "measurement_unit",
+                        "unita_misura",
+                        "unit_of_measure",
+                      ])
+                    ),
+                  ]
+                    .filter(Boolean)
+                    .join(" ") || "-"
+                }
               />
             </tr>
             <tr>
@@ -1169,6 +1291,7 @@ function TechnicalPage({
           showUncertaintyColumn={isDimensional}
           nominalLabel={nominalLabel}
           appliedLabel={appliedLabel}
+          measurementUnit={measurementUnit}
           showThirdCycleColumn={!isPressure}
         />
       </div>
@@ -1468,6 +1591,11 @@ const { data: recordData, error: recordError } = await supabase
   const customerMaster = asObject(customerMasterData);
   const referenceSnapshot = asObject(record.reference_instrument_snapshot);
   const procedureSnapshot = asObject(record.procedure_snapshot);
+  const mainMeasurementUnit = getMeasurementUnit({
+    record,
+    customerSnapshot,
+    referenceSnapshots: [referenceSnapshot],
+  });
 
   const reportNumber =
     textValue(details.main_report_number, "") ||
@@ -1652,6 +1780,7 @@ const { data: recordData, error: recordError } = await supabase
                 record={record}
                 details={details}
                 reportPhotos={reportPhotos}
+                measurementUnit={mainMeasurementUnit}
                 reportNumber={reportNumber}
                 reportDate={reportDate}
                 pageNumber={pageNumber}

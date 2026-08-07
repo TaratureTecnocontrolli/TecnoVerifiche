@@ -89,7 +89,7 @@ function baseDefaults(
     apparatus_description: [
       "L'apparato di verifica è costituito dal " + referenceLabel + " indicato nella sezione tecnica del rapporto e dagli accessori necessari all'esecuzione della prova.",
       "Il campione utilizzato risulta identificato mediante codice interno, matricola, certificato e relativa scadenza, come riportato nello snapshot tecnico della verifica.",
-      "Campione utilizzato: " + reference + ".",
+     
     ].join("\n"),
     execution_method: executionMethod,
     results_text: resultsText,

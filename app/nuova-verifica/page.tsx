@@ -152,13 +152,13 @@ const modules: VerificationModule[] = [
 ];
 
 function scopeLabel(scope: VerificationScope) {
-  if (scope === "VT") return "VT - Verifiche di Taratura Cliente";
+  if (scope === "VT") return "VT - Verifiche di Taratura";
   return "VI - Verifiche Interne";
 }
 
 function scopeDescription(scope: VerificationScope) {
   if (scope === "VT") {
-    return "Flusso per verifiche di taratura eseguite su strumenti del cliente, con rapporto finale completo.";
+    return "Flusso per verifiche di taratura eseguite su strumenti, con rapporto finale completo.";
   }
 
   return "Flusso per verifiche interne su strumenti aziendali, con rapportino tecnico finale.";
@@ -324,9 +324,7 @@ export default function NewVerificationPage() {
 
           <p className="mt-3 max-w-4xl text-slate-600">
             Seleziona prima il processo operativo e poi il modulo tecnico da
-            avviare. Le VT sono verifiche di tarature per cliente con rapporto
-            finale completo. Le VI sono verifiche interne su strumenti aziendali
-            con rapportino tecnico.
+            avviare. Le VT sono verifiche di tarature con rapporto finale completo. Le VI sono verifiche interne con rapportino tecnico.
           </p>
 
           <div className="mt-6 grid gap-4 md:grid-cols-2">
@@ -338,10 +336,10 @@ export default function NewVerificationPage() {
                 VT
               </p>
               <h2 className="mt-2 text-xl font-bold text-slate-950">
-                Verifiche di Taratura Cliente
+                Verifiche di Taratura
               </h2>
               <p className="mt-2 text-sm leading-5 text-slate-700">
-                Usa cliente, strumento cliente, luogo prove, strumenti campione, misure e rapporto finale completo.
+                Usa luogo prove, strumenti campione, misure e rapporto finale completo.
               </p>
             </a>
 
