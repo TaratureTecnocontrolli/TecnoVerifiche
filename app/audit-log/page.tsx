@@ -4,7 +4,12 @@ import { supabase } from "@/lib/supabase";
 
 type AuditLog = {
   id: string;
-  entity_type: string;
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
+
+entity_type: string;
   entity_id: string | null;
   action: string;
   old_data: Record<string, unknown> | null;

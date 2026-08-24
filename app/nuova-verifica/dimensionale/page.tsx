@@ -6,7 +6,12 @@ import { supabase } from "@/lib/supabase";
 type PageProps = {
   searchParams?: Promise<{
     scope?: string;
-  }>;
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
+
+}>;
 };
 
 type VerificationScope = "VT" | "VI";
@@ -231,3 +236,4 @@ export default async function NewDimensionalVerificationPage({
     </AppShell>
   );
 }
+

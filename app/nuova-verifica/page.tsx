@@ -5,7 +5,12 @@ type VerificationScope = "VT" | "VI";
 
 type VerificationModule = {
   title: string;
-  badge: string;
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
+
+badge: string;
   description: string;
   href: string | null;
   status: "active" | "development";

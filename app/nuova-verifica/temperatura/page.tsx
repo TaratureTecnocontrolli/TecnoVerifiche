@@ -5,7 +5,12 @@ import { supabase } from "@/lib/supabase";
 
 type Customer = {
   id: string;
-  customer_number?: string | null;
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
+
+customer_number?: string | null;
   business_name?: string | null;
   name?: string | null;
 };
@@ -121,3 +126,4 @@ export default async function NewTemperatureVerificationPage() {
     </AppShell>
   );
 }
+

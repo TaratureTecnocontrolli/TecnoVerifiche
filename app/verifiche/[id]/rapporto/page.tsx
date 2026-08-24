@@ -8,7 +8,12 @@ import { getVerificationModuleFromMode } from "@/lib/verification-types";
 type PageProps = {
   params: Promise<{
     id: string;
-  }>;
+
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
+
+}>;
 };
 
 type CalibrationRecord = {
@@ -292,3 +297,4 @@ export default async function CalibrationReportDetailsPage({ params }: PageProps
     </AppShell>
   );
 }
+
