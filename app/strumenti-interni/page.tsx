@@ -5,6 +5,10 @@ import InternalInstrumentsSearchTable, {
 } from "@/components/InternalInstrumentsSearchTable";
 import { supabase } from "@/lib/supabase";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
+
 export default async function InternalInstrumentsPage() {
   const { data, error } = await supabase
     .from("internal_instruments")
@@ -33,9 +37,6 @@ export default async function InternalInstrumentsPage() {
 
   const activeCount = instruments.filter((item) => item.status === "active").length;
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-export const fetchCache = "force-no-store";
 
 const outOfServiceCount = instruments.filter(
     (item) => item.status === "out_of_service"

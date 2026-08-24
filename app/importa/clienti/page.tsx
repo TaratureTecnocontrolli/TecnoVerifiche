@@ -1,6 +1,10 @@
 import AppShell from "@/components/AppShell";
 import ImportWizard from "@/components/ImportWizard";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
+
 export default function Page() {
   return (
     <AppShell>
@@ -8,8 +12,5 @@ export default function Page() {
     </AppShell>
   );
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-export const fetchCache = "force-no-store";
 
 }

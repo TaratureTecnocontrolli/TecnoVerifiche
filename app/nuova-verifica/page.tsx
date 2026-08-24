@@ -1,14 +1,15 @@
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
+
 type VerificationScope = "VT" | "VI";
 
 type VerificationModule = {
   title: string;
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-export const fetchCache = "force-no-store";
 
 badge: string;
   description: string;

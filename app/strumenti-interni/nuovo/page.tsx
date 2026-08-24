@@ -2,6 +2,10 @@ import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import InternalInstrumentForm from "@/components/InternalInstrumentForm";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
+
 export default function NewInternalInstrumentPage() {
   return (
     <AppShell>
@@ -29,8 +33,5 @@ export default function NewInternalInstrumentPage() {
     </AppShell>
   );
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-export const fetchCache = "force-no-store";
 
 }

@@ -3,13 +3,14 @@ import AppShell from "@/components/AppShell";
 import FlowVerificationStarter from "@/components/FlowVerificationStarter";
 import { supabase } from "@/lib/supabase";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
+
 type PageProps = {
   searchParams?: Promise<{
     scope?: string;
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-export const fetchCache = "force-no-store";
 
 }>;
 };

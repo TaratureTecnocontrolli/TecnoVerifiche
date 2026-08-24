@@ -3,12 +3,13 @@ import AppShell from "@/components/AppShell";
 import TemperatureVerificationStarter from "@/components/TemperatureVerificationStarter";
 import { supabase } from "@/lib/supabase";
 
-type Customer = {
-  id: string;
-
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const fetchCache = "force-no-store";
+
+type Customer = {
+  id: string;
+
 
 customer_number?: string | null;
   business_name?: string | null;

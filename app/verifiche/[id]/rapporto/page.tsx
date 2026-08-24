@@ -5,13 +5,14 @@ import CalibrationReportDetailsForm from "@/components/CalibrationReportDetailsF
 import { supabase } from "@/lib/supabase";
 import { getVerificationModuleFromMode } from "@/lib/verification-types";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
+
 type PageProps = {
   params: Promise<{
     id: string;
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-export const fetchCache = "force-no-store";
 
 }>;
 };

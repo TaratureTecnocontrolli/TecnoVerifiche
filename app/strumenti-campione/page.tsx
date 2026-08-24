@@ -6,6 +6,10 @@ import ReferenceInstrumentsArchiveSearchTable, {
 import DeleteReferenceInstrumentButton from "@/components/DeleteReferenceInstrumentButton";
 import { supabase } from "@/lib/supabase";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
+
 type ReferenceInstrument = ReferenceInstrumentListItem;
 
 type ExpiryBucket =
@@ -20,9 +24,6 @@ function formatItalianDate(date: string | null) {
   if (!date) {
     return "-";
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-export const fetchCache = "force-no-store";
 
 }
 

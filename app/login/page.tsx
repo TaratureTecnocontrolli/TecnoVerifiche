@@ -1,5 +1,9 @@
 import LoginForm from "@/components/LoginForm";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
+
 export default function LoginPage() {
   return (
     <main className="flex min-h-screen items-center justify-center bg-slate-100 px-6 py-10">
@@ -21,9 +25,6 @@ export default function LoginPage() {
     </main>
   );
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-export const fetchCache = "force-no-store";
 
 }
 

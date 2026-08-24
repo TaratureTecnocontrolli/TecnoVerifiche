@@ -6,13 +6,14 @@ import InternalReportSignaturesForm, { InternalReportSignaturePreview } from "@/
 import InternalReportNumberForm from "@/components/InternalReportNumberForm";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
+
 type PageProps = {
   params: Promise<{
     id: string;
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-export const fetchCache = "force-no-store";
 
 }>;
 };

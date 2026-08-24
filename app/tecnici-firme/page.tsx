@@ -1,6 +1,10 @@
 import AppShell from "@/components/AppShell";
 import TechnicianSignaturesManager from "@/components/TechnicianSignaturesManager";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
+
 export default function TechnicianSignaturesPage() {
   return (
     <AppShell>
@@ -21,8 +25,5 @@ export default function TechnicianSignaturesPage() {
     </AppShell>
   );
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-export const fetchCache = "force-no-store";
 
 }

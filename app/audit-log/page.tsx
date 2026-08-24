@@ -2,12 +2,13 @@ import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import { supabase } from "@/lib/supabase";
 
-type AuditLog = {
-  id: string;
-
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
 export const fetchCache = "force-no-store";
+
+type AuditLog = {
+  id: string;
+
 
 entity_type: string;
   entity_id: string | null;

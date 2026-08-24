@@ -5,6 +5,10 @@ import CustomersSearchTable, {
 } from "@/components/CustomersSearchTable";
 import { supabase } from "@/lib/supabase";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
+
 export default async function CustomersPage() {
   const { data, error } = await supabase
     .from("customers")
@@ -102,8 +106,5 @@ export default async function CustomersPage() {
     </AppShell>
   );
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-export const fetchCache = "force-no-store";
 
 }

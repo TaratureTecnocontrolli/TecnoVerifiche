@@ -4,13 +4,14 @@ import AppShell from "@/components/AppShell";
 import EditForceMeasurementsForm from "@/components/EditForceMeasurementsForm";
 import { supabase } from "@/lib/supabase";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
+
 type PageProps = {
   params: Promise<{
     id: string;
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-export const fetchCache = "force-no-store";
 
 }>;
 };

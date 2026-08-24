@@ -1,6 +1,10 @@
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+export const fetchCache = "force-no-store";
+
 const IMPORT_LINKS = [
   {
     href: "/importa/clienti",
@@ -56,9 +60,6 @@ export default function ImportaPage() {
     </AppShell>
   );
 
-export const dynamic = "force-dynamic";
-export const revalidate = 0;
-export const fetchCache = "force-no-store";
 
 }
 
