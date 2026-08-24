@@ -157,32 +157,39 @@ export default function CustomerInstrumentForm() {
         throw new Error("Inserisci l’unità di misura personalizzata.");
       }
 
-      const { error } = await supabase.from("customer_instruments").insert({
-        customer_id: selectedCustomer.id,
-        site_id: null,
+      const { data: createdInstrument, error } = await supabase
+        .from("customer_instruments")
+        .insert({
+          customer_id: selectedCustomer.id,
+          site_id: null,
 
-        /*
-          Lo strumento viene collegato al cliente, non al luogo prove.
-          Il luogo prove viene scelto di volta in volta durante la nuova verifica.
-        */
-        customer_name: selectedCustomer.business_name,
-        site: null,
+          /*
+            Lo strumento viene collegato al cliente, non al luogo prove.
+            Il luogo prove viene scelto di volta in volta durante la nuova verifica.
+          */
+          customer_name: selectedCustomer.business_name,
+          site: null,
 
-        name: name.trim(),
-        manufacturer: manufacturer.trim() || null,
-        model: model.trim() || null,
-        serial_number: serialNumber.trim() || null,
-        internal_code: null,
-        measurement_quantity: measurementQuantity.trim() || null,
-        unit: effectiveUnit || null,
-        measurement_range: measurementRange.trim() || null,
-        resolution: null,
-        acceptance_class: null,
-        notes: notes.trim() || null,
-      });
+          name: name.trim(),
+          manufacturer: manufacturer.trim() || null,
+          model: model.trim() || null,
+          serial_number: serialNumber.trim() || null,
+          internal_code: null,
+          measurement_quantity: measurementQuantity.trim() || null,
+          unit: effectiveUnit || null,
+          measurement_range: measurementRange.trim() || null,
+          resolution: null,
+          acceptance_class: null,
+          notes: notes.trim() || null,
+        })
+        .select("id")
+        .single();
 
-      if (error) {
-        throw new Error(error.message);
+      if (error || !createdInstrument) {
+        throw new Error(
+          error?.message ||
+            "Salvataggio non confermato: lo strumento non è stato creato."
+        );
       }
 
       router.push("/strumenti-cliente");

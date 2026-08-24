@@ -92,7 +92,7 @@ export default function EditCustomerForm({
         throw new Error("Inserisci almeno il nome della sede principale.");
       }
 
-      const { error: customerError } = await supabase
+      const { data: updatedCustomer, error: customerError } = await supabase
         .from("customers")
         .update({
           customer_number: customerNumber.trim() || null,
@@ -109,21 +109,26 @@ export default function EditCustomerForm({
           notes: notes.trim() || null,
           is_active: isActive,
         })
-        .eq("id", customer.id);
+        .eq("id", customer.id)
+        .select("id")
+        .single();
 
-      if (customerError) {
+      if (customerError || !updatedCustomer) {
         if (
-          customerError.code === "23505" ||
-          customerError.message.toLowerCase().includes("duplicate")
+          customerError?.code === "23505" ||
+          customerError?.message.toLowerCase().includes("duplicate")
         ) {
           throw new Error("Numero cliente già presente. Inserisci un numero cliente diverso.");
         }
 
-        throw new Error(customerError.message || "Errore durante l’aggiornamento del cliente.");
+        throw new Error(
+          customerError?.message ||
+            "Aggiornamento non confermato: il cliente non è stato modificato. Verifica permessi/RLS."
+        );
       }
 
       if (mainSite) {
-        const { error: siteError } = await supabase
+        const { data: updatedSite, error: siteError } = await supabase
           .from("customer_sites")
           .update({
             name: siteName.trim(),
@@ -136,27 +141,39 @@ export default function EditCustomerForm({
             email: email.trim() || null,
             is_active: siteIsActive,
           })
-          .eq("id", mainSite.id);
+          .eq("id", mainSite.id)
+          .select("id")
+          .single();
 
-        if (siteError) {
-          throw new Error(siteError.message || "Cliente aggiornato, ma errore durante l’aggiornamento della sede.");
+        if (siteError || !updatedSite) {
+          throw new Error(
+            siteError?.message ||
+              "Cliente aggiornato, ma aggiornamento sede non confermato. Verifica permessi/RLS."
+          );
         }
       } else {
-        const { error: siteError } = await supabase.from("customer_sites").insert({
-          customer_id: customer.id,
-          name: siteName.trim(),
-          address: siteAddress.trim() || address.trim() || null,
-          city: siteCity.trim() || city.trim() || null,
-          province: siteProvince.trim() || province.trim() || null,
-          postal_code: sitePostalCode.trim() || postalCode.trim() || null,
-          contact_person: contactPerson.trim() || null,
-          phone: phone.trim() || null,
-          email: email.trim() || null,
-          is_active: siteIsActive,
-        });
+        const { data: createdSite, error: siteError } = await supabase
+          .from("customer_sites")
+          .insert({
+            customer_id: customer.id,
+            name: siteName.trim(),
+            address: siteAddress.trim() || address.trim() || null,
+            city: siteCity.trim() || city.trim() || null,
+            province: siteProvince.trim() || province.trim() || null,
+            postal_code: sitePostalCode.trim() || postalCode.trim() || null,
+            contact_person: contactPerson.trim() || null,
+            phone: phone.trim() || null,
+            email: email.trim() || null,
+            is_active: siteIsActive,
+          })
+          .select("id")
+          .single();
 
-        if (siteError) {
-          throw new Error(siteError.message || "Cliente aggiornato, ma errore durante la creazione della sede principale.");
+        if (siteError || !createdSite) {
+          throw new Error(
+            siteError?.message ||
+              "Cliente aggiornato, ma creazione sede non confermata. Verifica permessi/RLS."
+          );
         }
       }
 

@@ -1,27 +1,12 @@
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
+import ReferenceInstrumentsArchiveSearchTable, {
+  type ReferenceInstrumentListItem,
+} from "@/components/ReferenceInstrumentsArchiveSearchTable";
 import DeleteReferenceInstrumentButton from "@/components/DeleteReferenceInstrumentButton";
 import { supabase } from "@/lib/supabase";
 
-type ReferenceInstrument = {
-  id: string;
-  name: string;
-  manufacturer: string | null;
-  model: string | null;
-  serial_number: string | null;
-  internal_code: string | null;
-  measurement_quantity: string | null;
-  unit: string | null;
-  measurement_range: string | null;
-  certificate_number: string | null;
-  certificate_date: string | null;
-  certificate_expiry: string | null;
-  certificate_file_url: string | null;
-  certificate_file_name: string | null;
-  status: string;
-  notes: string | null;
-  created_at: string;
-};
+type ReferenceInstrument = ReferenceInstrumentListItem;
 
 type ExpiryBucket =
   | "out_of_service"
@@ -398,7 +383,7 @@ export default async function ReferenceInstrumentsPage() {
         <section className="overflow-hidden rounded-2xl border border-amber-200 bg-white shadow-sm">
           <div className="border-b border-amber-200 bg-amber-50 p-5">
             <h2 className="text-lg font-semibold text-amber-950">
-              Controlli e scadenze da gestire
+              Da gestire
             </h2>
             <p className="text-sm text-amber-900">
               Qui compaiono solo gli strumenti con criticità: scaduti, in
@@ -497,128 +482,7 @@ export default async function ReferenceInstrumentsPage() {
           )}
         </section>
 
-        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 p-5">
-            <h2 className="text-lg font-semibold text-slate-900">
-              Archivio completo strumenti campione
-            </h2>
-            <p className="text-sm text-slate-500">
-              Totale strumenti trovati: {instruments.length}
-            </p>
-          </div>
-
-          {instruments.length === 0 ? (
-            <div className="p-6 text-sm text-slate-500">
-              Nessuno strumento campione registrato.
-            </div>
-          ) : (
-            <div className="w-full overflow-hidden">
-              <table className="w-full table-fixed text-sm">
-                <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="px-4 py-3">Strumento</th>
-                    <th className="px-4 py-3">Codice</th>
-                    <th className="px-4 py-3">Matricola</th>
-                    <th className="px-4 py-3">Grandezza</th>
-                    <th className="px-4 py-3">Fondo scala</th>
-                    <th className="px-4 py-3">Certificato</th>
-                    <th className="px-4 py-3">Scadenza</th>
-                    <th className="px-4 py-3">Giorni</th>
-                    <th className="px-4 py-3">Stato</th>
-                    <th className="px-4 py-3">Azioni</th>
-                  </tr>
-                </thead>
-
-                <tbody className="divide-y divide-slate-100">
-                  {instruments.map((instrument) => {
-                    const realStatus = effectiveStatus(
-                      instrument.status,
-                      instrument.certificate_expiry
-                    );
-
-                    return (
-                      <tr key={instrument.id} className="hover:bg-slate-50">
-                        <td className="px-4 py-3 align-top">
-                          <Link
-                            href={`/strumenti-campione/${instrument.id}`}
-                            className="font-semibold text-slate-900 hover:text-emerald-700 hover:underline"
-                          >
-                            {instrument.name}
-                          </Link>
-                          <p className="text-xs text-slate-500">
-                            {[instrument.manufacturer, instrument.model]
-                              .filter(Boolean)
-                              .join(" - ") || "-"}
-                          </p>
-                        </td>
-
-                        <td className="px-4 py-3 align-top text-slate-700">
-                          {instrument.internal_code ?? "-"}
-                        </td>
-
-                        <td className="px-4 py-3 align-top text-slate-700">
-                          {instrument.serial_number ?? "-"}
-                        </td>
-
-                        <td className="px-4 py-3 align-top text-slate-700">
-                          {[instrument.measurement_quantity, instrument.unit]
-                            .filter(Boolean)
-                            .join(" / ") || "-"}
-                        </td>
-
-                        <td className="px-4 py-3 align-top text-slate-700">
-                          {instrument.measurement_range ?? "-"}
-                        </td>
-
-                        <td className="px-4 py-3 align-top">
-                          <CertificateCell
-                            certificateNumber={instrument.certificate_number}
-                            certificateDate={instrument.certificate_date}
-                            certificateFileUrl={instrument.certificate_file_url}
-                          />
-                        </td>
-
-                        <td className="px-4 py-3 align-top text-slate-700">
-                          {formatItalianDate(instrument.certificate_expiry)}
-                        </td>
-
-                        <td className="px-4 py-3 align-top text-slate-700">
-                          {expiryLabel(instrument.certificate_expiry)}
-                        </td>
-
-                        <td className="px-4 py-3 align-top">
-                          <span
-                            className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${statusClass(
-                              realStatus
-                            )}`}
-                          >
-                            {statusLabel(realStatus)}
-                          </span>
-                        </td>
-
-                        <td className="px-4 py-3 align-top">
-                          <div className="flex flex-col gap-2">
-                            <Link
-                              href={`/strumenti-campione/${instrument.id}`}
-                              className="rounded-lg border border-slate-300 px-3 py-1 text-center text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                            >
-                              Modifica
-                            </Link>
-
-                            <DeleteReferenceInstrumentButton
-                              instrumentId={instrument.id}
-                              instrumentName={instrument.name}
-                            />
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
+        <ReferenceInstrumentsArchiveSearchTable instruments={instruments} />
 
         <div className="rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-700 shadow-sm">
           <strong>Regola gestionale:</strong> strumenti scaduti o fuori servizio

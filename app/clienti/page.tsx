@@ -1,35 +1,9 @@
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
+import CustomersSearchTable, {
+  type CustomerListItem,
+} from "@/components/CustomersSearchTable";
 import { supabase } from "@/lib/supabase";
-
-type Customer = {
-  id: string;
-  customer_number: string | null;
-  business_name: string;
-  vat_number: string | null;
-  tax_code: string | null;
-  city: string | null;
-  province: string | null;
-  email: string | null;
-  phone: string | null;
-  contact_person: string | null;
-  is_active: boolean;
-  created_at: string;
-  customer_sites: {
-    id: string;
-    name: string;
-    city: string | null;
-    province: string | null;
-  }[] | null;
-};
-
-function formatItalianDate(date: string | null) {
-  if (!date) {
-    return "-";
-  }
-
-  return new Intl.DateTimeFormat("it-IT").format(new Date(date));
-}
 
 export default async function CustomersPage() {
   const { data, error } = await supabase
@@ -58,7 +32,7 @@ export default async function CustomersPage() {
     )
     .order("business_name", { ascending: true });
 
-  const customers = (data ?? []) as Customer[];
+  const customers = (data ?? []) as CustomerListItem[];
 
   return (
     <AppShell>
@@ -123,116 +97,7 @@ export default async function CustomersPage() {
           </div>
         </section>
 
-        <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 p-5">
-            <h2 className="text-lg font-semibold text-slate-900">
-              Elenco clienti
-            </h2>
-            <p className="text-sm text-slate-500">
-              Totale clienti trovati: {customers.length}
-            </p>
-          </div>
-
-          {customers.length === 0 ? (
-            <div className="p-6 text-sm text-slate-500">
-              Nessun cliente registrato.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1120px] text-sm">
-                <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="px-4 py-3">N. cliente</th>
-                    <th className="px-4 py-3">Cliente</th>
-                    <th className="px-4 py-3">P.IVA / C.F.</th>
-                    <th className="px-4 py-3">Località</th>
-                    <th className="px-4 py-3">Referente</th>
-                    <th className="px-4 py-3">Contatti</th>
-                    <th className="px-4 py-3">Sedi</th>
-                    <th className="px-4 py-3">Stato</th>
-                    <th className="px-4 py-3">Inserito il</th>
-                    <th className="px-4 py-3">Azioni</th>
-                  </tr>
-                </thead>
-
-                <tbody className="divide-y divide-slate-100">
-                  {customers.map((customer) => (
-                    <tr key={customer.id} className="hover:bg-slate-50">
-                      <td className="px-4 py-3">
-                        <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-semibold text-slate-700">
-                          {customer.customer_number || "-"}
-                        </span>
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <Link
-                          href={"/clienti/" + customer.id}
-                          className="font-semibold text-slate-900 hover:text-emerald-700 hover:underline"
-                        >
-                          {customer.business_name}
-                        </Link>
-                      </td>
-
-                      <td className="px-4 py-3 text-slate-700">
-                        <p>{customer.vat_number ?? "-"}</p>
-                        <p className="text-xs text-slate-500">
-                          {customer.tax_code ?? "-"}
-                        </p>
-                      </td>
-
-                      <td className="px-4 py-3 text-slate-700">
-                        {[customer.city, customer.province]
-                          .filter(Boolean)
-                          .join(" (") +
-                          (customer.province ? ")" : "") || "-"}
-                      </td>
-
-                      <td className="px-4 py-3 text-slate-700">
-                        {customer.contact_person ?? "-"}
-                      </td>
-
-                      <td className="px-4 py-3 text-slate-700">
-                        <p>{customer.email ?? "-"}</p>
-                        <p className="text-xs text-slate-500">
-                          {customer.phone ?? "-"}
-                        </p>
-                      </td>
-
-                      <td className="px-4 py-3 text-slate-700">
-                        {customer.customer_sites?.length ?? 0}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <span
-                          className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                            customer.is_active
-                              ? "bg-emerald-100 text-emerald-800"
-                              : "bg-slate-200 text-slate-700"
-                          }`}
-                        >
-                          {customer.is_active ? "Attivo" : "Non attivo"}
-                        </span>
-                      </td>
-
-                      <td className="px-4 py-3 text-slate-700">
-                        {formatItalianDate(customer.created_at)}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <Link
-                          href={"/clienti/" + customer.id}
-                          className="rounded-lg border border-slate-300 px-3 py-1 text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                        >
-                          Modifica
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </div>
+        <CustomersSearchTable customers={customers} />
       </div>
     </AppShell>
   );

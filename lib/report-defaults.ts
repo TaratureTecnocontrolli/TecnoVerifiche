@@ -112,20 +112,39 @@ export function combineReferenceInstrumentNames(instruments: ReferenceLike[]) {
 }
 
 export function getCtForceReportDefaults(input: ReportDefaultsInput): ReportTextDefaults {
-  return baseDefaults(
-    input,
-    "Verifica di taratura di macchina/strumento per prove di compressione/trazione.",
-    "Scopo della verifica è valutare la risposta metrologica dello strumento mediante confronto con idoneo sistema campione sui punti di carico previsti.",
-    [
-      "La verifica viene eseguita applicando punti di carico prestabiliti sulla scala oggetto di controllo.",
-      "Per ciascun punto vengono rilevate le letture necessarie alla determinazione di media, errore medio, errore di accuratezza percentuale ed errore di ripetibilità percentuale.",
-      "Le formule utilizzate sono riportate nella sezione di espressione dei risultati del presente rapporto.",
+  const instrument = instrumentDescription(input);
+
+  return {
+    work_object: "Verifica di taratura",
+    requested_tests:
+      "Verifica di taratura di macchina/strumento per prove di compressione/trazione.",
+    premise_text: [
+      "Su incarico del Committente è stata eseguita la verifica di taratura dello strumento indicato nel presente Rapporto di Prova.",
+      "La verifica riguarda esclusivamente lo strumento sottoposto a prova, nelle condizioni e nei punti di misura riportati nella sezione tecnica che è parte integrante del presente Rapporto di Prova.",
+      "Lo strumento sottoposto a verifica è: " + instrument + ".",
     ].join("\n"),
-    [
-      "I risultati della verifica sono riportati nella sezione tecnica integrante del presente rapporto.",
-      "Per ciascun punto sono indicati il carico applicato, le letture rilevate, la media, l'errore medio, l'errore di accuratezza percentuale e l'errore di ripetibilità percentuale.",
-    ].join("\n")
-  );
+    scope_text: [
+      "Lo scopo della verifica è valutare la risposta metrologica dello strumento mediante comparazione con idoneo sistema campione sui punti di carico previsti.",
+      "La verifica viene eseguita sui ⅘ superiori della sua portata massima. Tale verifica è il procedimento di controllo per determinare gli errori della pressa.",
+      "Gli errori si distinguono in:",
+      "a) errore di ripetibilità;",
+      "b) errore di accuratezza.",
+    ].join("\n"),
+    apparatus_description: [
+      "L'apparato di verifica è costituito dagli strumenti campione indicati nella sezione tecnica del rapporto e accessori necessari all'esecuzione della prova.",
+      "I campioni utilizzati risultano identificati mediante codice interno, matricola, certificato e relativa scadenza, come riportato nello snapshot tecnico della verifica.",
+    ].join("\n"),
+    execution_method: [
+      "La verifica è stata eseguita disponendo lo strumento campione tra le piastre della pressa. Prima dell'inizio della verifica il sistema è stato portato al suo carico massimo per due volte a temperatura ambiente. La verifica è stata effettuata sui ⅘ superiori della portata massima della pressa e in particolare su n. 5 punti regolarmente spaziati.",
+      "La temperatura e l’umidità sono state verificate con un termo-igrometro.",
+      "L'insieme di queste operazioni rappresenta una serie di prove.",
+    ].join("\n"),
+    results_text: [
+      "La verifica del punto di gradazione della scala viene effettuata leggendo il corrispondente valore effettivo sul dispositivo di verifica, con carico di prova crescente, quando i sistemi sono in equilibrio.",
+      "Per ogni livello di carico l'errore relativo di accuratezza, espresso in percentuale, viene determinato confrontando il carico indicato dalla macchina con la media delle letture del dispositivo campione.",
+      "L'errore relativo di ripetibilità è determinato a partire dalla differenza tra il valore massimo e il valore minimo delle letture rilevate.",
+    ].join("\n"),
+  };
 }
 
 export function getPressureReportDefaults(input: ReportDefaultsInput): ReportTextDefaults {

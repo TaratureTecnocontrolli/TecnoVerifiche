@@ -301,6 +301,91 @@ function apparatusDescriptionText() {
   ];
 }
 
+function verifiedInstrumentDescription(customerSnapshot: GenericRecord, details: GenericRecord) {
+  const parts = [
+    firstTextValueFromSources([customerSnapshot, details], [
+      "instrument_name",
+      "name",
+      "work_object",
+    ]),
+    firstTextValueFromSources([customerSnapshot, details], [
+      "manufacturer",
+      "instrument_manufacturer",
+    ]),
+    firstTextValueFromSources([customerSnapshot, details], [
+      "model",
+      "instrument_model",
+    ]),
+    firstTextValueFromSources([customerSnapshot, details], [
+      "internal_code",
+      "instrument_internal_code",
+    ])
+      ? "cod. " +
+        firstTextValueFromSources([customerSnapshot, details], [
+          "internal_code",
+          "instrument_internal_code",
+        ])
+      : "",
+    firstTextValueFromSources([customerSnapshot, details], [
+      "serial_number",
+      "instrument_serial",
+      "serial",
+    ])
+      ? "matr. " +
+        firstTextValueFromSources([customerSnapshot, details], [
+          "serial_number",
+          "instrument_serial",
+          "serial",
+        ])
+      : "",
+  ]
+    .map((part) => String(part ?? "").trim())
+    .filter(Boolean);
+
+  return parts.join(" ") || textValue(details.work_object, "strumento in verifica");
+}
+
+function isForceCompressionTrazione(record: GenericRecord) {
+  const module = String(record.verification_module ?? "").toUpperCase();
+  const mode = String(record.mode ?? "").toLowerCase();
+
+  return (
+    module === "CT_FORCE" ||
+    module === "FORCE" ||
+    module === "CT" ||
+    mode === "compressione" ||
+    mode === "trazione"
+  );
+}
+
+function forcePremiseText(customerSnapshot: GenericRecord, details: GenericRecord) {
+  return [
+    "Su incarico del Committente è stata eseguita la verifica di taratura dello strumento indicato nel presente Rapporto di Prova.",
+    "La verifica riguarda esclusivamente lo strumento sottoposto a prova, nelle condizioni e nei punti di misura riportati nella sezione tecnica che è parte integrante del presente Rapporto di Prova.",
+    "Lo strumento sottoposto a verifica è: " +
+      verifiedInstrumentDescription(customerSnapshot, details) +
+      ".",
+  ];
+}
+
+function forceScopeText() {
+  return [
+    "Lo scopo della verifica è valutare la risposta metrologica dello strumento mediante comparazione con idoneo sistema campione sui punti di carico previsti.",
+    "La verifica viene eseguita sui ⅘ superiori della sua portata massima. Tale verifica è il procedimento di controllo per determinare gli errori della pressa.",
+    "Gli errori si distinguono in:",
+    "a) errore di ripetibilità;",
+    "b) errore di accuratezza.",
+  ];
+}
+
+function forceExecutionMethodText() {
+  return [
+    "La verifica è stata eseguita disponendo lo strumento campione tra le piastre della pressa. Prima dell'inizio della verifica il sistema è stato portato al suo carico massimo per due volte a temperatura ambiente. La verifica è stata effettuata sui ⅘ superiori della portata massima della pressa e in particolare su n. 5 punti regolarmente spaziati.",
+    "La temperatura e l’umidità sono state verificate con un termo-igrometro.",
+    "L'insieme di queste operazioni rappresenta una serie di prove.",
+  ];
+}
+
 function labelWithUnit(label: string, unit: string) {
   return unit ? label + " (" + unit + ")" : label;
 }
@@ -504,7 +589,7 @@ function PageShell({
       <img
         src={LETTERHEAD_IMAGE_SRC}
         alt="Carta intestata Tecnocontrolli"
-        className="pointer-events-none absolute inset-0 z-0 block h-[1135px] w-full object-cover print:block"
+        className="pointer-events-none absolute inset-0 z-0 block h-full w-full object-fill print:block"
       />
 
       <div className="relative z-10 px-[60px] pb-16 pt-[132px]">
@@ -654,7 +739,7 @@ function CoverPage({
         </tbody>
       </table>
 
-      <p className="mt-94 text-center text-[12px] font-bold">
+      <p className="mt-90 text-center text-[12px] font-bold">
         Questo rapporto di prova è composto da n. {totalPages} pagine.
       </p>
     </PageShell>
@@ -665,6 +750,7 @@ function TextPage({
   record,
   details,
   reportPhotos,
+  customerSnapshot,
   measurementUnit,
   reportNumber,
   reportDate,
@@ -674,20 +760,30 @@ function TextPage({
   record: GenericRecord;
   details: GenericRecord;
   reportPhotos: ReportPhoto[];
+  customerSnapshot: GenericRecord;
   measurementUnit: string;
   reportNumber: string;
   reportDate: unknown;
   pageNumber: number;
   totalPages: number;
 }) {
-  const premiseText = addUnitToNumberText(
-    textValue(details.premise_text, ""),
-    measurementUnit
-  );
-  const scopeText = addUnitToNumberText(
-    textValue(details.scope_text, ""),
-    measurementUnit
-  );
+  const isForceReport = isForceCompressionTrazione(record);
+
+  const premiseParagraphs = isForceReport
+    ? forcePremiseText(customerSnapshot, details)
+    : splitText(
+        addUnitToNumberText(textValue(details.premise_text, ""), measurementUnit)
+      );
+
+  const scopeParagraphs = isForceReport
+    ? forceScopeText()
+    : splitText(
+        addUnitToNumberText(textValue(details.scope_text, ""), measurementUnit)
+      );
+
+  const executionMethodParagraphs = isForceReport
+    ? forceExecutionMethodText()
+    : splitText(details.execution_method);
 
   return (
     <PageShell
@@ -698,8 +794,8 @@ function TextPage({
     >
       <section className="space-y-6 text-justify text-[13px] leading-5 text-slate-950">
         <div>
-          <h2 className="mt-5 mb-1 text-[15px] font-black uppercase">1. Premessa</h2>
-          {splitText(premiseText).map((paragraph, index) => (
+          <h2 className="mt-10 mb-1 text-[15px] font-black uppercase">1. Premessa</h2>
+          {premiseParagraphs.map((paragraph, index) => (
             <p key={index} className="mb-0.5 text-justify">
               {paragraph}
             </p>
@@ -717,7 +813,7 @@ function TextPage({
           <h2 className="mb-3 text-[15px] font-black uppercase">
             2. Scopo della prova
           </h2>
-          {splitText(scopeText).map((paragraph, index) => (
+          {scopeParagraphs.map((paragraph, index) => (
             <p key={index} className="mb-0.5 text-justify">
               {paragraph}
             </p>
@@ -739,7 +835,7 @@ function TextPage({
           <h2 className="mb-3 text-[15px] font-black uppercase">
             4. Descrizione e modalità di esecuzione della verifica di taratura
           </h2>
-          {splitText(details.execution_method).map((paragraph, index) => (
+          {executionMethodParagraphs.map((paragraph, index) => (
             <p key={index} className="mb-0.5 text-justify">
               {paragraph}
             </p>
@@ -1780,6 +1876,7 @@ const { data: recordData, error: recordError } = await supabase
                 record={record}
                 details={details}
                 reportPhotos={reportPhotos}
+                customerSnapshot={customerSnapshot}
                 measurementUnit={mainMeasurementUnit}
                 reportNumber={reportNumber}
                 reportDate={reportDate}

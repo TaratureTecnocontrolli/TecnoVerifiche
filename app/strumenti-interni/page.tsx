@@ -1,48 +1,9 @@
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
+import InternalInstrumentsSearchTable, {
+  type InternalInstrumentListItem,
+} from "@/components/InternalInstrumentsSearchTable";
 import { supabase } from "@/lib/supabase";
-
-type InternalInstrument = {
-  id: string;
-  name: string;
-  manufacturer: string | null;
-  model: string | null;
-  serial_number: string | null;
-  internal_code: string | null;
-  measurement_quantity: string | null;
-  unit: string | null;
-  measurement_range: string | null;
-  location: string | null;
-  department: string | null;
-  status: string;
-  notes: string | null;
-  is_active: boolean;
-  created_at: string;
-};
-
-function formatItalianDate(date: string | null) {
-  if (!date) {
-    return "-";
-  }
-
-  return new Intl.DateTimeFormat("it-IT").format(new Date(date));
-}
-
-function statusLabel(status: string) {
-  if (status === "active") return "Attivo";
-  if (status === "out_of_service") return "Fuori servizio";
-  if (status === "dismissed") return "Dismesso";
-
-  return status;
-}
-
-function statusClass(status: string) {
-  if (status === "active") return "bg-emerald-100 text-emerald-800";
-  if (status === "out_of_service") return "bg-amber-100 text-amber-800";
-  if (status === "dismissed") return "bg-slate-200 text-slate-700";
-
-  return "bg-slate-100 text-slate-700";
-}
 
 export default async function InternalInstrumentsPage() {
   const { data, error } = await supabase
@@ -68,7 +29,7 @@ export default async function InternalInstrumentsPage() {
     )
     .order("created_at", { ascending: false });
 
-  const instruments = (data ?? []) as InternalInstrument[];
+  const instruments = (data ?? []) as InternalInstrumentListItem[];
 
   const activeCount = instruments.filter((item) => item.status === "active").length;
   const outOfServiceCount = instruments.filter(
@@ -145,110 +106,7 @@ export default async function InternalInstrumentsPage() {
           </div>
         </section>
 
-        <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="border-b border-slate-200 p-5">
-            <h2 className="text-lg font-semibold text-slate-900">
-              Elenco strumenti interni
-            </h2>
-            <p className="text-sm text-slate-500">
-              Totale strumenti trovati: {instruments.length}
-            </p>
-          </div>
-
-          {instruments.length === 0 ? (
-            <div className="p-6 text-sm text-slate-500">
-              Nessuno strumento interno registrato.
-            </div>
-          ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full min-w-[1100px] text-sm">
-                <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
-                  <tr>
-                    <th className="px-4 py-3">Strumento</th>
-                    <th className="px-4 py-3">Codice</th>
-                    <th className="px-4 py-3">Matricola</th>
-                    <th className="px-4 py-3">Grandezza</th>
-                    <th className="px-4 py-3">Fondo scala</th>
-                    <th className="px-4 py-3">Reparto</th>
-                    <th className="px-4 py-3">Ubicazione</th>
-                    <th className="px-4 py-3">Stato</th>
-                    <th className="px-4 py-3">Inserito il</th>
-                    <th className="px-4 py-3">Azioni</th>
-                  </tr>
-                </thead>
-
-                <tbody className="divide-y divide-slate-100">
-                  {instruments.map((instrument) => (
-                    <tr key={instrument.id} className="hover:bg-slate-50">
-                      <td className="px-4 py-3">
-                        <Link
-                          href={"/strumenti-interni/" + instrument.id}
-                          className="font-semibold text-slate-900 hover:text-emerald-700 hover:underline"
-                        >
-                          {instrument.name}
-                        </Link>
-                        <p className="text-xs text-slate-500">
-                          {[instrument.manufacturer, instrument.model]
-                            .filter(Boolean)
-                            .join(" - ") || "-"}
-                        </p>
-                      </td>
-
-                      <td className="px-4 py-3 text-slate-700">
-                        {instrument.internal_code ?? "-"}
-                      </td>
-
-                      <td className="px-4 py-3 text-slate-700">
-                        {instrument.serial_number ?? "-"}
-                      </td>
-
-                      <td className="px-4 py-3 text-slate-700">
-                        {[instrument.measurement_quantity, instrument.unit]
-                          .filter(Boolean)
-                          .join(" / ") || "-"}
-                      </td>
-
-                      <td className="px-4 py-3 text-slate-700">
-                        {instrument.measurement_range ?? "-"}
-                      </td>
-
-                      <td className="px-4 py-3 text-slate-700">
-                        {instrument.department ?? "-"}
-                      </td>
-
-                      <td className="px-4 py-3 text-slate-700">
-                        {instrument.location ?? "-"}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <span
-                          className={`inline-flex rounded-full px-3 py-1 text-xs font-semibold ${statusClass(
-                            instrument.status
-                          )}`}
-                        >
-                          {statusLabel(instrument.status)}
-                        </span>
-                      </td>
-
-                      <td className="px-4 py-3 text-slate-700">
-                        {formatItalianDate(instrument.created_at)}
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <Link
-                          href={"/strumenti-interni/" + instrument.id}
-                          className="rounded-lg border border-slate-300 px-3 py-1 text-center text-xs font-semibold text-slate-700 hover:bg-slate-50"
-                        >
-                          Modifica
-                        </Link>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
+        <InternalInstrumentsSearchTable instruments={instruments} />
       </div>
     </AppShell>
   );
