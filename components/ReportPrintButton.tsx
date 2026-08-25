@@ -4,25 +4,36 @@ type ReportPrintButtonProps = {
   fileName?: string;
 };
 
+function normalizeFileName(value: string | undefined) {
+  const cleaned = (value ?? "Rapporto_di_prova")
+    .replace(/[\\/:*?"<>|]+/g, "_")
+    .replace(/\s+/g, "_")
+    .replace(/_+/g, "_")
+    .replace(/^_+|_+$/g, "");
+
+  return cleaned || "Rapporto_di_prova";
+}
+
 export default function ReportPrintButton({ fileName }: ReportPrintButtonProps) {
-  function handlePrint() {
+  function printReport() {
     const previousTitle = document.title;
+    const normalizedFileName = normalizeFileName(fileName);
 
-    if (fileName) {
-      document.title = fileName;
-    }
+    document.title = normalizedFileName;
 
-    window.print();
+    window.setTimeout(() => {
+      window.print();
 
-    setTimeout(() => {
-      document.title = previousTitle;
-    }, 1000);
+      window.setTimeout(() => {
+        document.title = previousTitle;
+      }, 1000);
+    }, 50);
   }
 
   return (
     <button
       type="button"
-      onClick={handlePrint}
+      onClick={printReport}
       className="rounded-xl bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-700"
     >
       Salva PDF

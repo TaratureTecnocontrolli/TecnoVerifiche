@@ -55,6 +55,7 @@ type ScalePlan = {
 type PageDescriptor =
   | { type: "cover" }
   | { type: "text" }
+  | { type: "execution" }
   | { type: "formula" }
   | { type: "technical"; plan: ScalePlan }
   | { type: "chart"; chart: ChartPageInfo }
@@ -579,7 +580,7 @@ function PageShell({
   return (
     <section
       className={
-        "relative mx-auto min-h-[1123px] w-[794px] overflow-hidden bg-white shadow-lg print:shadow-none " +
+        "report-a4-page relative mx-auto h-[297mm] min-h-[297mm] w-[210mm] overflow-hidden bg-white shadow-lg print:shadow-none " +
         (pageNumber > 1 ? "print:break-before-page" : "")
       }
     >
@@ -589,7 +590,7 @@ function PageShell({
         className="pointer-events-none absolute inset-0 z-0 block h-full w-full object-fill print:block"
       />
 
-      <div className="relative z-10 px-[60px] pb-16 pt-[132px]">
+      <div className="relative z-10 px-[60px] pb-[92px] pt-[132px]">
         {children}
       </div>
 
@@ -743,7 +744,7 @@ function CoverPage({
   );
 }
 
-function TextPage({
+function TextIntroPage({
   record,
   details,
   reportPhotos,
@@ -777,10 +778,6 @@ function TextPage({
     : splitText(
         addUnitToNumberText(textValue(details.scope_text, ""), measurementUnit)
       );
-
-  const executionMethodParagraphs = isForceReport
-    ? forceExecutionMethodText()
-    : splitText(details.execution_method);
 
   return (
     <PageShell
@@ -828,8 +825,136 @@ function TextPage({
           ))}
         </div>
 
+      </section>
+    </PageShell>
+  );
+}
+
+
+function ExecutionTextPage({
+  record,
+  details,
+  reportNumber,
+  reportDate,
+  pageNumber,
+  totalPages,
+}: {
+  record: GenericRecord;
+  details: GenericRecord;
+  reportNumber: string;
+  reportDate: unknown;
+  pageNumber: number;
+  totalPages: number;
+}) {
+  const isForceReport = isForceCompressionTrazione(record);
+
+  const executionMethodParagraphs = isForceReport
+    ? forceExecutionMethodText()
+    : splitText(details.execution_method);
+
+  const isPressure =
+    record.verification_module === "PRESSURE" || record.mode === "pressione";
+  const isTorque =
+    record.verification_module === "TORQUE" || record.mode === "dinamometria";
+  const isFlow = record.verification_module === "FLOW" || record.mode === "portata";
+  const isSclerometric =
+    record.verification_module === "SCLEROMETRIC" || record.mode === "sclerometro";
+  const isMass = record.verification_module === "MASS" || record.mode === "massa";
+  const isDimensional =
+    record.verification_module === "DIMENSIONAL" || record.mode === "dimensionale";
+  const isTemperature =
+    record.verification_module === "TEMPERATURE" || record.mode === "temperatura";
+
+  const isPullOff =
+    record.verification_module === "PULLOFF" || record.mode === "pulloff";
+
+  let formulaText: string[] = [
+    "La verifica del punto di gradazione della scala viene effettuata leggendo il corrispondente valore effettivo sul dispositivo di verifica, con carico di prova crescente, quando i sistemi sono in equilibrio.",
+    "Per ogni livello di carico l'errore relativo di accuratezza, espresso in percentuale, viene determinato confrontando il carico indicato dalla macchina con la media delle letture del dispositivo campione.",
+    "L'errore relativo di ripetibilità è determinato a partire dalla differenza tra il valore massimo e il valore minimo delle letture rilevate.",
+  ];
+
+  if (isPressure) {
+    formulaText = [
+      "La verifica viene eseguita confrontando i valori indicati dallo strumento in prova con i valori applicati tramite lo strumento campione.",
+      "Per ogni punto vengono rilevate due letture dello strumento in prova.",
+      "Errore medio = Media letture - Carico applicato.",
+      "Errore accuratezza % = [(Media letture - Carico applicato) / Carico applicato] × 100.",
+      "Errore ripetibilità % = [(Lettura massima - Lettura minima) / Media letture] × 100.",
+    ];
+  }
+
+  if (isTorque) {
+    formulaText = [
+      "La verifica viene eseguita applicando i punti di coppia previsti e rilevando tre letture consecutive dello strumento in prova.",
+      "Errore medio = Coppia applicata - Media letture.",
+      "Errore accuratezza % = [(Coppia applicata - Media letture) / Coppia applicata] × 100.",
+      "Errore ripetibilità % = [(Lettura massima - Lettura minima) / Media letture] × 100.",
+    ];
+  }
+
+  if (isFlow) {
+    formulaText = [
+      "La verifica viene eseguita impostando sullo strumento in prova i volumi nominali previsti e rilevando tre letture per ciascun punto.",
+      "Errore = Media letture - Volume impostato.",
+      "Errore % = Errore / Volume impostato × 100.",
+    ];
+  }
+
+  if (isSclerometric) {
+    formulaText = [
+      "La verifica viene eseguita effettuando un numero prestabilito di battute sull'incudine di riferimento a valore nominale fisso, rilevando tre letture per ciascuna battuta.",
+      "Errore medio = Media letture - Valore nominale incudine.",
+      "Errore % = Errore medio / Valore nominale incudine × 100.",
+    ];
+  }
+
+  if (isMass) {
+    formulaText = [
+      "La verifica è composta da tre prove distinte: ripetibilità (un punto, tre letture), eccentricità (cinque zone del piatto di pesata, tre letture ciascuna) e linearità (più punti sull'intero campo di pesata, tre letture ciascuno).",
+      "Errore = Media letture - Peso nominale.",
+      "Errore % (solo prova di linearità) = (Media letture / Peso nominale - 1) × 100.",
+      "Errore ripetibilità % = [(Lettura massima - Lettura minima) / Media letture] × 100.",
+      "Eccentricità (zona centrale) = Media delle ripetibilità delle cinque zone - Ripetibilità della zona centrale.",
+    ];
+  }
+
+  if (isDimensional) {
+    formulaText = [
+      "La verifica viene eseguita confrontando lo strumento in prova con i campioni di riferimento sui punti previsti, rilevando tre scostamenti consecutivi per ciascun punto.",
+      "Errore medio = Valore nominale - Media scostamenti.",
+      "Errore accuratezza % = [(Valore nominale - Media scostamenti) / Valore nominale] × 100.",
+      "Errore ripetibilità % = [(Scostamento massimo - Scostamento minimo) / Media scostamenti] × 100.",
+      "Incertezza strumentale = |Errore medio| × 2.",
+    ];
+  }
+
+  if (isTemperature) {
+    formulaText = [
+      "La verifica viene eseguita rilevando, a orari prefissati, la temperatura indicata dallo strumento in prova e la temperatura indicata dal termometro/termostato di riferimento.",
+      "I valori sono riportati come rilevati, senza calcolo di errore o esito automatico.",
+    ];
+  }
+
+  if (isPullOff) {
+    formulaText = [
+      "La verifica viene eseguita applicando i punti di carico previsti tramite la cella di carico campione e rilevando, per ciascun punto, tre letture consecutive dello strumento in prova.",
+      "Errore medio = Carico applicato - Media letture.",
+      "Errore accuratezza % = [(Carico applicato - Media letture) / Carico applicato] × 100.",
+      "Errore ripetibilità % = [(Lettura massima - Lettura minima) / Media letture] × 100.",
+    ];
+  }
+
+  return (
+    <PageShell
+      pageNumber={pageNumber}
+      totalPages={totalPages}
+      reportNumber={reportNumber}
+      reportDate={reportDate}
+    >
+      <section className="space-y-5 text-justify text-[12px] leading-5 text-slate-950">
         <div>
-          <h2 className="mb-3 text-[15px] font-black uppercase">
+          <h2 className="mt-8 mb-2 text-[15px] font-black uppercase">
             4. Descrizione e modalità di esecuzione della verifica di taratura
           </h2>
           {executionMethodParagraphs.map((paragraph, index) => (
@@ -843,6 +968,53 @@ function TextPage({
             category="test_phase"
             title="Foto fasi prova"
           />
+        </div>
+
+        <div>
+          <h2 className="mb-2 text-[15px] font-black uppercase">
+            5. Espressione dei risultati
+          </h2>
+
+          {formulaText.map((paragraph, index) => (
+            <p key={index} className="mb-0.5 text-justify">
+              {paragraph}
+            </p>
+          ))}
+        </div>
+
+        <div>
+          <h2 className="mb-2 text-[15px] font-black uppercase">
+            6. Risultati della verifica
+          </h2>
+
+          <table className="w-full border-collapse text-center text-[11px]">
+            <thead>
+              <tr className="bg-slate-700/65 text-slate-950">
+                <th className="border border-slate-900 px-2 py-0.5">
+                  Temperatura ambientale (°C)
+                </th>
+                <th className="border border-slate-900 px-2 py-0.5">
+                  Umidità ambientale (%)
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td className="border border-slate-900 px-2 py-1 font-bold">
+                  {textValue(details.temperature)}
+                </td>
+                <td className="border border-slate-900 px-2 py-1 font-bold">
+                  {textValue(details.humidity)}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div className="mt-5 rounded-lg border border-slate-200 p-3 text-[11px] leading-5">
+            Nota: la sezione tecnica di verifica taratura costituisce
+            parte integrante del presente Rapporto di Prova ed è riportata nelle
+            pagine successive prima della sottoscrizione finale.
+          </div>
         </div>
       </section>
     </PageShell>
@@ -1810,7 +1982,7 @@ const { data: recordData, error: recordError } = await supabase
   const pageDescriptors: PageDescriptor[] = [
     { type: "cover" },
     { type: "text" },
-    { type: "formula" },
+    { type: "execution" },
     ...scalePlans.flatMap((plan): PageDescriptor[] => [
       { type: "technical", plan },
       ...plan.chartPages.map(
@@ -1823,7 +1995,45 @@ const { data: recordData, error: recordError } = await supabase
   const totalPages = pageDescriptors.length;
   return (
     <AppShell>
-      <div className="space-y-8 bg-slate-100 p-6 print:bg-white print:p-0">
+      <style>{`
+        @page {
+          size: A4 portrait;
+          margin: 0;
+        }
+
+        @media print {
+          html,
+          body {
+            width: 210mm;
+            min-height: 297mm;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: white !important;
+          }
+
+          .print-hidden,
+          .print\:hidden {
+            display: none !important;
+          }
+
+          .report-a4-page {
+            width: 210mm !important;
+            height: 297mm !important;
+            min-height: 297mm !important;
+            margin: 0 auto !important;
+            box-shadow: none !important;
+            page-break-inside: avoid;
+            break-inside: avoid-page;
+          }
+
+          .report-a4-page + .report-a4-page {
+            page-break-before: always;
+            break-before: page;
+          }
+        }
+      `}</style>
+
+      <div className="space-y-8 bg-slate-100 p-6 print:space-y-0 print:bg-white print:p-0">
         <div className="print-hidden mb-2 flex flex-wrap items-center justify-between gap-3">
           <Link
             href={`/verifiche/${id}/rapporto`}
@@ -1839,13 +2049,15 @@ const { data: recordData, error: recordError } = await supabase
           </div>
         </div>
 
-        <ReportStatusActions
-          recordId={id}
-          initialStatus={typeof record.report_status === "string" ? record.report_status : "draft"}
-          issuedAt={typeof record.issued_at === "string" ? record.issued_at : null}
-          reopenedAt={typeof record.reopened_at === "string" ? record.reopened_at : null}
-          documentLabel="rapporto VT"
-        />
+        <div className="print-hidden">
+          <ReportStatusActions
+            recordId={id}
+            initialStatus={typeof record.report_status === "string" ? record.report_status : "draft"}
+            issuedAt={typeof record.issued_at === "string" ? record.issued_at : null}
+            reopenedAt={typeof record.reopened_at === "string" ? record.reopened_at : null}
+            documentLabel="rapporto VT"
+          />
+        </div>
 
         {pageDescriptors.map((descriptor, index) => {
           const pageNumber = index + 1;
@@ -1868,13 +2080,27 @@ const { data: recordData, error: recordError } = await supabase
 
           if (descriptor.type === "text") {
             return (
-              <TextPage
+              <TextIntroPage
                 key="text"
                 record={record}
                 details={details}
                 reportPhotos={reportPhotos}
                 customerSnapshot={customerSnapshot}
                 measurementUnit={mainMeasurementUnit}
+                reportNumber={reportNumber}
+                reportDate={reportDate}
+                pageNumber={pageNumber}
+                totalPages={totalPages}
+              />
+            );
+          }
+
+          if (descriptor.type === "execution") {
+            return (
+              <ExecutionTextPage
+                key="execution"
+                record={record}
+                details={details}
                 reportNumber={reportNumber}
                 reportDate={reportDate}
                 pageNumber={pageNumber}
