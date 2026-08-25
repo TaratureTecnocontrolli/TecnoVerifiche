@@ -684,7 +684,7 @@ function CoverPage({
             <td className="border border-slate-900 bg-white/70 px-3 py-4 font-black uppercase">
               Committente
             </td>
-            <td className="whitespace-pre-line border border-slate-900 bg-white/60 px-3 py-3 text-[11px] font-bold leading-4">
+            <td className="whitespace-pre-line border border-slate-900 bg-white/60 px-3 py-3 text-[12px] font-black leading-4">
               {customerFullAnagrafica}
             </td>
           </tr>
@@ -736,7 +736,7 @@ function CoverPage({
         </tbody>
       </table>
 
-      <p className="mt-16 text-center text-[12px] font-bold">
+      <p className="mt-90 text-center text-[12px] font-bold">
         Questo rapporto di prova è composto da n. {totalPages} pagine.
       </p>
     </PageShell>
@@ -791,7 +791,7 @@ function TextPage({
     >
       <section className="space-y-6 text-justify text-[13px] leading-5 text-slate-950">
         <div>
-          <h2 className="mt-5 mb-1 text-[15px] font-black uppercase">1. Premessa</h2>
+          <h2 className="mt-10 mb-1 text-[15px] font-black uppercase">1. Premessa</h2>
           {premiseParagraphs.map((paragraph, index) => (
             <p key={index} className="mb-0.5 text-justify">
               {paragraph}
