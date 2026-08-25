@@ -736,7 +736,7 @@ function CoverPage({
         </tbody>
       </table>
 
-      <p className="mt-90 text-center text-[12px] font-bold">
+      <p className="mt-97 text-center text-[12px] font-bold">
         Questo rapporto di prova è composto da n. {totalPages} pagine.
       </p>
     </PageShell>
