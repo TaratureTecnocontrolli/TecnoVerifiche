@@ -267,6 +267,33 @@ function getRange(instrument: {
   return instrument.measurement_range || instrument.range || null;
 }
 
+
+function normalizeUnit(value: unknown) {
+  const unit = String(value ?? "").trim();
+
+  if (!unit || unit === "-") {
+    return "";
+  }
+
+  return unit;
+}
+
+function unitSuffix(unit: string) {
+  return unit ? " (" + unit + ")" : "";
+}
+
+function inferUnitFromText(value: unknown) {
+  const text = String(value ?? "").trim();
+
+  if (!text) {
+    return "";
+  }
+
+  const match = text.match(/\b(N·m|Nm|kg|g|kN|N|bar|MPa|mm|cm|m|ml|mL|l|L|°C|C)\b/);
+
+  return match ? match[1] : "";
+}
+
 function buildReferenceInstrumentSnapshot(instrument: ReferenceInstrument) {
   return {
     instrument_id: instrument.id,
@@ -458,6 +485,10 @@ export default function EditSclerometricMeasurementsForm({
   const hasBlockedReferenceInstrument = selectedReferenceInstruments.some(
     (instrument) => isReferenceInstrumentBlocked(effectiveStatus(instrument))
   );
+
+  const sclerometricUnit =
+    normalizeUnit(selectedReferenceInstruments[0]?.unit) ||
+    inferUnitFromText(initialScales[0]?.scale_range);
 
   function resetSaveState() {
     setSaveMessage("");
@@ -977,16 +1008,16 @@ export default function EditSclerometricMeasurementsForm({
                 <tr>
                   <th className="px-4 py-3">Battuta</th>
                   <th className="bg-orange-100 px-4 py-3 text-orange-900">
-                    Lettura 1
+                    Lettura 1{unitSuffix(sclerometricUnit)}
                   </th>
                   <th className="bg-slate-100 px-4 py-3 text-slate-900">
-                    Lettura 2
+                    Lettura 2{unitSuffix(sclerometricUnit)}
                   </th>
                   <th className="bg-orange-100 px-4 py-3 text-orange-900">
-                    Lettura 3
+                    Lettura 3{unitSuffix(sclerometricUnit)}
                   </th>
-                  <th className="px-4 py-3">Media</th>
-                  <th className="px-4 py-3">Errore</th>
+                  <th className="px-4 py-3">Media{unitSuffix(sclerometricUnit)}</th>
+                  <th className="px-4 py-3">Errore{unitSuffix(sclerometricUnit)}</th>
                   <th className="px-4 py-3">Errore %</th>
                   <th className="px-4 py-3">Esito</th>
                   <th className="px-4 py-3"></th>

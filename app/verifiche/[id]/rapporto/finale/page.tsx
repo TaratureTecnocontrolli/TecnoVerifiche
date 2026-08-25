@@ -243,7 +243,7 @@ function getMeasurementUnit(input: {
     input.record ?? {},
   ];
 
-  return normalizeUnit(
+  const explicitUnit = normalizeUnit(
     firstTextValueFromSources(sources, [
       "unit",
       "measurement_unit",
@@ -251,6 +251,8 @@ function getMeasurementUnit(input: {
       "unit_of_measure",
     ])
   );
+
+  return explicitUnit || detectMassUnitFromText(input.scale?.scale_range);
 }
 
 function addUnitToNumberText(text: string, unit: string) {
@@ -393,6 +395,54 @@ function forceExecutionMethodText() {
 
 function labelWithUnit(label: string, unit: string) {
   return unit ? label + " (" + unit + ")" : label;
+}
+
+const MASS_ECCENTRICITY_ZONE_LABELS = ["Zona C", "Zona 3", "Zona 4", "Zona 1", "Zona 2"];
+
+function detectMassUnitFromText(value: unknown) {
+  const text = String(value ?? "").toLowerCase();
+
+  if (/\bkg\b/.test(text)) {
+    return "kg";
+  }
+
+  if (/\bg\b/.test(text)) {
+    return "g";
+  }
+
+  return "";
+}
+
+function massScaleKind(scaleName: unknown) {
+  const text = String(scaleName ?? "").toLowerCase();
+
+  if (text.includes("eccentric")) {
+    return "eccentricity";
+  }
+
+  if (text.includes("ripetibil")) {
+    return "repeatability";
+  }
+
+  if (text.includes("linear")) {
+    return "linearity";
+  }
+
+  return "";
+}
+
+function massReportPointLabel(scaleName: unknown, index: number, fallback: unknown) {
+  const kind = massScaleKind(scaleName);
+
+  if (kind === "eccentricity") {
+    return MASS_ECCENTRICITY_ZONE_LABELS[index] || "Zona " + String(index + 1);
+  }
+
+  if (kind === "repeatability" || kind === "linearity") {
+    return "Zona C";
+  }
+
+  return textValue(fallback);
 }
 
 function ReportPhotosInline({
@@ -590,7 +640,7 @@ function PageShell({
         className="pointer-events-none absolute inset-0 z-0 block h-full w-full object-fill print:block"
       />
 
-      <div className="relative z-10 px-[60px] pb-[92px] pt-[132px]">
+      <div className="relative z-10 flex h-full flex-col px-[60px] pb-[96px] pt-[132px]">
         {children}
       </div>
 
@@ -737,7 +787,7 @@ function CoverPage({
         </tbody>
       </table>
 
-      <p className="mt-97 text-center text-[12px] font-bold">
+      <p className="mt-auto text-center text-[12px] font-bold">
         Questo rapporto di prova è composto da n. {totalPages} pagine.
       </p>
     </PageShell>
@@ -1196,6 +1246,8 @@ function TechnicalTable({
   nominalLabel = "Volume nominale",
   appliedLabel = "Carico applicato",
   measurementUnit = "",
+  firstColumnLabel = "Punto di verifica",
+  pointLabelResolver,
 }: {
   measurements: GenericRecord[];
   showNominalColumn: boolean;
@@ -1204,6 +1256,8 @@ function TechnicalTable({
   nominalLabel?: string;
   appliedLabel?: string;
   measurementUnit?: string;
+  firstColumnLabel?: string;
+  pointLabelResolver?: (measurement: GenericRecord, index: number) => string;
 }) {
   const showThirdCycle =
     showThirdCycleColumn && hasAnyNumericValue(measurements, "cycle_3");
@@ -1239,7 +1293,7 @@ function TechnicalTable({
     <table className="w-full border-collapse bg-white/35 text-center text-[8px]">
       <thead>
         <tr className="bg-slate-700/65 text-slate-950">
-          <th className="border border-slate-600 px-1 py-0.5">{labelWithUnit("Punto di verifica", measurementUnit)}</th>
+          <th className="border border-slate-600 px-1 py-0.5">{labelWithUnit(firstColumnLabel, measurementUnit)}</th>
           {showNominalColumn && (
             <th className="border border-slate-600 px-1 py-0.5">{labelWithUnit(nominalLabel, measurementUnit)}</th>
           )}
@@ -1282,7 +1336,9 @@ function TechnicalTable({
               className={index % 2 === 0 ? "bg-white/65" : "bg-slate-100/55"}
             >
               <td className="border border-slate-300 px-1 py-0.5">
-                {textValue(measurement.point_order)}
+                {pointLabelResolver
+                  ? pointLabelResolver(measurement, index)
+                  : textValue(measurement.point_order)}
               </td>
               {showNominalColumn && (
                 <td className="border border-slate-300 px-1 py-0.5">
@@ -1557,7 +1613,18 @@ function TechnicalPage({
           nominalLabel={nominalLabel}
           appliedLabel={appliedLabel}
           measurementUnit={measurementUnit}
-          showThirdCycleColumn={!isPressure}
+          showThirdCycleColumn={!isPressure && !isFlow}
+          firstColumnLabel={isMass ? "Zona" : "Punto di verifica"}
+          pointLabelResolver={
+            isMass
+              ? (measurement, index) =>
+                  massReportPointLabel(
+                    scale.scale_name || measurement.section,
+                    index,
+                    measurement.point_order
+                  )
+              : undefined
+          }
         />
       </div>
     </PageShell>

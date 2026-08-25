@@ -10,6 +10,8 @@ import { supabase } from "@/lib/supabase";
 import PressureErrorChart from "./PressureErrorChart";
 import ReferenceInstrumentMultiSelect from "./ReferenceInstrumentMultiSelect";
 
+const PRESSURE_UNIT_LABEL = "bar";
+
 type ReferenceInstrument = {
   id: string;
   name: string;
@@ -193,6 +195,33 @@ function statusClass(status: string) {
 
 function isReferenceInstrumentBlocked(status: string) {
   return status === "expired" || status === "out_of_service";
+}
+
+
+function normalizeUnit(value: unknown) {
+  const unit = String(value ?? "").trim();
+
+  if (!unit || unit === "-") {
+    return "";
+  }
+
+  return unit;
+}
+
+function unitSuffix(unit: string) {
+  return unit ? " (" + unit + ")" : "";
+}
+
+function inferUnitFromText(value: unknown) {
+  const text = String(value ?? "").trim();
+
+  if (!text) {
+    return "";
+  }
+
+  const match = text.match(/\b(N·m|Nm|kg|g|kN|N|bar|MPa|mm|cm|m|ml|mL|l|L|°C|C)\b/);
+
+  return match ? match[1] : "";
 }
 
 function buildReferenceInstrumentSnapshot(
@@ -774,42 +803,42 @@ export default function EditPressureMeasurementsForm({
                       <th className="bg-orange-200 px-3 py-3 text-orange-950">
                         Punti di verifica
                         <br />
-                        <span className="font-normal lowercase">bar</span>
+                        <span className="font-normal lowercase">{PRESSURE_UNIT_LABEL}</span>
                       </th>
                       <th className="bg-lime-200 px-3 py-3 text-lime-950">
                         Carico applicato
                         <br />
-                        <span className="font-normal lowercase">bar</span>
+                        <span className="font-normal lowercase">{PRESSURE_UNIT_LABEL}</span>
                       </th>
                       <th className="bg-sky-200 px-3 py-3 text-sky-950">
                         Lettura I° ciclo
                         <br />
-                        <span className="font-normal lowercase">bar</span>
+                        <span className="font-normal lowercase">{PRESSURE_UNIT_LABEL}</span>
                       </th>
                       <th className="bg-sky-200 px-3 py-3 text-sky-950">
                         Lettura II° ciclo
                         <br />
-                        <span className="font-normal lowercase">bar</span>
+                        <span className="font-normal lowercase">{PRESSURE_UNIT_LABEL}</span>
                       </th>
                       <th className="px-3 py-3">
                         Lettura Max
                         <br />
-                        <span className="font-normal lowercase">bar</span>
+                        <span className="font-normal lowercase">{PRESSURE_UNIT_LABEL}</span>
                       </th>
                       <th className="px-3 py-3">
                         Lettura Min
                         <br />
-                        <span className="font-normal lowercase">bar</span>
+                        <span className="font-normal lowercase">{PRESSURE_UNIT_LABEL}</span>
                       </th>
                       <th className="px-3 py-3">
                         Media Lettura
                         <br />
-                        <span className="font-normal lowercase">bar</span>
+                        <span className="font-normal lowercase">{PRESSURE_UNIT_LABEL}</span>
                       </th>
                       <th className="px-3 py-3">
                         Errore Medio
                         <br />
-                        <span className="font-normal lowercase">bar</span>
+                        <span className="font-normal lowercase">{PRESSURE_UNIT_LABEL}</span>
                       </th>
                       <th className="px-3 py-3">
                         Errore accuratezza

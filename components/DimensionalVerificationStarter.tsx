@@ -187,6 +187,12 @@ function toNumber(value: string): number {
   return parsed;
 }
 
+function unitSuffix(unit: string) {
+  const normalized = unit.trim();
+
+  return normalized ? " (" + normalized + ")" : "";
+}
+
 function normalizeEuropeanDecimalInput(value: string) {
   let normalized = value.replace(/\./g, ",");
   normalized = normalized.replace(/[^\d,-]/g, "");
@@ -442,7 +448,7 @@ export default function DimensionalVerificationStarter({
   const [selectedReferenceInstrumentIds, setSelectedReferenceInstrumentIds] =
     useState<string[]>([]);
   const [verificationDate, setVerificationDate] = useState(todayInputDate());
-  const [location, setLocation] = useState("");
+  const location = "";
   const [operatorName, setOperatorName] = useState("");
   const [ambientTemperature, setAmbientTemperature] = useState("");
   const [ambientHumidity, setAmbientHumidity] = useState("");
@@ -549,6 +555,12 @@ export default function DimensionalVerificationStarter({
       selectedReferenceInstrumentIds.includes(instrument.id)
     );
   }, [referenceInstruments, selectedReferenceInstrumentIds]);
+
+  const dimensionalUnit =
+    selectedCustomerInstrument?.unit ||
+    selectedInternalInstrument?.unit ||
+    selectedReferenceInstruments[0]?.unit ||
+    "mm";
 
   const hasBlockedReferenceInstrument = selectedReferenceInstruments.some(
     (instrument) =>
@@ -684,10 +696,6 @@ export default function DimensionalVerificationStarter({
       }
     }
 
-    if (!location.trim()) {
-      throw new Error("Inserisci il luogo della verifica.");
-    }
-
     if (selectedReferenceInstruments.length === 0) {
       throw new Error(
         "Seleziona almeno un campione di riferimento da utilizzare."
@@ -813,7 +821,7 @@ export default function DimensionalVerificationStarter({
           verification_module: "DIMENSIONAL",
           verification_date: verificationDate,
           operator_name: operatorName.trim() || null,
-          location: location.trim() || null,
+          location: null,
           environmental_conditions:
             ambientTemperature.trim() || ambientHumidity.trim()
               ? [
@@ -886,7 +894,7 @@ export default function DimensionalVerificationStarter({
           selectedReferenceInstruments.length === 1
             ? primaryReference.internal_code
             : null,
-        location: location.trim(),
+        location: "",
       });
 
       const { error: reportDetailsError } = await supabase
@@ -900,7 +908,7 @@ export default function DimensionalVerificationStarter({
           report_date: null,
           test_date: verificationDate,
           customer_name: customerName,
-          site_description: location.trim() || null,
+          site_description: null,
           work_object: isInternalVerification
             ? "Verifica interna di " + instrumentName
             : reportDefaults.work_object,
@@ -929,7 +937,11 @@ export default function DimensionalVerificationStarter({
         calibration_record_id: insertedRecord.id,
         scale_order: index + 1,
         scale_name: scale.scaleName.trim(),
-        scale_range: scale.scaleRange.trim() || null,
+        scale_range: scale.scaleRange.trim()
+          ? scale.scaleRange.trim().toLowerCase().includes(dimensionalUnit.toLowerCase())
+            ? scale.scaleRange.trim()
+            : scale.scaleRange.trim() + " " + dimensionalUnit
+          : null,
         reference_instrument_id: primaryReference.id,
         reference_instrument_snapshot: primaryReferenceSnapshot,
         reference_instrument_ids: selectedReferenceInstruments.map(
@@ -1022,6 +1034,7 @@ export default function DimensionalVerificationStarter({
   function renderScale(scale: EditableDimensionalScale, scaleIndex: number) {
     const calculatedPoints = scale.points.map(calculateDimensionalPoint);
     const pointCount = scale.points.length;
+    const scaleUnit = dimensionalUnit;
 
     return (
       <section
@@ -1064,7 +1077,7 @@ export default function DimensionalVerificationStarter({
                 onChange={(event) =>
                   updateScaleField(scale.id, "scaleRange", event.target.value)
                 }
-                placeholder="Es. 0 - 150 mm"
+                placeholder={"Es. 0 - 150 " + scaleUnit}
                 className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
               />
             </label>
@@ -1090,20 +1103,20 @@ export default function DimensionalVerificationStarter({
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-3">Punto</th>
-                <th className="px-4 py-3">Punto di applicazione</th>
+                <th className="px-4 py-3">Punto di applicazione{unitSuffix(scaleUnit)}</th>
                 <th className="bg-violet-100 px-4 py-3 text-violet-900">
-                  Ciclo 1
+                  Ciclo 1{unitSuffix(scaleUnit)}
                 </th>
                 <th className="bg-violet-100 px-4 py-3 text-violet-900">
-                  Ciclo 2
+                  Ciclo 2{unitSuffix(scaleUnit)}
                 </th>
                 <th className="bg-violet-100 px-4 py-3 text-violet-900">
-                  Ciclo 3
+                  Ciclo 3{unitSuffix(scaleUnit)}
                 </th>
-                <th className="px-4 py-3">Max</th>
-                <th className="px-4 py-3">Min</th>
-                <th className="px-4 py-3">Media</th>
-                <th className="px-4 py-3">Errore medio</th>
+                <th className="px-4 py-3">Max{unitSuffix(scaleUnit)}</th>
+                <th className="px-4 py-3">Min{unitSuffix(scaleUnit)}</th>
+                <th className="px-4 py-3">Media{unitSuffix(scaleUnit)}</th>
+                <th className="px-4 py-3">Errore medio{unitSuffix(scaleUnit)}</th>
                 <th className="px-4 py-3">Errore %</th>
                 <th className="px-4 py-3">Ripetibilità %</th>
                 <th className="px-4 py-3"></th>
@@ -1293,21 +1306,6 @@ export default function DimensionalVerificationStarter({
                 setVerificationDate(event.target.value);
                 resetSaveState();
               }}
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
-          </label>
-
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">
-              Luogo verifica *
-            </span>
-            <input
-              value={location}
-              onChange={(event) => {
-                setLocation(event.target.value);
-                resetSaveState();
-              }}
-              placeholder="Laboratorio / sede verifica"
               className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
             />
           </label>

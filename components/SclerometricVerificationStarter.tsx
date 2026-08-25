@@ -514,7 +514,7 @@ export default function SclerometricVerificationStarter({
   const [selectedInternalInstrumentId, setSelectedInternalInstrumentId] = useState("");
   const [selectedReferenceInstrumentIds, setSelectedReferenceInstrumentIds] = useState<string[]>([]);
   const [verificationDate, setVerificationDate] = useState(todayInputDate());
-  const [location, setLocation] = useState("");
+  const location = "";
   const [operatorName, setOperatorName] = useState("");
   const [ambientTemperature, setAmbientTemperature] = useState("");
   const [ambientHumidity, setAmbientHumidity] = useState("");
@@ -559,6 +559,13 @@ export default function SclerometricVerificationStarter({
   const selectedReferenceInstruments = useMemo(() => {
     return referenceInstruments.filter((instrument) => selectedReferenceInstrumentIds.includes(instrument.id));
   }, [referenceInstruments, selectedReferenceInstrumentIds]);
+
+  const sclerometricUnit =
+    selectedCustomerInstrument?.unit ||
+    selectedInternalInstrument?.unit ||
+    selectedReferenceInstruments[0]?.unit ||
+    "";
+  const sclerometricUnitLabel = sclerometricUnit ? " (" + sclerometricUnit + ")" : "";
 
   const hasBlockedReferenceInstrument = selectedReferenceInstruments.some((instrument) =>
     isReferenceInstrumentBlocked(getEffectiveReferenceInstrumentStatus(instrument.status, instrument.certificate_expiry))
@@ -643,7 +650,6 @@ export default function SclerometricVerificationStarter({
       if (!selectedCustomerInstrument) throw new Error("Seleziona lo strumento cliente da verificare.");
     }
 
-    if (!location.trim()) throw new Error("Inserisci il luogo della verifica.");
     if (!verificationDate) throw new Error("Inserisci la data della verifica.");
     if (selectedReferenceInstruments.length === 0) throw new Error("Seleziona almeno un'incudine di riferimento da utilizzare.");
     if (hasBlockedReferenceInstrument) throw new Error("Una delle incudini di riferimento selezionate è scaduta o fuori servizio. Seleziona solo campioni validi.");
@@ -737,7 +743,7 @@ export default function SclerometricVerificationStarter({
           verification_module: "SCLEROMETRIC",
           verification_date: verificationDate,
           operator_name: operatorName.trim() || null,
-          location: location.trim() || null,
+          location: null,
           environmental_conditions:
             ambientTemperature.trim() || ambientHumidity.trim()
               ? [
@@ -783,7 +789,7 @@ export default function SclerometricVerificationStarter({
         referenceModel: selectedReferenceInstruments.length === 1 ? primaryReference.model : null,
         referenceSerial: selectedReferenceInstruments.length === 1 ? primaryReference.serial_number : null,
         referenceInternalCode: selectedReferenceInstruments.length === 1 ? primaryReference.internal_code : null,
-        location: location.trim(),
+        location: "",
         testDate: verificationDate,
       });
 
@@ -798,7 +804,7 @@ export default function SclerometricVerificationStarter({
           report_date: null,
           test_date: verificationDate,
           customer_name: customerName,
-          site_description: location.trim() || null,
+          site_description: null,
           work_object: isInternalVerification ? "Verifica interna di " + instrumentName : reportDefaults.work_object,
           requested_tests: isInternalVerification ? "Verifica interna di sclerometro / strumento a rimbalzo." : reportDefaults.requested_tests,
           premise_text: reportDefaults.premise_text,
@@ -897,11 +903,6 @@ export default function SclerometricVerificationStarter({
           <label className="space-y-1">
             <span className="text-sm font-medium text-slate-700">Data verifica *</span>
             <input type="date" value={verificationDate} onChange={(event) => { setVerificationDate(event.target.value); resetSaveState(); }} className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
-          </label>
-
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">Luogo verifica *</span>
-            <input value={location} onChange={(event) => { setLocation(event.target.value); resetSaveState(); }} placeholder="Laboratorio / sede verifica" className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
           </label>
 
           <label className="space-y-1">
@@ -1066,9 +1067,9 @@ export default function SclerometricVerificationStarter({
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-3">Numero battuta</th>
-                <th className="bg-orange-100 px-4 py-3 text-orange-900">Ciclo 1</th>
-                <th className="bg-slate-100 px-4 py-3 text-slate-900">Ciclo 2</th>
-                <th className="bg-orange-100 px-4 py-3 text-orange-900">Ciclo 3</th>
+                <th className="bg-orange-100 px-4 py-3 text-orange-900">Ciclo 1{sclerometricUnitLabel}</th>
+                <th className="bg-slate-100 px-4 py-3 text-slate-900">Ciclo 2{sclerometricUnitLabel}</th>
+                <th className="bg-orange-100 px-4 py-3 text-orange-900">Ciclo 3{sclerometricUnitLabel}</th>
                 <th className="px-4 py-3">Stato ciclo 1</th>
                 <th className="px-4 py-3">Stato ciclo 2</th>
                 <th className="px-4 py-3">Stato ciclo 3</th>
@@ -1124,10 +1125,10 @@ export default function SclerometricVerificationStarter({
                 <tr>
                   <th className="px-3 py-2">Numero battuta</th>
                   <th className="bg-emerald-100 px-3 py-2 text-emerald-900">LC ±3</th>
-                  <th className="bg-sky-100 px-3 py-2 text-sky-900">L1</th>
-                  <th className="bg-sky-100 px-3 py-2 text-sky-900">L2</th>
-                  <th className="bg-sky-100 px-3 py-2 text-sky-900">L3</th>
-                  <th className="px-3 py-2">Errore medio</th>
+                  <th className="bg-sky-100 px-3 py-2 text-sky-900">L1{sclerometricUnitLabel}</th>
+                  <th className="bg-sky-100 px-3 py-2 text-sky-900">L2{sclerometricUnitLabel}</th>
+                  <th className="bg-sky-100 px-3 py-2 text-sky-900">L3{sclerometricUnitLabel}</th>
+                  <th className="px-3 py-2">Errore medio{sclerometricUnitLabel}</th>
                   <th className="px-3 py-2">Errore medio %</th>
                   <th className="px-3 py-2">Esito</th>
                 </tr>

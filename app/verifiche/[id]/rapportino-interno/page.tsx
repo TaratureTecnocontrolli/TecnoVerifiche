@@ -189,6 +189,10 @@ function isPressure(record: CalibrationRecord) {
   return record.verification_module === "PRESSURE" || record.mode === "pressione";
 }
 
+function isFlow(record: CalibrationRecord) {
+  return record.verification_module === "FLOW" || record.mode === "portata";
+}
+
 function isSclerometric(record: CalibrationRecord) {
   return record.verification_module === "SCLEROMETRIC" || record.mode === "sclerometro";
 }
@@ -199,6 +203,99 @@ function isMass(record: CalibrationRecord) {
 
 function isDimensional(record: CalibrationRecord) {
   return record.verification_module === "DIMENSIONAL" || record.mode === "dimensionale";
+}
+
+function isTemperature(record: CalibrationRecord) {
+  return record.verification_module === "TEMPERATURE" || record.mode === "temperatura";
+}
+
+function textFromObject(source: JsonObject, keys: string[]) {
+  for (const key of keys) {
+    const value = source[key];
+
+    if (value !== null && value !== undefined && String(value).trim() !== "") {
+      return String(value).trim();
+    }
+  }
+
+  return "";
+}
+
+function normalizeUnit(value: unknown) {
+  const unit = textValue(value, "").trim();
+
+  if (!unit || unit === "-") {
+    return "";
+  }
+
+  return unit;
+}
+
+function inferUnitFromText(value: unknown) {
+  const text = textValue(value, "").trim();
+
+  if (!text) {
+    return "";
+  }
+
+  const match = text.match(/(?:^|\s)(kg|g|kN|N|bar|MPa|Mpa|Pa|L\/min|l\/min|l|min|°C|C°|Nm|N·m|mm|cm|m)(?:\s|$)/i);
+
+  if (!match) {
+    return "";
+  }
+
+  const unit = match[1];
+
+  if (unit.toLowerCase() === "mpa") return "MPa";
+  if (unit.toLowerCase() === "l/min") return "L/min";
+  if (unit === "C°") return "°C";
+
+  return unit;
+}
+
+function labelWithUnit(label: string, unit: string) {
+  return unit ? label + " (" + unit + ")" : label;
+}
+
+function getMeasurementUnitForScale(
+  record: CalibrationRecord,
+  scale: CalibrationScale,
+  references: JsonObject[]
+) {
+  for (const reference of references) {
+    const unit = normalizeUnit(
+      textFromObject(reference, ["unit", "measurement_unit", "unita_misura", "unit_of_measure"])
+    );
+
+    if (unit) {
+      return unit;
+    }
+  }
+
+  const scaleUnit = inferUnitFromText(scale.scale_range);
+
+  if (scaleUnit) {
+    return scaleUnit;
+  }
+
+  if (isTemperature(record)) return "°C";
+  if (isMass(record)) return "kg";
+
+  return "";
+}
+
+function massPointLabel(scale: CalibrationScale, index: number) {
+  const name = String(scale.scale_name ?? "").toLowerCase();
+
+  if (name.includes("eccentric")) {
+    return ["Zona C", "Zona 3", "Zona 4", "Zona 1", "Zona 2"][index] || "Zona " + String(index + 1);
+  }
+
+  if (name.includes("ripet") || name.includes("linear")) {
+    return "Zona C";
+  }
+
+  return String(index + 1);
 }
 
 function DataCell({ label, value }: { label: string; value: unknown }) {
@@ -301,13 +398,18 @@ function hasAnyNumericValue(
 
 function GenericMeasurementsTable({
   record,
+  scale,
   measurements,
+  measurementUnit,
 }: {
   record: CalibrationRecord;
+  scale: CalibrationScale;
   measurements: CalibrationMeasurement[];
+  measurementUnit: string;
 }) {
   const pressure = isPressure(record);
-  const showThirdCycle = !pressure && hasAnyNumericValue(measurements, "cycle_3");
+  const flow = isFlow(record);
+  const showThirdCycle = !pressure && !flow && hasAnyNumericValue(measurements, "cycle_3");
   const showMaxColumn = hasAnyNumericValue(measurements, "max_value");
   const showMinColumn = hasAnyNumericValue(measurements, "min_value");
   const showAverageColumn = hasAnyNumericValue(measurements, "average_value");
@@ -330,17 +432,17 @@ function GenericMeasurementsTable({
         <tr className="bg-slate-700/65 text-slate-950">
           <th className="border border-slate-600 px-1 py-[1px]">Punto</th>
           <th className="border border-slate-600 px-1 py-[1px]">
-            {isMass(record) ? "Peso nominale" : isDimensional(record) ? "Valore nominale" : "Punto applicazione"}
+            {labelWithUnit(isMass(record) ? "Peso nominale" : isDimensional(record) ? "Valore nominale" : "Punto applicazione", measurementUnit)}
           </th>
-          <th className="border border-slate-600 px-1 py-[1px]">Lettura 1</th>
-          <th className="border border-slate-600 px-1 py-[1px]">Lettura 2</th>
+          <th className="border border-slate-600 px-1 py-[1px]">{labelWithUnit("Lettura 1", measurementUnit)}</th>
+          <th className="border border-slate-600 px-1 py-[1px]">{labelWithUnit("Lettura 2", measurementUnit)}</th>
           {showThirdCycle && (
-            <th className="border border-slate-600 px-1 py-[1px]">Lettura 3</th>
+            <th className="border border-slate-600 px-1 py-[1px]">{labelWithUnit("Lettura 3", measurementUnit)}</th>
           )}
-          {showMaxColumn && <th className="border border-slate-600 px-1 py-[1px]">Max</th>}
-          {showMinColumn && <th className="border border-slate-600 px-1 py-[1px]">Min</th>}
-          {showAverageColumn && <th className="border border-slate-600 px-1 py-[1px]">Media</th>}
-          {showMeanErrorColumn && <th className="border border-slate-600 px-1 py-[1px]">Errore medio</th>}
+          {showMaxColumn && <th className="border border-slate-600 px-1 py-[1px]">{labelWithUnit("Max", measurementUnit)}</th>}
+          {showMinColumn && <th className="border border-slate-600 px-1 py-[1px]">{labelWithUnit("Min", measurementUnit)}</th>}
+          {showAverageColumn && <th className="border border-slate-600 px-1 py-[1px]">{labelWithUnit("Media", measurementUnit)}</th>}
+          {showMeanErrorColumn && <th className="border border-slate-600 px-1 py-[1px]">{labelWithUnit("Errore medio", measurementUnit)}</th>}
           {showAccuracyColumn && <th className="border border-slate-600 px-1 py-[1px]">Errore %</th>}
           {showRepeatabilityColumn && <th className="border border-slate-600 px-1 py-[1px]">Ripet. %</th>}
           {showResultColumn && <th className="border border-slate-600 px-1 py-[1px]">Esito</th>}
@@ -349,7 +451,7 @@ function GenericMeasurementsTable({
       <tbody>
         {measurements.map((measurement, index) => (
           <tr key={measurement.id} className={index % 2 === 0 ? "bg-white/65" : "bg-slate-100/55"}>
-            <td className="border border-slate-300 px-1 py-[1px]">{textValue(measurement.point_order)}</td>
+            <td className="border border-slate-300 px-1 py-[1px]">{isMass(record) ? massPointLabel(scale, index) : textValue(measurement.point_order)}</td>
             <td className="border border-slate-300 px-1 py-[1px]">{formatNumber(measurement.applied_value ?? measurement.nominal_value)}</td>
             <td className="border border-slate-300 px-1 py-[1px]">{formatNumber(measurement.cycle_1)}</td>
             <td className="border border-slate-300 px-1 py-[1px]">{formatNumber(measurement.cycle_2)}</td>
@@ -512,6 +614,8 @@ function ScaleCompactBlock({
   measurements: CalibrationMeasurement[];
   references: JsonObject[];
 }) {
+  const measurementUnit = getMeasurementUnitForScale(record, scale, references);
+
   return (
     <div className="mt-2 break-inside-avoid">
       <table className="w-full border-collapse text-[7.3px]">
@@ -544,7 +648,12 @@ function ScaleCompactBlock({
         ) : isSclerometric(record) ? (
           <SclerometricTable measurements={measurements} />
         ) : (
-          <GenericMeasurementsTable record={record} measurements={measurements} />
+          <GenericMeasurementsTable
+            record={record}
+            scale={scale}
+            measurements={measurements}
+            measurementUnit={measurementUnit}
+          />
         )}
       </div>
     </div>
@@ -956,4 +1065,3 @@ const { data: recordData, error: recordError } = await supabase
     </AppShell>
   );
 }
-

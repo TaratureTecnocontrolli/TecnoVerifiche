@@ -83,7 +83,7 @@ type CalculatedFlowPoint = {
   setVolume: number;
   reading1: number;
   reading2: number;
-  reading3: number;
+  reading3: null;
   average: number;
   min: number;
   max: number;
@@ -269,6 +269,43 @@ function getRange(instrument: {
   return instrument.measurement_range || instrument.range || null;
 }
 
+
+function normalizeUnit(value: unknown) {
+  const unit = String(value ?? "").trim();
+
+  if (!unit || unit === "-") {
+    return "";
+  }
+
+  return unit;
+}
+
+function unitSuffix(unit: string) {
+  return unit ? " (" + unit + ")" : "";
+}
+
+function inferUnitFromText(value: unknown) {
+  const text = String(value ?? "").trim();
+
+  if (!text) {
+    return "";
+  }
+
+  const match = text.match(/\b(ml|mL|l|L|litri|litro|kg|g|kN|N|bar|MPa|°C|C)\b/);
+
+  if (!match) {
+    return "";
+  }
+
+  const unit = match[1];
+
+  if (unit.toLowerCase() === "litri" || unit.toLowerCase() === "litro") {
+    return "l";
+  }
+
+  return unit;
+}
+
 function buildReferenceInstrumentSnapshot(
   instrument: ReferenceInstrument | undefined
 ) {
@@ -321,7 +358,7 @@ function buildEditableScale(
       setVolume: numberToInputValue(measurement.applied_value),
       reading1: numberToInputValue(measurement.cycle_1),
       reading2: numberToInputValue(measurement.cycle_2),
-      reading3: numberToInputValue(measurement.cycle_3),
+      reading3: "",
       tolerancePercent: "",
       notes: measurement.notes || "",
     })),
@@ -333,8 +370,7 @@ function calculateFlowPoint(point: EditableFlowPoint): CalculatedFlowPoint {
   const setVolume = toNumber(point.setVolume);
   const reading1 = toNumber(point.reading1);
   const reading2 = toNumber(point.reading2);
-  const reading3 = toNumber(point.reading3);
-  const values = [reading1, reading2, reading3];
+  const values = [reading1, reading2];
 
   const average =
     values.length > 0
@@ -367,7 +403,7 @@ function calculateFlowPoint(point: EditableFlowPoint): CalculatedFlowPoint {
     setVolume,
     reading1,
     reading2,
-    reading3,
+    reading3: null,
     average,
     min,
     max,
@@ -437,6 +473,9 @@ export default function EditFlowMeasurementsForm({
   const selectedReferenceStatus = selectedReferenceInstrument
     ? effectiveStatus(selectedReferenceInstrument)
     : null;
+
+  const flowUnit =
+    normalizeUnit(selectedReferenceInstrument?.unit) || inferUnitFromText(scale.scaleRange) || "l";
 
   const hasBlockedReferenceInstrument =
     selectedReferenceStatus && isReferenceInstrumentBlocked(selectedReferenceStatus);
@@ -562,14 +601,13 @@ export default function EditFlowMeasurementsForm({
         point.nominalVolume.trim() === "" ||
         point.setVolume.trim() === "" ||
         point.reading1.trim() === "" ||
-        point.reading2.trim() === "" ||
-        point.reading3.trim() === ""
+        point.reading2.trim() === ""
       );
     });
 
     if (invalidPoint) {
       throw new Error(
-        "Compila volume nominale, volume impostato e le tre letture per tutti i punti."
+        "Compila volume nominale, volume impostato e le due letture per tutti i punti."
       );
     }
   }
@@ -693,7 +731,7 @@ export default function EditFlowMeasurementsForm({
           applied_value: calculatedPoint.setVolume,
           cycle_1: calculatedPoint.reading1,
           cycle_2: calculatedPoint.reading2,
-          cycle_3: calculatedPoint.reading3,
+          cycle_3: null,
           max_value: calculatedPoint.max,
           min_value: calculatedPoint.min,
           average_value: calculatedPoint.average,
@@ -954,23 +992,20 @@ export default function EditFlowMeasurementsForm({
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[1200px] text-sm">
+            <table className="w-full min-w-[1080px] text-sm">
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-4 py-3">Punto</th>
-                  <th className="px-4 py-3">Volume nominale l</th>
-                  <th className="px-4 py-3">Volume impostato l</th>
+                  <th className="px-4 py-3">Volume nominale{unitSuffix(flowUnit)}</th>
+                  <th className="px-4 py-3">Volume impostato{unitSuffix(flowUnit)}</th>
                   <th className="bg-amber-100 px-4 py-3 text-amber-900">
                     Lettura I
                   </th>
                   <th className="bg-amber-100 px-4 py-3 text-amber-900">
                     Lettura II
                   </th>
-                  <th className="bg-amber-100 px-4 py-3 text-amber-900">
-                    Lettura III
-                  </th>
-                  <th className="px-4 py-3">Media</th>
-                  <th className="px-4 py-3">Errore l</th>
+                  <th className="px-4 py-3">Media{unitSuffix(flowUnit)}</th>
+                  <th className="px-4 py-3">Errore{unitSuffix(flowUnit)}</th>
                   <th className="px-4 py-3">Errore %</th>
                   <th className="px-4 py-3">Ripetibilità %</th>
                   <th className="px-4 py-3">Toll. %</th>
@@ -1036,18 +1071,6 @@ export default function EditFlowMeasurementsForm({
                           value={editablePoint?.reading2 ?? ""}
                           onChange={(event) =>
                             updatePoint(point.id, "reading2", event.target.value)
-                          }
-                          className="w-24 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 font-semibold text-amber-950 focus:border-amber-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-200"
-                        />
-                      </td>
-
-                      <td className="bg-amber-50 px-4 py-3">
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          value={editablePoint?.reading3 ?? ""}
-                          onChange={(event) =>
-                            updatePoint(point.id, "reading3", event.target.value)
                           }
                           className="w-24 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 font-semibold text-amber-950 focus:border-amber-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-200"
                         />
@@ -1163,7 +1186,7 @@ export default function EditFlowMeasurementsForm({
           </h2>
           <p className="text-sm text-slate-500">
             I valori vengono salvati usando volume nominale, volume impostato,
-            tre letture, media, errore, errore percentuale e ripetibilità.
+            due letture, media, errore, errore percentuale e ripetibilità.
           </p>
         </div>
 

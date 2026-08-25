@@ -12,6 +12,8 @@ import ReferenceInstrumentMultiSelect, {
   isReferenceInstrumentBlocked,
 } from "@/components/ReferenceInstrumentMultiSelect";
 
+type VerificationScope = "VT" | "VI";
+
 type Customer = {
   id: string;
   customer_number?: string | null;
@@ -37,6 +39,23 @@ type CustomerInstrument = {
   notes?: string | null;
 };
 
+type InternalInstrument = {
+  id: string;
+  name: string;
+  manufacturer: string | null;
+  model: string | null;
+  serial_number: string | null;
+  internal_code: string | null;
+  measurement_quantity: string | null;
+  unit: string | null;
+  measurement_range: string | null;
+  location: string | null;
+  department: string | null;
+  status: string;
+  notes: string | null;
+  is_active: boolean;
+};
+
 type ReferenceInstrument = {
   id: string;
   name?: string | null;
@@ -56,14 +75,94 @@ type ReferenceInstrument = {
   status?: string | null;
 };
 
+type EditableTemperaturePoint = {
+  id: string;
+  date: string;
+  time: string;
+  measuredTemp: string;
+  referenceTemp: string;
+  notes: string;
+};
+
 type TemperatureVerificationStarterProps = {
+  verificationScope: VerificationScope;
   customers: Customer[];
   customerInstruments: CustomerInstrument[];
+  internalInstruments: InternalInstrument[];
   referenceInstruments: ReferenceInstrument[];
 };
 
 function todayInputDate() {
   return new Date().toISOString().slice(0, 10);
+}
+
+function nowInputTime() {
+  const now = new Date();
+  return String(now.getHours()).padStart(2, "0") + ":" + String(now.getMinutes()).padStart(2, "0");
+}
+
+function toNumber(value: string): number {
+  const normalized = value.trim().replace(/\s/g, "").replace(",", ".");
+
+  if (
+    normalized === "" ||
+    normalized === "-" ||
+    normalized === "," ||
+    normalized === "." ||
+    normalized === "-," ||
+    normalized === "-."
+  ) {
+    return 0;
+  }
+
+  const parsed = Number(normalized);
+
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function normalizeEuropeanDecimalInput(value: string) {
+  let normalized = value.replace(/\./g, ",");
+  normalized = normalized.replace(/[^\d,-]/g, "");
+  normalized = normalized.replace(/(?!^)-/g, "");
+
+  const hasMinus = normalized.startsWith("-");
+  const withoutMinus = normalized.replace(/-/g, "");
+  const parts = withoutMinus.split(",");
+
+  if (parts.length <= 1) {
+    return hasMinus ? "-" + withoutMinus : withoutMinus;
+  }
+
+  const result = parts[0] + "," + parts.slice(1).join("");
+
+  return hasMinus ? "-" + result : result;
+}
+
+function formatItalianNumber(value: number | null | undefined, digits = 2) {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return "-";
+  }
+
+  return new Intl.NumberFormat("it-IT", {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: digits,
+  }).format(value);
+}
+
+function emptyTemperaturePoint(): EditableTemperaturePoint {
+  return {
+    id: crypto.randomUUID(),
+    date: todayInputDate(),
+    time: nowInputTime(),
+    measuredTemp: "",
+    referenceTemp: "",
+    notes: "",
+  };
+}
+
+function joinTemperatureNotes(point: EditableTemperaturePoint): string | null {
+  const notes = point.notes.trim();
+  return "[" + point.date + " " + point.time + "]" + (notes ? " " + notes : "");
 }
 
 function formatItalianDate(date: string | null | undefined) {
@@ -140,6 +239,23 @@ function buildCustomerInstrumentSnapshot(
   };
 }
 
+function buildInternalInstrumentSnapshot(instrument: InternalInstrument) {
+  return {
+    internal_instrument_id: instrument.id,
+    instrument_name: instrument.name,
+    manufacturer: instrument.manufacturer ?? null,
+    model: instrument.model ?? null,
+    serial_number: instrument.serial_number ?? null,
+    internal_code: instrument.internal_code ?? null,
+    measurement_quantity: instrument.measurement_quantity ?? null,
+    unit: instrument.unit ?? null,
+    measurement_range: instrument.measurement_range ?? null,
+    location: instrument.location ?? null,
+    department: instrument.department ?? null,
+    notes: instrument.notes ?? null,
+  };
+}
+
 function buildReferenceInstrumentSnapshot(instrument: ReferenceInstrument) {
   return {
     id: instrument.id,
@@ -173,24 +289,33 @@ function buildProcedureSnapshot() {
 }
 
 export default function TemperatureVerificationStarter({
+  verificationScope,
   customers,
   customerInstruments,
+  internalInstruments,
   referenceInstruments,
 }: TemperatureVerificationStarterProps) {
   const router = useRouter();
+  const isInternalVerification = verificationScope === "VI";
 
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
   const [selectedCustomerInstrumentId, setSelectedCustomerInstrumentId] =
     useState("");
+  const [selectedInternalInstrumentId, setSelectedInternalInstrumentId] =
+    useState("");
   const [selectedReferenceInstrumentIds, setSelectedReferenceInstrumentIds] =
     useState<string[]>([]);
   const [verificationDate, setVerificationDate] = useState(todayInputDate());
-  const [location, setLocation] = useState("");
+  const location = "";
   const [operatorName, setOperatorName] = useState("");
   const [notes, setNotes] = useState("");
+  const [scaleNotes, setScaleNotes] = useState("");
+  const [points, setPoints] = useState<EditableTemperaturePoint[]>(() => [emptyTemperaturePoint()]);
 
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
+  const [saveMessage, setSaveMessage] = useState("");
+  const [savedRecordId, setSavedRecordId] = useState<string | null>(null);
 
   const selectedCustomer = useMemo(() => {
     return customers.find((customer) => customer.id === selectedCustomerId) ?? null;
@@ -213,6 +338,32 @@ export default function TemperatureVerificationStarter({
       ) ?? null
     );
   }, [customerInstruments, selectedCustomerInstrumentId]);
+
+  const selectedInternalInstrument = useMemo(() => {
+    return (
+      internalInstruments.find(
+        (instrument) => instrument.id === selectedInternalInstrumentId
+      ) ?? null
+    );
+  }, [internalInstruments, selectedInternalInstrumentId]);
+
+  const availableInternalInstruments = useMemo(() => {
+    const filtered = internalInstruments.filter((instrument) => {
+      const text = [
+        instrument.name,
+        instrument.measurement_quantity,
+        instrument.unit,
+        instrument.measurement_range,
+      ]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+
+      return (text.includes("temperatura") || text.includes("termometro") || text.includes("termostato") || text.includes("sonda") || text.includes("°c"));
+    });
+
+    return filtered.length > 0 ? filtered : internalInstruments;
+  }, [internalInstruments]);
 
   const temperatureReferenceInstruments = useMemo(() => {
     return referenceInstruments.filter((instrument) => {
@@ -266,6 +417,40 @@ export default function TemperatureVerificationStarter({
       )
   );
 
+  function resetSaveState() {
+    setSaveError("");
+    setSaveMessage("");
+    setSavedRecordId(null);
+  }
+
+  function updatePoint(
+    pointId: string,
+    field: keyof EditableTemperaturePoint,
+    value: string
+  ) {
+    const normalizedValue =
+      field === "measuredTemp" || field === "referenceTemp"
+        ? normalizeEuropeanDecimalInput(value)
+        : value;
+
+    resetSaveState();
+    setPoints((current) =>
+      current.map((point) =>
+        point.id === pointId ? { ...point, [field]: normalizedValue } : point
+      )
+    );
+  }
+
+  function addPoint() {
+    resetSaveState();
+    setPoints((current) => [...current, emptyTemperaturePoint()]);
+  }
+
+  function removePoint(pointId: string) {
+    resetSaveState();
+    setPoints((current) => current.filter((point) => point.id !== pointId));
+  }
+
   async function createVerification(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -273,18 +458,28 @@ export default function TemperatureVerificationStarter({
     setSaveError("");
 
     try {
-      if (!selectedCustomer) {
-        throw new Error("Seleziona il cliente.");
-      }
+      if (isInternalVerification) {
+        if (!selectedInternalInstrument) {
+          throw new Error("Seleziona lo strumento interno da verificare.");
+        }
 
-      if (!selectedCustomerInstrument) {
-        throw new Error("Seleziona lo strumento cliente da verificare.");
+        if (selectedInternalInstrument.status !== "active") {
+          throw new Error(
+            "Lo strumento interno selezionato non è attivo. Seleziona uno strumento attivo."
+          );
+        }
+      } else {
+        if (!selectedCustomer) {
+          throw new Error("Seleziona il cliente.");
+        }
+
+        if (!selectedCustomerInstrument) {
+          throw new Error("Seleziona lo strumento cliente da verificare.");
+        }
       }
 
       if (selectedReferenceInstruments.length === 0) {
-        throw new Error(
-          "Seleziona almeno un termometro/termostato di riferimento da utilizzare."
-        );
+        throw new Error("Seleziona almeno uno strumento campione da utilizzare.");
       }
 
       if (hasBlockedReferenceInstrument) {
@@ -297,10 +492,63 @@ export default function TemperatureVerificationStarter({
         throw new Error("Inserisci la data della verifica.");
       }
 
-      const customerSnapshot = buildCustomerInstrumentSnapshot(
-        selectedCustomerInstrument,
-        selectedCustomer
-      );
+      if (points.length === 0) {
+        throw new Error("Inserisci almeno una rilevazione di temperatura.");
+      }
+
+      const invalidPoint = points.find((point) => {
+        return (
+          !point.date ||
+          !point.time ||
+          point.measuredTemp.trim() === "" ||
+          point.referenceTemp.trim() === ""
+        );
+      });
+
+      if (invalidPoint) {
+        throw new Error("Compila data, orario, temperatura misurata e temperatura di riferimento per tutte le righe.");
+      }
+
+      let instrumentSnapshot:
+        | ReturnType<typeof buildCustomerInstrumentSnapshot>
+        | ReturnType<typeof buildInternalInstrumentSnapshot>;
+      let customerName: string | null = null;
+      let customerNumber: string | null | undefined = null;
+      let instrumentName = "";
+      let instrumentManufacturer: string | null | undefined = null;
+      let instrumentModel: string | null | undefined = null;
+      let instrumentSerial: string | null | undefined = null;
+      let instrumentRange: string | null | undefined = null;
+
+      if (isInternalVerification) {
+        if (!selectedInternalInstrument) {
+          throw new Error("Seleziona lo strumento interno da verificare.");
+        }
+
+        instrumentSnapshot = buildInternalInstrumentSnapshot(selectedInternalInstrument);
+        customerName = "Verifica interna";
+        instrumentName = selectedInternalInstrument.name;
+        instrumentManufacturer = selectedInternalInstrument.manufacturer;
+        instrumentModel = selectedInternalInstrument.model;
+        instrumentSerial = selectedInternalInstrument.serial_number;
+        instrumentRange = selectedInternalInstrument.measurement_range;
+      } else {
+        if (!selectedCustomer || !selectedCustomerInstrument) {
+          throw new Error("Dati cliente/strumento incompleti.");
+        }
+
+        instrumentSnapshot = buildCustomerInstrumentSnapshot(
+          selectedCustomerInstrument,
+          selectedCustomer
+        );
+        customerName = getCustomerName(selectedCustomer);
+        customerNumber = selectedCustomer.customer_number;
+        instrumentName = getCustomerInstrumentName(selectedCustomerInstrument);
+        instrumentManufacturer = selectedCustomerInstrument.manufacturer;
+        instrumentModel = selectedCustomerInstrument.model;
+        instrumentSerial = selectedCustomerInstrument.serial_number;
+        instrumentRange = getRange(selectedCustomerInstrument);
+      }
 
       const referenceSnapshots = selectedReferenceInstruments.map(
         buildReferenceInstrumentSnapshot
@@ -310,23 +558,42 @@ export default function TemperatureVerificationStarter({
 
       const procedureSnapshot = buildProcedureSnapshot();
 
+      const { data: calibrationType } = await supabase
+        .from("calibration_types")
+        .select("id")
+        .eq("code", "TEMPERATURE")
+        .maybeSingle();
+
       const { data: insertedRecord, error: insertError } = await supabase
         .from("calibration_records")
         .insert({
           record_number: null,
+          calibration_type_id: calibrationType?.id ?? null,
           mode: "temperatura",
           verification_module: "TEMPERATURE",
           verification_date: verificationDate,
           operator_name: operatorName.trim() || null,
-          location: location.trim() || null,
+          location: null,
           environmental_conditions: null,
           status: "draft",
           report_status: "draft",
           final_result: null,
           notes: notes.trim() || null,
-          customer_instrument_snapshot: customerSnapshot,
+          customer_instrument_id: isInternalVerification
+            ? null
+            : selectedCustomerInstrument?.id ?? null,
+          internal_instrument_id: isInternalVerification
+            ? selectedInternalInstrument?.id ?? null
+            : null,
+          reference_instrument_id: primaryReference.id,
+          customer_instrument_snapshot: instrumentSnapshot,
           reference_instrument_snapshot: primaryReferenceSnapshot,
           procedure_snapshot: procedureSnapshot,
+          verification_scope: verificationScope,
+          verified_instrument_type: isInternalVerification ? "internal" : "customer",
+          output_type: isInternalVerification ? "technical_report" : "final_report",
+          acquisition_mode: "manual",
+          source_device: null,
         })
         .select("id")
         .single();
@@ -337,21 +604,19 @@ export default function TemperatureVerificationStarter({
         );
       }
 
-      const customerName = getCustomerName(selectedCustomer);
-      const instrumentName = getCustomerInstrumentName(selectedCustomerInstrument);
       const referenceName =
         selectedReferenceInstruments.length > 1
           ? combineReferenceInstrumentNames(selectedReferenceInstruments)
           : primaryReference.name || "Termometro di riferimento";
 
       const reportDefaults = getTemperatureReportDefaults({
-        customerName,
-        customerNumber: selectedCustomer.customer_number,
+        customerName: customerName || "Verifica interna",
+        customerNumber,
         instrumentName,
-        instrumentManufacturer: selectedCustomerInstrument.manufacturer,
-        instrumentModel: selectedCustomerInstrument.model,
-        instrumentSerial: selectedCustomerInstrument.serial_number,
-        instrumentRange: getRange(selectedCustomerInstrument),
+        instrumentManufacturer,
+        instrumentModel,
+        instrumentSerial,
+        instrumentRange,
         referenceName,
         referenceManufacturer:
           selectedReferenceInstruments.length === 1
@@ -367,7 +632,7 @@ export default function TemperatureVerificationStarter({
           selectedReferenceInstruments.length === 1
             ? primaryReference.internal_code
             : null,
-        location,
+        location: "",
         testDate: verificationDate,
       });
 
@@ -382,9 +647,13 @@ export default function TemperatureVerificationStarter({
           report_date: null,
           test_date: verificationDate,
           customer_name: customerName,
-          site_description: location.trim() || null,
-          work_object: reportDefaults.work_object,
-          requested_tests: reportDefaults.requested_tests,
+          site_description: null,
+          work_object: isInternalVerification
+            ? "Verifica interna di " + instrumentName
+            : reportDefaults.work_object,
+          requested_tests: isInternalVerification
+            ? "Verifica interna temperatura."
+            : reportDefaults.requested_tests,
           premise_text: reportDefaults.premise_text,
           scope_text: reportDefaults.scope_text,
           apparatus_description: reportDefaults.apparatus_description,
@@ -403,30 +672,69 @@ export default function TemperatureVerificationStarter({
         throw new Error(reportDetailsError.message);
       }
 
-      const { error: scaleError } = await supabase
+      const { data: insertedScale, error: scaleError } = await supabase
         .from("calibration_record_scales")
         .insert({
           calibration_record_id: insertedRecord.id,
           scale_order: 1,
           scale_name: "Temperatura",
-          scale_range:
-            getRange(selectedCustomerInstrument) ||
-            getRange(primaryReference) ||
-            null,
+          scale_range: instrumentRange || getRange(primaryReference) || null,
           reference_instrument_id: primaryReference.id,
           reference_instrument_snapshot: primaryReferenceSnapshot,
           reference_instrument_ids: selectedReferenceInstruments.map(
             (instrument) => instrument.id
           ),
           reference_instruments_snapshot: referenceSnapshots,
-          notes: null,
-        });
+          notes: scaleNotes.trim() || null,
+        })
+        .select("id")
+        .single();
 
-      if (scaleError) {
-        throw new Error(scaleError.message);
+      if (scaleError || !insertedScale) {
+        throw new Error(scaleError?.message || "Errore durante il salvataggio della scala.");
       }
 
-      router.push(`/verifiche/${insertedRecord.id}/misure-temperatura`);
+      const sortedPoints = [...points].sort((a, b) => {
+        const aKey = a.date + " " + a.time;
+        const bKey = b.date + " " + b.time;
+        return aKey.localeCompare(bKey);
+      });
+
+      const measurementRows = sortedPoints.map((point, pointIndex) => {
+        const measuredTemp = toNumber(point.measuredTemp);
+        const referenceTemp = toNumber(point.referenceTemp);
+
+        return {
+          calibration_record_id: insertedRecord.id,
+          scale_id: insertedScale.id,
+          section: "Temperatura",
+          point_order: pointIndex + 1,
+          nominal_value: null,
+          applied_value: null,
+          cycle_1: measuredTemp,
+          cycle_2: referenceTemp,
+          cycle_3: null,
+          max_value: null,
+          min_value: null,
+          average_value: null,
+          mean_error: measuredTemp - referenceTemp,
+          accuracy_error_percent: null,
+          repeatability_error_percent: null,
+          result: null,
+          notes: joinTemperatureNotes(point),
+        };
+      });
+
+      const { error: measurementError } = await supabase
+        .from("calibration_measurements")
+        .insert(measurementRows);
+
+      if (measurementError) {
+        throw new Error(measurementError.message || "Errore durante il salvataggio delle rilevazioni.");
+      }
+
+      setSavedRecordId(insertedRecord.id);
+      setSaveMessage("Verifica temperatura salvata correttamente.");
       router.refresh();
     } catch (error) {
       const message =
@@ -448,60 +756,90 @@ export default function TemperatureVerificationStarter({
         </h2>
 
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">
-              Cliente *
-            </span>
-            <select
-              value={selectedCustomerId}
-              onChange={(event) => {
-                setSelectedCustomerId(event.target.value);
-                setSelectedCustomerInstrumentId("");
-                setSaveError("");
-              }}
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
-            >
-              <option value="">Seleziona cliente</option>
-              {customers.map((customer) => (
-                <option key={customer.id} value={customer.id}>
-                  {customer.customer_number ? customer.customer_number + " - " : ""}
-                  {getCustomerName(customer)}
-                </option>
-              ))}
-            </select>
-          </label>
+          {isInternalVerification ? (
+            <label className="space-y-1 xl:col-span-2">
+              <span className="text-sm font-medium text-slate-700">
+                Strumento interno da verificare *
+              </span>
+              <select
+                value={selectedInternalInstrumentId}
+                onChange={(event) => {
+                  setSelectedInternalInstrumentId(event.target.value);
+                  setSaveError("");
+                }}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+              >
+                <option value="">Seleziona strumento interno</option>
+                {availableInternalInstruments.map((instrument) => (
+                  <option key={instrument.id} value={instrument.id}>
+                    {instrument.internal_code ? instrument.internal_code + " - " : ""}
+                    {instrument.name}
+                    {instrument.model ? " - " + instrument.model : ""}
+                    {instrument.serial_number
+                      ? " - Matr. " + instrument.serial_number
+                      : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <>
+              <label className="space-y-1">
+                <span className="text-sm font-medium text-slate-700">
+                  Cliente *
+                </span>
+                <select
+                  value={selectedCustomerId}
+                  onChange={(event) => {
+                    setSelectedCustomerId(event.target.value);
+                    setSelectedCustomerInstrumentId("");
+                    setSaveError("");
+                  }}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+                >
+                  <option value="">Seleziona cliente</option>
+                  {customers.map((customer) => (
+                    <option key={customer.id} value={customer.id}>
+                      {customer.customer_number ? customer.customer_number + " - " : ""}
+                      {getCustomerName(customer)}
+                    </option>
+                  ))}
+                </select>
+              </label>
 
-          <label className="space-y-1 xl:col-span-2">
-            <span className="text-sm font-medium text-slate-700">
-              Strumento cliente da verificare *
-            </span>
-            <select
-              value={selectedCustomerInstrumentId}
-              onChange={(event) => {
-                setSelectedCustomerInstrumentId(event.target.value);
-                setSaveError("");
-              }}
-              disabled={!selectedCustomerId}
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100"
-            >
-              <option value="">
-                {selectedCustomerId
-                  ? "Seleziona strumento cliente"
-                  : "Seleziona prima un cliente"}
-              </option>
+              <label className="space-y-1 xl:col-span-2">
+                <span className="text-sm font-medium text-slate-700">
+                  Strumento cliente da verificare *
+                </span>
+                <select
+                  value={selectedCustomerInstrumentId}
+                  onChange={(event) => {
+                    setSelectedCustomerInstrumentId(event.target.value);
+                    setSaveError("");
+                  }}
+                  disabled={!selectedCustomerId}
+                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100"
+                >
+                  <option value="">
+                    {selectedCustomerId
+                      ? "Seleziona strumento cliente"
+                      : "Seleziona prima un cliente"}
+                  </option>
 
-              {filteredCustomerInstruments.map((instrument) => (
-                <option key={instrument.id} value={instrument.id}>
-                  {instrument.internal_code ? instrument.internal_code + " - " : ""}
-                  {getCustomerInstrumentName(instrument)}
-                  {instrument.model ? " - " + instrument.model : ""}
-                  {instrument.serial_number
-                    ? " - Matr. " + instrument.serial_number
-                    : ""}
-                </option>
-              ))}
-            </select>
-          </label>
+                  {filteredCustomerInstruments.map((instrument) => (
+                    <option key={instrument.id} value={instrument.id}>
+                      {instrument.internal_code ? instrument.internal_code + " - " : ""}
+                      {getCustomerInstrumentName(instrument)}
+                      {instrument.model ? " - " + instrument.model : ""}
+                      {instrument.serial_number
+                        ? " - Matr. " + instrument.serial_number
+                        : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
+          )}
 
           <label className="space-y-1">
             <span className="text-sm font-medium text-slate-700">
@@ -517,23 +855,14 @@ export default function TemperatureVerificationStarter({
 
           <label className="space-y-1">
             <span className="text-sm font-medium text-slate-700">
-              Luogo verifica
-            </span>
-            <input
-              value={location}
-              onChange={(event) => setLocation(event.target.value)}
-              placeholder="Ambiente / locale oggetto del monitoraggio"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
-          </label>
-
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">
               Operatore
             </span>
             <input
               value={operatorName}
-              onChange={(event) => setOperatorName(event.target.value)}
+              onChange={(event) => {
+                setOperatorName(event.target.value);
+                resetSaveState();
+              }}
               placeholder="Nome tecnico / operatore"
               className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
             />
@@ -561,7 +890,7 @@ export default function TemperatureVerificationStarter({
         </label>
       </section>
 
-      {selectedCustomerInstrument && (
+      {!isInternalVerification && selectedCustomerInstrument && (
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="text-lg font-semibold text-slate-900">
             Anteprima strumento cliente
@@ -606,6 +935,55 @@ export default function TemperatureVerificationStarter({
               <p className="font-semibold text-slate-700">Risoluzione</p>
               <p className="text-slate-600">
                 {selectedCustomerInstrument.resolution ?? "-"}
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
+
+      {isInternalVerification && selectedInternalInstrument && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-semibold text-slate-900">
+            Anteprima strumento interno
+          </h2>
+
+          <div className="mt-4 grid gap-4 text-sm md:grid-cols-3">
+            <div>
+              <p className="font-semibold text-slate-700">Strumento</p>
+              <p className="text-slate-600">{selectedInternalInstrument.name}</p>
+            </div>
+            <div>
+              <p className="font-semibold text-slate-700">Costruttore / modello</p>
+              <p className="text-slate-600">
+                {[selectedInternalInstrument.manufacturer, selectedInternalInstrument.model]
+                  .filter(Boolean)
+                  .join(" - ") || "-"}
+              </p>
+            </div>
+            <div>
+              <p className="font-semibold text-slate-700">Matricola</p>
+              <p className="text-slate-600">
+                {selectedInternalInstrument.serial_number ?? "-"}
+              </p>
+            </div>
+            <div>
+              <p className="font-semibold text-slate-700">Codice interno</p>
+              <p className="text-slate-600">
+                {selectedInternalInstrument.internal_code ?? "-"}
+              </p>
+            </div>
+            <div>
+              <p className="font-semibold text-slate-700">Grandezza / unità</p>
+              <p className="text-slate-600">
+                {[selectedInternalInstrument.measurement_quantity, selectedInternalInstrument.unit]
+                  .filter(Boolean)
+                  .join(" / ") || "-"}
+              </p>
+            </div>
+            <div>
+              <p className="font-semibold text-slate-700">Campo</p>
+              <p className="text-slate-600">
+                {selectedInternalInstrument.measurement_range ?? "-"}
               </p>
             </div>
           </div>
@@ -701,6 +1079,98 @@ export default function TemperatureVerificationStarter({
         </section>
       )}
 
+      <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+        <div className="border-b border-slate-200 p-5">
+          <h2 className="text-lg font-semibold text-slate-900">
+            Dati tecnici temperatura
+          </h2>
+          <p className="text-sm text-slate-500">
+            Inserisci subito le rilevazioni, senza passare da una seconda pagina.
+          </p>
+
+          <label className="mt-4 block space-y-1">
+            <span className="text-sm font-medium text-slate-700">Note tecniche comuni</span>
+            <input
+              value={scaleNotes}
+              onChange={(event) => {
+                setScaleNotes(event.target.value);
+                resetSaveState();
+              }}
+              placeholder="Eventuali note"
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+            />
+          </label>
+        </div>
+
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[900px] text-sm">
+            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+              <tr>
+                <th className="px-4 py-3">Data</th>
+                <th className="px-4 py-3">Orario</th>
+                <th className="bg-amber-100 px-4 py-3 text-amber-900">Temperatura misurata (°C)</th>
+                <th className="bg-amber-100 px-4 py-3 text-amber-900">Temperatura riferimento (°C)</th>
+                <th className="px-4 py-3">Scostamento (°C)</th>
+                <th className="px-4 py-3">Note</th>
+                <th className="px-4 py-3"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100">
+              {points.map((point) => {
+                const deviation = point.measuredTemp.trim() !== "" && point.referenceTemp.trim() !== ""
+                  ? toNumber(point.measuredTemp) - toNumber(point.referenceTemp)
+                  : null;
+
+                return (
+                  <tr key={point.id} className="hover:bg-slate-50">
+                    <td className="px-4 py-3">
+                      <input type="date" value={point.date} onChange={(event) => updatePoint(point.id, "date", event.target.value)} className="rounded-lg border border-slate-300 px-2 py-1" />
+                    </td>
+                    <td className="px-4 py-3">
+                      <input type="time" value={point.time} onChange={(event) => updatePoint(point.id, "time", event.target.value)} className="rounded-lg border border-slate-300 px-2 py-1" />
+                    </td>
+                    <td className="bg-amber-50 px-4 py-3">
+                      <input type="text" inputMode="decimal" value={point.measuredTemp} onChange={(event) => updatePoint(point.id, "measuredTemp", event.target.value)} className="w-24 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 font-semibold text-amber-950" />
+                    </td>
+                    <td className="bg-amber-50 px-4 py-3">
+                      <input type="text" inputMode="decimal" value={point.referenceTemp} onChange={(event) => updatePoint(point.id, "referenceTemp", event.target.value)} className="w-24 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 font-semibold text-amber-950" />
+                    </td>
+                    <td className="px-4 py-3 font-semibold">{formatItalianNumber(deviation)}</td>
+                    <td className="px-4 py-3">
+                      <input value={point.notes} onChange={(event) => updatePoint(point.id, "notes", event.target.value)} className="w-52 rounded-lg border border-slate-300 px-2 py-1" />
+                    </td>
+                    <td className="px-4 py-3">
+                      <button type="button" onClick={() => removePoint(point.id)} className="rounded-lg px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50">Elimina</button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        <div className="border-t border-slate-200 p-5">
+          <div className="flex justify-end">
+            <button type="button" onClick={addPoint} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Aggiungi rilevazione</button>
+          </div>
+        </div>
+      </section>
+
+      {saveMessage && (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-900">
+          <div className="font-semibold">{saveMessage}</div>
+          {savedRecordId && (
+            <button
+              type="button"
+              onClick={() => router.push(`/verifiche/${savedRecordId}/misure-temperatura`)}
+              className="mt-3 rounded-xl bg-emerald-700 px-4 py-2 text-sm font-semibold text-white hover:bg-emerald-600"
+            >
+              Apri verifica salvata
+            </button>
+          )}
+        </div>
+      )}
+
       {saveError && (
         <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-900">
           {saveError}
@@ -721,7 +1191,7 @@ export default function TemperatureVerificationStarter({
           disabled={isSaving}
           className="rounded-xl bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-700 disabled:cursor-not-allowed disabled:bg-slate-400"
         >
-          {isSaving ? "Creazione..." : "Crea verifica temperatura"}
+          {isSaving ? "Salvataggio..." : "Salva verifica temperatura"}
         </button>
       </div>
     </form>

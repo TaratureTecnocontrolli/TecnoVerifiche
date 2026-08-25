@@ -1,5 +1,5 @@
-import Link from "next/link";
 import AppShell from "@/components/AppShell";
+import NewVerificationHeader from "@/components/NewVerificationHeader";
 import MassVerificationStarter from "@/components/MassVerificationStarter";
 import { supabase } from "@/lib/supabase";
 
@@ -157,53 +157,13 @@ export default async function NewMassVerificationPage({
   return (
     <AppShell>
       <div className="space-y-6">
-        <div>
-          <Link
-            href="/nuova-verifica"
-            className="text-sm font-medium text-slate-500 hover:text-slate-950"
-          >
-            ← Torna alla scelta modulo
-          </Link>
-
-          <div className="mt-3 flex flex-col justify-between gap-4 lg:flex-row lg:items-start">
-            <div>
-              <div
-                className={
-                  "inline-flex rounded-b-xl px-4 py-1 text-xs font-semibold uppercase tracking-wide text-white " +
-                  (verificationScope === "VI" ? "bg-sky-700" : "bg-emerald-700")
-                }
-              >
-                {scopeLabel(verificationScope)}
-              </div>
-
-              <h1 className="mt-5 text-3xl font-bold text-slate-950">
-                Nuova verifica massa / bilance
-              </h1>
-
-              <p className="mt-2 max-w-3xl text-slate-600">
-                {scopeDescription(verificationScope)}
-              </p>
-            </div>
-
-            <div
-              className={
-                "rounded-2xl border px-4 py-3 text-sm " +
-                (verificationScope === "VI"
-                  ? "border-sky-200 bg-sky-50 text-sky-900"
-                  : "border-emerald-200 bg-emerald-50 text-emerald-900")
-              }
-            >
-              <p className="font-semibold">
-                Processo selezionato: {verificationScope}
-              </p>
-              <p className="mt-1">
-                {verificationScope === "VI"
-                  ? "Strumento interno + rapportino tecnico"
-                  : "Cliente + rapporto finale"}
-              </p>
-            </div>
-          </div>
-        </div>
+        <NewVerificationHeader
+          title="Nuova verifica bilance / massa"
+          description={scopeDescription(verificationScope)}
+          verificationScope={verificationScope}
+          basePath="/nuova-verifica/massa"
+          showScopeSwitch
+        />
 
         {(customersError ||
           customerInstrumentsError ||

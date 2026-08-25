@@ -94,6 +94,7 @@ type MassSection = {
   description: string;
   scaleName: string;
   scaleRange: string;
+  unit: "kg" | "g";
   notes: string;
   points: EditableWeightPoint[];
 };
@@ -377,6 +378,7 @@ function makeSection(
     description,
     scaleName: title,
     scaleRange: "",
+    unit: "kg",
     notes: "",
     points: Array.from({ length: defaultPointCount }, emptyPoint),
   };
@@ -457,6 +459,19 @@ function DataPreview({
   );
 }
 
+
+function massPointLabel(sectionKey: MassSectionKey, index: number) {
+  if (sectionKey === "eccentricity") {
+    return ECCENTRICITY_ZONE_LABELS[index] || "Zona " + String(index + 1);
+  }
+
+  if (sectionKey === "repeatability" || sectionKey === "linearity") {
+    return "Zona C";
+  }
+
+  return "Punto " + String(index + 1);
+}
+
 export default function MassVerificationStarter({
   verificationScope,
   customers = [],
@@ -474,7 +489,7 @@ export default function MassVerificationStarter({
   const [selectedReferenceInstrumentIds, setSelectedReferenceInstrumentIds] =
     useState<string[]>([]);
   const [verificationDate, setVerificationDate] = useState(todayInputDate());
-  const [location, setLocation] = useState("");
+  const location = "";
   const [operatorName, setOperatorName] = useState("");
   const [ambientTemperature, setAmbientTemperature] = useState("");
   const [ambientHumidity, setAmbientHumidity] = useState("");
@@ -672,7 +687,7 @@ export default function MassVerificationStarter({
 
   function updateSectionField(
     sectionKey: MassSectionKey,
-    field: "scaleName" | "scaleRange" | "notes",
+    field: "scaleName" | "scaleRange" | "unit" | "notes",
     value: string
   ) {
     resetSaveState();
@@ -681,7 +696,7 @@ export default function MassVerificationStarter({
       ...current,
       [sectionKey]: {
         ...current[sectionKey],
-        [field]: value,
+        [field]: field === "unit" ? (value === "g" ? "g" : "kg") : value,
       },
     }));
   }
@@ -775,10 +790,6 @@ export default function MassVerificationStarter({
       if (!selectedCustomerInstrument) {
         throw new Error("Seleziona lo strumento cliente da verificare.");
       }
-    }
-
-    if (!location.trim()) {
-      throw new Error("Inserisci il luogo della verifica.");
     }
 
     if (!verificationDate) {
@@ -898,7 +909,7 @@ export default function MassVerificationStarter({
           verification_module: "MASS",
           verification_date: verificationDate,
           operator_name: operatorName.trim() || null,
-          location: location.trim() || null,
+          location: null,
           environmental_conditions:
             ambientTemperature.trim() || ambientHumidity.trim()
               ? [
@@ -971,7 +982,7 @@ export default function MassVerificationStarter({
           selectedReferenceInstruments.length === 1
             ? primaryReference.internal_code
             : null,
-        location: location.trim(),
+        location: "",
         testDate: verificationDate,
       });
 
@@ -986,7 +997,7 @@ export default function MassVerificationStarter({
           report_date: null,
           test_date: verificationDate,
           customer_name: customerName,
-          site_description: location.trim() || null,
+          site_description: null,
           work_object: isInternalVerification
             ? "Verifica interna di " + instrumentName
             : reportDefaults.work_object,
@@ -1135,7 +1146,7 @@ export default function MassVerificationStarter({
             </div>
           </div>
 
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
+          <div className="mt-5 grid gap-4 md:grid-cols-3">
             <label className="space-y-1">
               <span className="text-sm font-medium text-slate-700">
                 Nome prova *
@@ -1158,9 +1169,25 @@ export default function MassVerificationStarter({
                 onChange={(event) =>
                   updateSectionField(section.key, "scaleRange", event.target.value)
                 }
-                placeholder="Es. 0 - 30 kg"
+                placeholder={"Es. 0 - 30 " + section.unit}
                 className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
               />
+            </label>
+
+            <label className="space-y-1">
+              <span className="text-sm font-medium text-slate-700">
+                Unità scala
+              </span>
+              <select
+                value={section.unit}
+                onChange={(event) =>
+                  updateSectionField(section.key, "unit", event.target.value)
+                }
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+              >
+                <option value="kg">kg</option>
+                <option value="g">g</option>
+              </select>
             </label>
           </div>
 
@@ -1205,20 +1232,20 @@ export default function MassVerificationStarter({
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-3">
-                  {section.key === "eccentricity" ? "Zona" : "Punto"}
+                  {section.key === "eccentricity" || section.key === "repeatability" || section.key === "linearity" ? "Zona" : "Punto"}
                 </th>
-                <th className="px-4 py-3">Peso nominale</th>
+                <th className="px-4 py-3">Peso nominale ({section.unit})</th>
                 <th className="bg-amber-100 px-4 py-3 text-amber-900">
-                  Ciclo 1
+                  Ciclo 1 ({section.unit})
                 </th>
                 <th className="bg-slate-100 px-4 py-3 text-slate-900">
-                  Ciclo 2
+                  Ciclo 2 ({section.unit})
                 </th>
                 <th className="bg-amber-100 px-4 py-3 text-amber-900">
-                  Ciclo 3
+                  Ciclo 3 ({section.unit})
                 </th>
-                <th className="px-4 py-3">Media</th>
-                <th className="px-4 py-3">Errore</th>
+                <th className="px-4 py-3">Media ({section.unit})</th>
+                <th className="px-4 py-3">Errore ({section.unit})</th>
                 {section.key === "linearity" && (
                   <th className="px-4 py-3">Errore %</th>
                 )}
@@ -1230,10 +1257,7 @@ export default function MassVerificationStarter({
             <tbody className="divide-y divide-slate-100">
               {section.points.map((point, index) => {
                 const calculatedPoint = calculatedPoints[index];
-                const label =
-                  section.key === "eccentricity"
-                    ? ECCENTRICITY_ZONE_LABELS[index] || "Zona " + String(index + 1)
-                    : String(index + 1);
+                const label = massPointLabel(section.key, index);
 
                 return (
                   <tr key={point.id} className="hover:bg-slate-50">
@@ -1367,7 +1391,7 @@ export default function MassVerificationStarter({
                   : section.key === "eccentricity"
                     ? ECCENTRICITY_ZONE_LABELS[index] ||
                       "Zona " + String(index + 1)
-                    : "Punto " + String(index + 1),
+                    : massPointLabel(section.key, index),
               value:
                 section.key === "linearity"
                   ? point.errorPercent
@@ -1398,21 +1422,6 @@ export default function MassVerificationStarter({
                 setVerificationDate(event.target.value);
                 resetSaveState();
               }}
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
-          </label>
-
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">
-              Luogo verifica *
-            </span>
-            <input
-              value={location}
-              onChange={(event) => {
-                setLocation(event.target.value);
-                resetSaveState();
-              }}
-              placeholder="Laboratorio / sede verifica"
               className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
             />
           </label>

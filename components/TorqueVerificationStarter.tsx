@@ -679,6 +679,13 @@ export default function TorqueVerificationStarter({
     );
   }, [referenceInstruments, selectedReferenceInstrumentIds]);
 
+  const torqueUnit =
+    selectedCustomerInstrument?.unit ||
+    selectedInternalInstrument?.unit ||
+    selectedReferenceInstruments[0]?.unit ||
+    "Nm";
+  const torqueUnitLabel = torqueUnit ? " (" + torqueUnit + ")" : "";
+
   const hasBlockedReferenceInstrument = selectedReferenceInstruments.some(
     (instrument) =>
       isReferenceInstrumentBlocked(
@@ -1730,20 +1737,20 @@ function resetSaveState() {
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-3">Punto</th>
-                <th className="px-4 py-3">Punto di applicazione Nm</th>
+                <th className="px-4 py-3">Punto di applicazione{torqueUnitLabel}</th>
                 <th className="bg-amber-100 px-4 py-3 text-amber-900">
-                  Ciclo 1
+                  Ciclo 1{torqueUnitLabel}
                 </th>
                 <th className="bg-amber-100 px-4 py-3 text-amber-900">
-                  Ciclo 2
+                  Ciclo 2{torqueUnitLabel}
                 </th>
                 <th className="bg-amber-100 px-4 py-3 text-amber-900">
-                  Ciclo 3
+                  Ciclo 3{torqueUnitLabel}
                 </th>
-                <th className="px-4 py-3">Max</th>
-                <th className="px-4 py-3">Min</th>
-                <th className="px-4 py-3">Media</th>
-                <th className="px-4 py-3">Errore medio</th>
+                <th className="px-4 py-3">Max{torqueUnitLabel}</th>
+                <th className="px-4 py-3">Min{torqueUnitLabel}</th>
+                <th className="px-4 py-3">Media{torqueUnitLabel}</th>
+                <th className="px-4 py-3">Errore medio{torqueUnitLabel}</th>
                 <th className="px-4 py-3">Errore acc. %</th>
                 <th className="px-4 py-3">Ripetibilità %</th>
                 <th className="px-4 py-3"></th>

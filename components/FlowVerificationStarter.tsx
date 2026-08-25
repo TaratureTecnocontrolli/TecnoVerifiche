@@ -102,7 +102,7 @@ type CalculatedFlowPoint = {
   applicationPoint: number;
   cycle1: number;
   cycle2: number;
-  cycle3: number;
+  cycle3: null;
   average: number;
   min: number;
   max: number;
@@ -408,8 +408,7 @@ function calculateFlowPoint(point: EditableFlowPoint): CalculatedFlowPoint {
   const applicationPoint = toNumber(point.applicationPoint);
   const cycle1 = toNumber(point.cycle1);
   const cycle2 = toNumber(point.cycle2);
-  const cycle3 = toNumber(point.cycle3);
-  const values = [cycle1, cycle2, cycle3];
+  const values = [cycle1, cycle2];
 
   const average =
     values.length > 0
@@ -430,7 +429,7 @@ function calculateFlowPoint(point: EditableFlowPoint): CalculatedFlowPoint {
     applicationPoint,
     cycle1,
     cycle2,
-    cycle3,
+    cycle3: null,
     average,
     min,
     max,
@@ -619,6 +618,12 @@ export default function FlowVerificationStarter({
     );
   }, [referenceInstruments, selectedReferenceInstrumentIds]);
 
+  const flowUnit =
+    selectedCustomerInstrument?.unit ||
+    selectedInternalInstrument?.unit ||
+    selectedReferenceInstruments[0]?.unit ||
+    "";
+
   const hasBlockedReferenceInstrument = selectedReferenceInstruments.some(
     (instrument) =>
       isReferenceInstrumentBlocked(
@@ -793,14 +798,13 @@ export default function FlowVerificationStarter({
       return (
         point.applicationPoint.trim() === "" ||
         point.cycle1.trim() === "" ||
-        point.cycle2.trim() === "" ||
-        point.cycle3.trim() === ""
+        point.cycle2.trim() === ""
       );
     });
 
     if (invalidPoint) {
       throw new Error(
-        "Compila punto di applicazione e i tre cicli per tutti i punti."
+        "Compila punto di applicazione e i due cicli per tutti i punti."
       );
     }
   }
@@ -1038,7 +1042,7 @@ export default function FlowVerificationStarter({
           applied_value: point.applicationPoint,
           cycle_1: point.cycle1,
           cycle_2: point.cycle2,
-          cycle_3: point.cycle3,
+          cycle_3: null,
           max_value: point.max,
           min_value: point.min,
           average_value: point.average,
@@ -1663,7 +1667,7 @@ export default function FlowVerificationStarter({
                 Misure portata / contalitri
               </h2>
               <p className="text-sm text-slate-500">
-                Inserisci il punto di applicazione e i tre cicli. I calcoli
+                Inserisci il punto di applicazione e i due cicli. I calcoli
                 vengono aggiornati in tempo reale.
               </p>
             </div>
@@ -1671,24 +1675,21 @@ export default function FlowVerificationStarter({
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1100px] text-sm">
+          <table className="w-full min-w-[980px] text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-3">Punto</th>
-                <th className="px-4 py-3">Punto di applicazione</th>
+                <th className="px-4 py-3">Punto di applicazione{flowUnit ? " (" + flowUnit + ")" : ""}</th>
                 <th className="bg-sky-100 px-4 py-3 text-sky-900">
-                  Ciclo 1
+                  Ciclo 1{flowUnit ? " (" + flowUnit + ")" : ""}
                 </th>
                 <th className="bg-sky-100 px-4 py-3 text-sky-900">
-                  Ciclo 2
+                  Ciclo 2{flowUnit ? " (" + flowUnit + ")" : ""}
                 </th>
-                <th className="bg-sky-100 px-4 py-3 text-sky-900">
-                  Ciclo 3
-                </th>
-                <th className="px-4 py-3">Max</th>
-                <th className="px-4 py-3">Min</th>
-                <th className="px-4 py-3">Media</th>
-                <th className="px-4 py-3">Errore medio</th>
+                <th className="px-4 py-3">Max{flowUnit ? " (" + flowUnit + ")" : ""}</th>
+                <th className="px-4 py-3">Min{flowUnit ? " (" + flowUnit + ")" : ""}</th>
+                <th className="px-4 py-3">Media{flowUnit ? " (" + flowUnit + ")" : ""}</th>
+                <th className="px-4 py-3">Errore medio{flowUnit ? " (" + flowUnit + ")" : ""}</th>
                 <th className="px-4 py-3">Errore %</th>
                 <th className="px-4 py-3">Ripetibilità %</th>
                 <th className="px-4 py-3"></th>
@@ -1702,7 +1703,6 @@ export default function FlowVerificationStarter({
                 const applicationTabIndex = pointIndex + 1;
                 const cycle1TabIndex = pointCount + pointIndex + 1;
                 const cycle2TabIndex = pointCount * 2 + pointIndex + 1;
-                const cycle3TabIndex = pointCount * 3 + pointIndex + 1;
 
                 return (
                   <tr key={point.id} className="hover:bg-slate-50">
@@ -1750,19 +1750,6 @@ export default function FlowVerificationStarter({
                           updatePoint(point.id, "cycle2", event.target.value)
                         }
                         className="w-24 rounded-lg border border-sky-300 bg-slate-50 px-2 py-1 font-semibold text-sky-950 focus:border-sky-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-200"
-                      />
-                    </td>
-
-                    <td className="bg-white px-4 py-3">
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        tabIndex={cycle3TabIndex}
-                        value={editablePoint?.cycle3 ?? ""}
-                        onChange={(event) =>
-                          updatePoint(point.id, "cycle3", event.target.value)
-                        }
-                        className="w-24 rounded-lg border border-sky-300 bg-white px-2 py-1 font-semibold text-sky-950 focus:border-sky-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-sky-200"
                       />
                     </td>
 

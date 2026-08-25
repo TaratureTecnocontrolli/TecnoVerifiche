@@ -267,6 +267,33 @@ function getRange(instrument: {
   return instrument.measurement_range || instrument.range || null;
 }
 
+
+function normalizeUnit(value: unknown) {
+  const unit = String(value ?? "").trim();
+
+  if (!unit || unit === "-") {
+    return "";
+  }
+
+  return unit;
+}
+
+function unitSuffix(unit: string) {
+  return unit ? " (" + unit + ")" : "";
+}
+
+function inferUnitFromText(value: unknown) {
+  const text = String(value ?? "").trim();
+
+  if (!text) {
+    return "";
+  }
+
+  const match = text.match(/\b(N·m|Nm|kg|g|kN|N|bar|MPa|mm|cm|m|ml|mL|l|L|°C|C)\b/);
+
+  return match ? match[1] : "";
+}
+
 function buildReferenceInstrumentSnapshot(
   instrument: ReferenceInstrument | undefined
 ) {
@@ -399,6 +426,11 @@ export default function EditTorqueMeasurementsForm({
   const selectedReferenceStatus = selectedReferenceInstrument
     ? effectiveStatus(selectedReferenceInstrument)
     : null;
+
+  const torqueUnit =
+    normalizeUnit(selectedReferenceInstrument?.unit) ||
+    inferUnitFromText(scale.scaleRange) ||
+    "N·m";
 
   const hasBlockedReferenceInstrument =
     selectedReferenceStatus && isReferenceInstrumentBlocked(selectedReferenceStatus);
@@ -890,18 +922,18 @@ export default function EditTorqueMeasurementsForm({
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-4 py-3">Punto</th>
-                  <th className="px-4 py-3">Coppia nominale N·m</th>
+                  <th className="px-4 py-3">Coppia nominale{unitSuffix(torqueUnit)}</th>
                   <th className="bg-amber-100 px-4 py-3 text-amber-900">
-                    Lettura 1
+                    Lettura 1{unitSuffix(torqueUnit)}
                   </th>
                   <th className="bg-amber-100 px-4 py-3 text-amber-900">
-                    Lettura 2
+                    Lettura 2{unitSuffix(torqueUnit)}
                   </th>
                   <th className="bg-amber-100 px-4 py-3 text-amber-900">
-                    Lettura 3
+                    Lettura 3{unitSuffix(torqueUnit)}
                   </th>
-                  <th className="px-4 py-3">Media</th>
-                  <th className="px-4 py-3">Errore</th>
+                  <th className="px-4 py-3">Media{unitSuffix(torqueUnit)}</th>
+                  <th className="px-4 py-3">Errore{unitSuffix(torqueUnit)}</th>
                   <th className="px-4 py-3">Errore %</th>
                   <th className="px-4 py-3">Ripetibilità %</th>
                   <th className="px-4 py-3">Toll. %</th>

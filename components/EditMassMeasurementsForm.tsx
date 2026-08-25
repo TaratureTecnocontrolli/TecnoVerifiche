@@ -100,6 +100,32 @@ type EditMassMeasurementsFormProps = {
 
 const ECCENTRICITY_ZONE_LABELS = ["Zona C", "Zona 3", "Zona 4", "Zona 1", "Zona 2"];
 
+function detectMassUnit(value: unknown) {
+  const text = String(value ?? "").toLowerCase();
+
+  if (/\bkg\b/.test(text)) {
+    return "kg";
+  }
+
+  if (/\bg\b/.test(text)) {
+    return "g";
+  }
+
+  return "g";
+}
+
+function massPointLabel(section: "repeatability" | "eccentricity" | "linearity", index: number) {
+  if (section === "eccentricity") {
+    return ECCENTRICITY_ZONE_LABELS[index] || "Zona " + String(index + 1);
+  }
+
+  if (section === "repeatability" || section === "linearity") {
+    return "Zona C";
+  }
+
+  return "Punto " + String(index + 1);
+}
+
 function toNumber(value: string): number {
   const normalized = value.trim().replace(/\s/g, "").replace(",", ".");
 
@@ -443,6 +469,13 @@ export default function EditMassMeasurementsForm({
       referenceInstrumentIds.includes(instrument.id)
     );
   }, [referenceInstruments, referenceInstrumentIds]);
+
+  const massUnit = detectMassUnit(
+    initialScales.find((scale) => String(scale.scale_range ?? "").trim())?.scale_range ||
+      selectedReferenceInstruments[0]?.unit ||
+      referenceInstruments[0]?.unit ||
+      "g"
+  );
 
   const hasBlockedReferenceInstrument = selectedReferenceInstruments.some(
     (instrument) => isReferenceInstrumentBlocked(effectiveStatus(instrument))
@@ -1054,14 +1087,14 @@ export default function EditMassMeasurementsForm({
             <table className="w-full min-w-[900px] text-sm">
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
-                  <th className="px-4 py-3">Punto</th>
-                  <th className="px-4 py-3">Peso nominale (g)</th>
-                  <th className="px-4 py-3">Peso campione (g)</th>
+                  <th className="px-4 py-3">Zona</th>
+                  <th className="px-4 py-3">Peso nominale ({massUnit})</th>
+                  <th className="px-4 py-3">Peso campione ({massUnit})</th>
                   <th className="bg-amber-100 px-4 py-3 text-amber-900">Lettura 1</th>
                   <th className="bg-amber-100 px-4 py-3 text-amber-900">Lettura 2</th>
                   <th className="bg-amber-100 px-4 py-3 text-amber-900">Lettura 3</th>
                   <th className="px-4 py-3">Media</th>
-                  <th className="px-4 py-3">Errore (g)</th>
+                  <th className="px-4 py-3">Errore ({massUnit})</th>
                   <th className="px-4 py-3">Ripetibilità %</th>
                 </tr>
               </thead>
@@ -1071,7 +1104,7 @@ export default function EditMassMeasurementsForm({
                     "repeatability",
                     point,
                     calculatedRepeatability[index],
-                    "Zona C"
+                    massPointLabel("repeatability", index)
                   )
                 )}
               </tbody>
@@ -1101,13 +1134,13 @@ export default function EditMassMeasurementsForm({
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
                   <th className="px-4 py-3">Zona</th>
-                  <th className="px-4 py-3">Peso nominale (g)</th>
-                  <th className="px-4 py-3">Peso campione (g)</th>
+                  <th className="px-4 py-3">Peso nominale ({massUnit})</th>
+                  <th className="px-4 py-3">Peso campione ({massUnit})</th>
                   <th className="bg-amber-100 px-4 py-3 text-amber-900">Lettura 1</th>
                   <th className="bg-amber-100 px-4 py-3 text-amber-900">Lettura 2</th>
                   <th className="bg-amber-100 px-4 py-3 text-amber-900">Lettura 3</th>
                   <th className="px-4 py-3">Media</th>
-                  <th className="px-4 py-3">Errore (g)</th>
+                  <th className="px-4 py-3">Errore ({massUnit})</th>
                   <th className="px-4 py-3">Ripetibilità %</th>
                 </tr>
               </thead>
@@ -1117,7 +1150,7 @@ export default function EditMassMeasurementsForm({
                     "eccentricity",
                     point,
                     calculatedEccentricity[index],
-                    ECCENTRICITY_ZONE_LABELS[index] || "Zona " + (index + 1)
+                    massPointLabel("eccentricity", index)
                   )
                 )}
               </tbody>
@@ -1139,14 +1172,14 @@ export default function EditMassMeasurementsForm({
             <table className="w-full min-w-[1050px] text-sm">
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
-                  <th className="px-4 py-3">Punto</th>
-                  <th className="px-4 py-3">Peso nominale (g)</th>
-                  <th className="px-4 py-3">Peso campione (g)</th>
+                  <th className="px-4 py-3">Zona</th>
+                  <th className="px-4 py-3">Peso nominale ({massUnit})</th>
+                  <th className="px-4 py-3">Peso campione ({massUnit})</th>
                   <th className="bg-amber-100 px-4 py-3 text-amber-900">Lettura 1</th>
                   <th className="bg-amber-100 px-4 py-3 text-amber-900">Lettura 2</th>
                   <th className="bg-amber-100 px-4 py-3 text-amber-900">Lettura 3</th>
                   <th className="px-4 py-3">Media</th>
-                  <th className="px-4 py-3">Errore (g)</th>
+                  <th className="px-4 py-3">Errore ({massUnit})</th>
                   <th className="px-4 py-3">Errore %</th>
                   <th className="px-4 py-3">Ripetibilità %</th>
                   <th className="px-4 py-3"></th>
@@ -1158,7 +1191,7 @@ export default function EditMassMeasurementsForm({
                     "linearity",
                     point,
                     calculatedLinearity[index],
-                    String(index + 1),
+                    massPointLabel("linearity", index),
                     () => removeLinearityPoint(point.id)
                   )
                 )}

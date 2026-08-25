@@ -1341,6 +1341,14 @@ function resetSaveState() {
         const scaleReferenceInstruments = scale.referenceInstrumentIds
           .map((instrumentId) => getReferenceInstrument(instrumentId))
           .filter(Boolean) as ReferenceInstrument[];
+
+        const forceUnit =
+          selectedCustomerInstrument?.unit ||
+          selectedInternalInstrument?.unit ||
+          scaleReferenceInstruments[0]?.unit ||
+          "";
+
+        const forceUnitLabel = forceUnit ? " (" + forceUnit + ")" : "";
         const primaryScaleReferenceInstrument = scaleReferenceInstruments[0];
 
         return {
@@ -1941,6 +1949,14 @@ function resetSaveState() {
           .map((instrumentId) => getReferenceInstrument(instrumentId))
           .filter(Boolean) as ReferenceInstrument[];
 
+        const forceUnit =
+          selectedCustomerInstrument?.unit ||
+          selectedInternalInstrument?.unit ||
+          scaleReferenceInstruments[0]?.unit ||
+          "";
+
+        const forceUnitLabel = forceUnit ? " (" + forceUnit + ")" : "";
+
         return (
           <div
             key={scale.id}
@@ -2107,20 +2123,20 @@ function resetSaveState() {
                 <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                   <tr>
                     <th className="px-4 py-3">Punto</th>
-                    <th className="px-4 py-3">Punto di applicazione</th>
+                    <th className="px-4 py-3">Punto di applicazione{forceUnitLabel}</th>
                     <th className="bg-white text-slate-900 px-4 py-3">
-                  Ciclo 1
+                  Ciclo 1{forceUnitLabel}
                 </th>
                     <th className="bg-slate-100 text-slate-900 px-4 py-3">
-                  Ciclo 2
+                  Ciclo 2{forceUnitLabel}
                 </th>
                     <th className="bg-white text-slate-900 px-4 py-3">
-                  Ciclo 3
+                  Ciclo 3{forceUnitLabel}
                 </th>
-                    <th className="px-4 py-3">Max</th>
-                    <th className="px-4 py-3">Min</th>
-                    <th className="px-4 py-3">Media</th>
-                    <th className="px-4 py-3">Errore medio</th>
+                    <th className="px-4 py-3">Max{forceUnitLabel}</th>
+                    <th className="px-4 py-3">Min{forceUnitLabel}</th>
+                    <th className="px-4 py-3">Media{forceUnitLabel}</th>
+                    <th className="px-4 py-3">Errore medio{forceUnitLabel}</th>
                     <th className="px-4 py-3">Err. acc. %</th>
                     <th className="px-4 py-3">Ripet. %</th>
                     <th className="px-4 py-3"></th>

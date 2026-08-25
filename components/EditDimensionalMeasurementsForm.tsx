@@ -254,6 +254,33 @@ function getRange(instrument: {
   return instrument.measurement_range || instrument.range || null;
 }
 
+
+function normalizeUnit(value: unknown) {
+  const unit = String(value ?? "").trim();
+
+  if (!unit || unit === "-") {
+    return "";
+  }
+
+  return unit;
+}
+
+function unitSuffix(unit: string) {
+  return unit ? " (" + unit + ")" : "";
+}
+
+function inferUnitFromText(value: unknown) {
+  const text = String(value ?? "").trim();
+
+  if (!text) {
+    return "";
+  }
+
+  const match = text.match(/\b(N·m|Nm|kg|g|kN|N|bar|MPa|mm|cm|m|ml|mL|l|L|°C|C)\b/);
+
+  return match ? match[1] : "";
+}
+
 function buildReferenceInstrumentSnapshot(instrument: ReferenceInstrument) {
   return {
     instrument_id: instrument.id,
@@ -411,6 +438,11 @@ export default function EditDimensionalMeasurementsForm({
   const hasBlockedReferenceInstrument = selectedReferenceInstruments.some(
     (instrument) => isReferenceInstrumentBlocked(effectiveStatus(instrument))
   );
+
+  const dimensionalUnit =
+    normalizeUnit(selectedReferenceInstruments[0]?.unit) ||
+    inferUnitFromText(initialScales[0]?.scale_range) ||
+    "mm";
 
   function resetSaveState() {
     setSaveMessage("");
@@ -823,21 +855,21 @@ export default function EditDimensionalMeasurementsForm({
                 <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                   <tr>
                     <th className="px-4 py-3">Punto</th>
-                    <th className="px-4 py-3">Valore nominale (mm)</th>
+                    <th className="px-4 py-3">Valore nominale{unitSuffix(dimensionalUnit)}</th>
                     <th className="bg-amber-100 px-4 py-3 text-amber-900">
-                      Scostamento 1
+                      Scostamento 1{unitSuffix(dimensionalUnit)}
                     </th>
                     <th className="bg-amber-100 px-4 py-3 text-amber-900">
-                      Scostamento 2
+                      Scostamento 2{unitSuffix(dimensionalUnit)}
                     </th>
                     <th className="bg-amber-100 px-4 py-3 text-amber-900">
-                      Scostamento 3
+                      Scostamento 3{unitSuffix(dimensionalUnit)}
                     </th>
-                    <th className="px-4 py-3">Media</th>
-                    <th className="px-4 py-3">Errore</th>
+                    <th className="px-4 py-3">Media{unitSuffix(dimensionalUnit)}</th>
+                    <th className="px-4 py-3">Errore{unitSuffix(dimensionalUnit)}</th>
                     <th className="px-4 py-3">Errore %</th>
                     <th className="px-4 py-3">Ripetibilità %</th>
-                    <th className="px-4 py-3">Incertezza (mm)</th>
+                    <th className="px-4 py-3">Incertezza{unitSuffix(dimensionalUnit)}</th>
                     <th className="px-4 py-3"></th>
                   </tr>
                 </thead>
