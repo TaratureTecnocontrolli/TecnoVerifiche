@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { canonicalMeasurementUnit } from "@/lib/measurement-units";
 import {
   combineReferenceInstrumentNames,
   getPullOffReportDefaults,
@@ -500,11 +501,12 @@ export default function PullOffVerificationStarter({
       )
   );
 
-  const pullOffUnit =
+  const pullOffUnit = canonicalMeasurementUnit(
     selectedCustomerInstrument?.unit ||
     selectedInternalInstrument?.unit ||
     selectedReferenceInstruments[0]?.unit ||
-    "kN";
+    "kN"
+  );
 
   const calculatedPoints = useMemo(() => {
     return points.map(calculatePullOffPoint);
@@ -1260,7 +1262,7 @@ export default function PullOffVerificationStarter({
 
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1100px] text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <thead className="bg-slate-50 text-left text-xs tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-3">Punto</th>
                 <th className="px-4 py-3">Carico applicato ({pullOffUnit})</th>

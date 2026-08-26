@@ -288,6 +288,12 @@ export default function CalibrationReportDetailsForm({
       autoPremiseData?.siteDescription ||
       ""
   );
+  const [temperature, setTemperature] = useState(
+    valueOrEmpty(safeInitialData.temperature)
+  );
+  const [humidity, setHumidity] = useState(
+    valueOrEmpty(safeInitialData.humidity)
+  );
   const [workObject, setWorkObject] = useState(
     valueOrEmpty(safeInitialData.work_object) || initialDefaultTexts.work_object
   );
@@ -1407,10 +1413,8 @@ export default function CalibrationReportDetailsForm({
         execution_method: executionMethod.trim() || null,
         results_text: resultsText.trim() || null,
 
-        // Le condizioni ambientali vengono inserite nella nuova verifica.
-        // Qui manteniamo i valori già salvati, senza richiederli una seconda volta.
-        temperature: safeInitialData.temperature || null,
-        humidity: safeInitialData.humidity || null,
+        temperature: temperature.trim() || null,
+        humidity: humidity.trim() || null,
 
         technician_name: technicianName || null,
         reviewer_name: reviewerName || null,
@@ -1594,6 +1598,32 @@ export default function CalibrationReportDetailsForm({
               value={siteDescription}
               onChange={(event) => setSiteDescription(event.target.value)}
               placeholder="Es. Via Monda, 46A - Forlì (FC)"
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+            />
+          </label>
+
+          <label className="space-y-1">
+            <span className="text-sm font-medium text-slate-700">
+              Temperatura ambientale (°C)
+            </span>
+            <input
+              value={temperature}
+              onChange={(event) => setTemperature(event.target.value)}
+              inputMode="decimal"
+              placeholder="Es. 20,5"
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+            />
+          </label>
+
+          <label className="space-y-1">
+            <span className="text-sm font-medium text-slate-700">
+              Umidità ambientale (%)
+            </span>
+            <input
+              value={humidity}
+              onChange={(event) => setHumidity(event.target.value)}
+              inputMode="decimal"
+              placeholder="Es. 55"
               className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
             />
           </label>

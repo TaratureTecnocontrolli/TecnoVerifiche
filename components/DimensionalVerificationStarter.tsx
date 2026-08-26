@@ -4,6 +4,7 @@ import Link from "next/link";
 import SimpleAccuracyChart from "@/components/SimpleAccuracyChart";
 import { useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { canonicalMeasurementUnit } from "@/lib/measurement-units";
 import {
   combineReferenceInstrumentNames,
   getDimensionalReportDefaults,
@@ -109,6 +110,7 @@ type CalculatedDimensionalPoint = {
   error: number;
   errorPercent: number;
   repeatabilityPercent: number;
+  instrumentalUncertainty: number;
 };
 
 type DimensionalVerificationStarterProps = {
@@ -120,9 +122,11 @@ type DimensionalVerificationStarterProps = {
 };
 
 const SUBTYPE_SCALES: Record<DimensionalSubtype, string[]> = {
-  caliper: ["Misure di esterni", "Misure di interni"],
+  caliper: ["Misure di esterni", "Misure di interni", "Misure di profondità"],
   sieve_sphere: ["Misure di interni Asse X", "Misure di interni Asse Y"],
 };
+
+const CALIPER_DEPTH_POINTS = [0, 5, 15, 30, 60, 75, 90, 100, 120, 150, 200];
 
 const SUBTYPE_PROCEDURE: Record<DimensionalSubtype, { code: string; name: string }> = {
   caliper: {
@@ -152,7 +156,13 @@ function makeScales(subtype: DimensionalSubtype): EditableDimensionalScale[] {
     scaleName,
     scaleRange: "",
     notes: "",
-    points: [makeEmptyPoint(0), makeEmptyPoint(1), makeEmptyPoint(2)],
+    points:
+      subtype === "caliper" && scaleName === "Misure di profondità"
+        ? CALIPER_DEPTH_POINTS.map((value, pointIndex) => ({
+            ...makeEmptyPoint(pointIndex),
+            applicationPoint: String(value),
+          }))
+        : [makeEmptyPoint(0), makeEmptyPoint(1), makeEmptyPoint(2)],
   }));
 }
 
@@ -394,11 +404,12 @@ function calculateDimensionalPoint(
   const min = Math.min(...values);
   const max = Math.max(...values);
 
-  const error = average - applicationPoint;
+  const error = applicationPoint - average;
   const errorPercent =
     applicationPoint !== 0 ? (error / applicationPoint) * 100 : 0;
   const repeatabilityPercent =
     average !== 0 ? ((max - min) / average) * 100 : 0;
+  const instrumentalUncertainty = Math.abs(error * 2);
 
   return {
     id: point.id,
@@ -412,6 +423,7 @@ function calculateDimensionalPoint(
     error,
     errorPercent,
     repeatabilityPercent,
+    instrumentalUncertainty,
   };
 }
 
@@ -556,11 +568,12 @@ export default function DimensionalVerificationStarter({
     );
   }, [referenceInstruments, selectedReferenceInstrumentIds]);
 
-  const dimensionalUnit =
+  const dimensionalUnit = canonicalMeasurementUnit(
     selectedCustomerInstrument?.unit ||
     selectedInternalInstrument?.unit ||
     selectedReferenceInstruments[0]?.unit ||
-    "mm";
+    "mm"
+  );
 
   const hasBlockedReferenceInstrument = selectedReferenceInstruments.some(
     (instrument) =>
@@ -993,6 +1006,7 @@ export default function DimensionalVerificationStarter({
             mean_error: calculatedPoint.error,
             accuracy_error_percent: calculatedPoint.errorPercent,
             repeatability_error_percent: calculatedPoint.repeatabilityPercent,
+            instrumental_uncertainty: calculatedPoint.instrumentalUncertainty,
             result: null,
             notes: editablePoint.notes.trim() || null,
           };
@@ -1100,7 +1114,7 @@ export default function DimensionalVerificationStarter({
 
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1100px] text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <thead className="bg-slate-50 text-left text-xs tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-3">Punto</th>
                 <th className="px-4 py-3">Punto di applicazione{unitSuffix(scaleUnit)}</th>
@@ -1119,6 +1133,7 @@ export default function DimensionalVerificationStarter({
                 <th className="px-4 py-3">Errore medio{unitSuffix(scaleUnit)}</th>
                 <th className="px-4 py-3">Errore %</th>
                 <th className="px-4 py-3">Ripetibilità %</th>
+                <th className="px-4 py-3">Incertezza strumentale{unitSuffix(scaleUnit)}</th>
                 <th className="px-4 py-3"></th>
               </tr>
             </thead>
@@ -1223,6 +1238,10 @@ export default function DimensionalVerificationStarter({
                     </td>
 
                     <td className="px-4 py-3">
+                      {formatItalianNumber(point.instrumentalUncertainty)}
+                    </td>
+
+                    <td className="px-4 py-3">
                       <button
                         type="button"
                         onClick={() => removePoint(scale.id, point.id)}
@@ -1287,7 +1306,7 @@ export default function DimensionalVerificationStarter({
               className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
             >
               <option value="caliper">
-                Calibri (misure di esterni + misure di interni)
+                Calibri (misure di esterni + misure di interni + misure di profondità)
               </option>
               <option value="sieve_sphere">
                 Setacci / sfere (misure di interni asse X + asse Y)

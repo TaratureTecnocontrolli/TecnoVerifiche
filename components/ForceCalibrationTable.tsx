@@ -7,6 +7,7 @@ import {
   type ForcePointInput,
 } from "@/lib/calculations/force";
 import { supabase } from "@/lib/supabase";
+import { canonicalMeasurementUnit } from "@/lib/measurement-units";
 import {
   getCtForceReportDefaults,
   combineReferenceInstrumentNames,
@@ -1342,11 +1343,12 @@ function resetSaveState() {
           .map((instrumentId) => getReferenceInstrument(instrumentId))
           .filter(Boolean) as ReferenceInstrument[];
 
-        const forceUnit =
+        const forceUnit = canonicalMeasurementUnit(
           selectedCustomerInstrument?.unit ||
           selectedInternalInstrument?.unit ||
           scaleReferenceInstruments[0]?.unit ||
-          "";
+          ""
+        );
 
         const forceUnitLabel = forceUnit ? " (" + forceUnit + ")" : "";
         const primaryScaleReferenceInstrument = scaleReferenceInstruments[0];
@@ -1949,11 +1951,12 @@ function resetSaveState() {
           .map((instrumentId) => getReferenceInstrument(instrumentId))
           .filter(Boolean) as ReferenceInstrument[];
 
-        const forceUnit =
+        const forceUnit = canonicalMeasurementUnit(
           selectedCustomerInstrument?.unit ||
           selectedInternalInstrument?.unit ||
           scaleReferenceInstruments[0]?.unit ||
-          "";
+          ""
+        );
 
         const forceUnitLabel = forceUnit ? " (" + forceUnit + ")" : "";
 
@@ -2120,7 +2123,7 @@ function resetSaveState() {
 
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1080px] text-sm">
-                <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                <thead className="bg-slate-50 text-left text-xs tracking-wide text-slate-500">
                   <tr>
                     <th className="px-4 py-3">Punto</th>
                     <th className="px-4 py-3">Punto di applicazione{forceUnitLabel}</th>

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { canonicalMeasurementUnit } from "@/lib/measurement-units";
 import SimpleAccuracyChart from "@/components/SimpleAccuracyChart";
 
 type ReferenceInstrument = {
@@ -277,7 +278,7 @@ function normalizeUnit(value: unknown) {
     return "";
   }
 
-  return unit;
+  return canonicalMeasurementUnit(unit);
 }
 
 function unitSuffix(unit: string) {
@@ -475,7 +476,9 @@ export default function EditFlowMeasurementsForm({
     : null;
 
   const flowUnit =
-    normalizeUnit(selectedReferenceInstrument?.unit) || inferUnitFromText(scale.scaleRange) || "l";
+    normalizeUnit(selectedReferenceInstrument?.unit) ||
+    normalizeUnit(inferUnitFromText(scale.scaleRange)) ||
+    "L";
 
   const hasBlockedReferenceInstrument =
     selectedReferenceStatus && isReferenceInstrumentBlocked(selectedReferenceStatus);
@@ -993,7 +996,7 @@ export default function EditFlowMeasurementsForm({
 
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1080px] text-sm">
-              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+              <thead className="bg-slate-50 text-left text-xs tracking-wide text-slate-500">
                 <tr>
                   <th className="px-4 py-3">Punto</th>
                   <th className="px-4 py-3">Volume nominale{unitSuffix(flowUnit)}</th>

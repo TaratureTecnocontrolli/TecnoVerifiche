@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { type KeyboardEvent, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { canonicalMeasurementUnit } from "@/lib/measurement-units";
 import {
   combineReferenceInstrumentNames,
   getSclerometricReportDefaults,
@@ -560,11 +561,12 @@ export default function SclerometricVerificationStarter({
     return referenceInstruments.filter((instrument) => selectedReferenceInstrumentIds.includes(instrument.id));
   }, [referenceInstruments, selectedReferenceInstrumentIds]);
 
-  const sclerometricUnit =
+  const sclerometricUnit = canonicalMeasurementUnit(
     selectedCustomerInstrument?.unit ||
     selectedInternalInstrument?.unit ||
     selectedReferenceInstruments[0]?.unit ||
-    "";
+    ""
+  );
   const sclerometricUnitLabel = sclerometricUnit ? " (" + sclerometricUnit + ")" : "";
 
   const hasBlockedReferenceInstrument = selectedReferenceInstruments.some((instrument) =>
@@ -1064,7 +1066,7 @@ export default function SclerometricVerificationStarter({
 
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1120px] text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <thead className="bg-slate-50 text-left text-xs tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-3">Numero battuta</th>
                 <th className="bg-orange-100 px-4 py-3 text-orange-900">Ciclo 1{sclerometricUnitLabel}</th>
@@ -1121,7 +1123,7 @@ export default function SclerometricVerificationStarter({
 
           <div className="mt-4 overflow-x-auto">
             <table className="w-full min-w-[900px] text-sm">
-              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+              <thead className="bg-slate-50 text-left text-xs tracking-wide text-slate-500">
                 <tr>
                   <th className="px-3 py-2">Numero battuta</th>
                   <th className="bg-emerald-100 px-3 py-2 text-emerald-900">LC ±3</th>

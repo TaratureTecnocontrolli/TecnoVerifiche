@@ -361,7 +361,7 @@ function calculateWeightPoint(
   const max = Math.max(...values);
   // Formula da modello Excel MMT - Misura della massa:
   // Errore = media letture - peso nominale
-  // Errore % (solo prova di linearità) = (media letture / peso campione - 1) * 100
+  // Errore % (eccentricità e linearità) = (media letture / peso campione - 1) * 100
   // Ripetibilità % = (lettura max - lettura min) * 100 / media letture
   const error = average - nominalWeight;
   const errorPercent =
@@ -442,7 +442,7 @@ export default function EditMassMeasurementsForm({
     [repeatability.points]
   );
   const calculatedEccentricity = useMemo(
-    () => eccentricity.points.map((point) => calculateWeightPoint(point, false)),
+    () => eccentricity.points.map((point) => calculateWeightPoint(point, true)),
     [eccentricity.points]
   );
   const calculatedLinearity = useMemo(
@@ -1085,7 +1085,7 @@ export default function EditMassMeasurementsForm({
 
           <div className="overflow-x-auto">
             <table className="w-full min-w-[900px] text-sm">
-              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+              <thead className="bg-slate-50 text-left text-xs tracking-wide text-slate-500">
                 <tr>
                   <th className="px-4 py-3">Zona</th>
                   <th className="px-4 py-3">Peso nominale ({massUnit})</th>
@@ -1093,8 +1093,8 @@ export default function EditMassMeasurementsForm({
                   <th className="bg-amber-100 px-4 py-3 text-amber-900">Lettura 1</th>
                   <th className="bg-amber-100 px-4 py-3 text-amber-900">Lettura 2</th>
                   <th className="bg-amber-100 px-4 py-3 text-amber-900">Lettura 3</th>
-                  <th className="px-4 py-3">Media</th>
-                  <th className="px-4 py-3">Errore ({massUnit})</th>
+                  <th className="px-4 py-3">Media letture ({massUnit})</th>
+                  <th className="px-4 py-3">Errore medio ({massUnit})</th>
                   <th className="px-4 py-3">Ripetibilità %</th>
                 </tr>
               </thead>
@@ -1131,7 +1131,7 @@ export default function EditMassMeasurementsForm({
 
           <div className="overflow-x-auto">
             <table className="w-full min-w-[900px] text-sm">
-              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+              <thead className="bg-slate-50 text-left text-xs tracking-wide text-slate-500">
                 <tr>
                   <th className="px-4 py-3">Zona</th>
                   <th className="px-4 py-3">Peso nominale ({massUnit})</th>
@@ -1139,8 +1139,9 @@ export default function EditMassMeasurementsForm({
                   <th className="bg-amber-100 px-4 py-3 text-amber-900">Lettura 1</th>
                   <th className="bg-amber-100 px-4 py-3 text-amber-900">Lettura 2</th>
                   <th className="bg-amber-100 px-4 py-3 text-amber-900">Lettura 3</th>
-                  <th className="px-4 py-3">Media</th>
-                  <th className="px-4 py-3">Errore ({massUnit})</th>
+                  <th className="px-4 py-3">Media letture ({massUnit})</th>
+                  <th className="px-4 py-3">Errore medio ({massUnit})</th>
+                  <th className="px-4 py-3">Errore %</th>
                   <th className="px-4 py-3">Ripetibilità %</th>
                 </tr>
               </thead>
@@ -1170,7 +1171,7 @@ export default function EditMassMeasurementsForm({
 
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1050px] text-sm">
-              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+              <thead className="bg-slate-50 text-left text-xs tracking-wide text-slate-500">
                 <tr>
                   <th className="px-4 py-3">Zona</th>
                   <th className="px-4 py-3">Peso nominale ({massUnit})</th>
@@ -1178,8 +1179,8 @@ export default function EditMassMeasurementsForm({
                   <th className="bg-amber-100 px-4 py-3 text-amber-900">Lettura 1</th>
                   <th className="bg-amber-100 px-4 py-3 text-amber-900">Lettura 2</th>
                   <th className="bg-amber-100 px-4 py-3 text-amber-900">Lettura 3</th>
-                  <th className="px-4 py-3">Media</th>
-                  <th className="px-4 py-3">Errore ({massUnit})</th>
+                  <th className="px-4 py-3">Media letture ({massUnit})</th>
+                  <th className="px-4 py-3">Errore medio ({massUnit})</th>
                   <th className="px-4 py-3">Errore %</th>
                   <th className="px-4 py-3">Ripetibilità %</th>
                   <th className="px-4 py-3"></th>

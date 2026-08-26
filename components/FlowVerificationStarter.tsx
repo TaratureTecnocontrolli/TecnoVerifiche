@@ -4,6 +4,7 @@ import Link from "next/link";
 import SimpleAccuracyChart from "@/components/SimpleAccuracyChart";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { canonicalMeasurementUnit } from "@/lib/measurement-units";
 import {
   combineReferenceInstrumentNames,
   getFlowReportDefaults,
@@ -618,11 +619,12 @@ export default function FlowVerificationStarter({
     );
   }, [referenceInstruments, selectedReferenceInstrumentIds]);
 
-  const flowUnit =
+  const flowUnit = canonicalMeasurementUnit(
     selectedCustomerInstrument?.unit ||
     selectedInternalInstrument?.unit ||
     selectedReferenceInstruments[0]?.unit ||
-    "";
+    ""
+  );
 
   const hasBlockedReferenceInstrument = selectedReferenceInstruments.some(
     (instrument) =>
@@ -1676,7 +1678,7 @@ export default function FlowVerificationStarter({
 
         <div className="overflow-x-auto">
           <table className="w-full min-w-[980px] text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <thead className="bg-slate-50 text-left text-xs tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-3">Punto</th>
                 <th className="px-4 py-3">Punto di applicazione{flowUnit ? " (" + flowUnit + ")" : ""}</th>

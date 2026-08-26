@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { canonicalMeasurementUnit } from "@/lib/measurement-units";
 import ReferenceInstrumentMultiSelect from "@/components/ReferenceInstrumentMultiSelect";
 
 type ReferenceInstrument = {
@@ -262,7 +263,7 @@ function normalizeUnit(value: unknown) {
     return "";
   }
 
-  return unit;
+  return canonicalMeasurementUnit(unit);
 }
 
 function unitSuffix(unit: string) {
@@ -318,7 +319,7 @@ function buildSections(
 ): DimensionalScaleSection[] {
   const sortedScales = [...scales].sort((a, b) => a.scale_order - b.scale_order);
 
-  return sortedScales.map((scale) => {
+  const sections = sortedScales.map((scale) => {
     const scaleMeasurements = measurements
       .filter((measurement) => measurement.scale_id === scale.id)
       .sort((a, b) => a.point_order - b.point_order);
@@ -341,6 +342,28 @@ function buildSections(
           : [emptyPoint()],
     };
   });
+
+  const hasCaliperScales = sections.some((section) =>
+    section.scaleName.toLowerCase().includes("estern")
+  ) && sections.some((section) =>
+    section.scaleName.toLowerCase().includes("intern")
+  );
+  const hasDepthScale = sections.some((section) =>
+    section.scaleName.toLowerCase().includes("profond")
+  );
+
+  if (hasCaliperScales && !hasDepthScale) {
+    const depthPoints = [0, 5, 15, 30, 60, 75, 90, 100, 120, 150, 200];
+
+    sections.push({
+      scaleId: "",
+      scaleName: "Misure di profondità",
+      scaleRange: sortedScales[0]?.scale_range || "",
+      points: depthPoints.map((value) => emptyPoint(String(value))),
+    });
+  }
+
+  return sections;
 }
 
 function calculateDimensionalPoint(
@@ -441,7 +464,7 @@ export default function EditDimensionalMeasurementsForm({
 
   const dimensionalUnit =
     normalizeUnit(selectedReferenceInstruments[0]?.unit) ||
-    inferUnitFromText(initialScales[0]?.scale_range) ||
+    normalizeUnit(inferUnitFromText(initialScales[0]?.scale_range)) ||
     "mm";
 
   function resetSaveState() {
@@ -577,6 +600,39 @@ export default function EditDimensionalMeasurementsForm({
         const section = sections[sectionIndex];
         const calculatedPoints = calculatedSections[sectionIndex];
 
+        let effectiveScaleId = section.scaleId;
+
+        if (!effectiveScaleId) {
+          const nextScaleOrder =
+            Math.max(0, ...initialScales.map((scale) => scale.scale_order)) + 1;
+          const { data: insertedScale, error: insertScaleError } = await supabase
+            .from("calibration_record_scales")
+            .insert({
+              calibration_record_id: recordId,
+              scale_order: nextScaleOrder,
+              scale_name: section.scaleName,
+              scale_range: section.scaleRange.trim() || dimensionalUnit,
+              reference_instrument_id: primaryReference.id,
+              reference_instrument_snapshot: referenceSnapshots[0],
+              reference_instrument_ids: selectedReferenceInstruments.map(
+                (instrument) => instrument.id
+              ),
+              reference_instruments_snapshot: referenceSnapshots,
+              notes: scaleNotes.trim() || null,
+            })
+            .select("id")
+            .single();
+
+          if (insertScaleError || !insertedScale) {
+            throw new Error(
+              insertScaleError?.message ||
+                "Errore durante la creazione della prova di profondità."
+            );
+          }
+
+          effectiveScaleId = insertedScale.id;
+        }
+
         const { error: scaleError } = await supabase
           .from("calibration_record_scales")
           .update({
@@ -588,7 +644,7 @@ export default function EditDimensionalMeasurementsForm({
             reference_instruments_snapshot: referenceSnapshots,
             notes: scaleNotes.trim() || null,
           })
-          .eq("id", section.scaleId);
+          .eq("id", effectiveScaleId);
 
         if (scaleError) {
           throw new Error(scaleError.message);
@@ -603,7 +659,7 @@ export default function EditDimensionalMeasurementsForm({
             .from("calibration_measurements")
             .delete()
             .eq("calibration_record_id", recordId)
-            .eq("scale_id", section.scaleId)
+            .eq("scale_id", effectiveScaleId)
             .not("id", "in", "(" + keepMeasurementIds.join(",") + ")");
 
           if (deleteMissingError) {
@@ -614,7 +670,7 @@ export default function EditDimensionalMeasurementsForm({
             .from("calibration_measurements")
             .delete()
             .eq("calibration_record_id", recordId)
-            .eq("scale_id", section.scaleId);
+            .eq("scale_id", effectiveScaleId);
 
           if (deleteAllError) {
             throw new Error(deleteAllError.message);
@@ -629,7 +685,7 @@ export default function EditDimensionalMeasurementsForm({
 
           const payload = {
             calibration_record_id: recordId,
-            scale_id: section.scaleId,
+            scale_id: effectiveScaleId,
             section: section.scaleName,
             point_order: pointIndex + 1,
             nominal_value: calculatedPoint.nominalValue,
@@ -677,7 +733,11 @@ export default function EditDimensionalMeasurementsForm({
           }
         }
 
-        updatedSections.push({ ...section, points: updatedPoints });
+        updatedSections.push({
+          ...section,
+          scaleId: effectiveScaleId,
+          points: updatedPoints,
+        });
       }
 
       setSections(updatedSections);
@@ -852,7 +912,7 @@ export default function EditDimensionalMeasurementsForm({
 
             <div className="overflow-x-auto">
               <table className="w-full min-w-[1150px] text-sm">
-                <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                <thead className="bg-slate-50 text-left text-xs tracking-wide text-slate-500">
                   <tr>
                     <th className="px-4 py-3">Punto</th>
                     <th className="px-4 py-3">Valore nominale{unitSuffix(dimensionalUnit)}</th>

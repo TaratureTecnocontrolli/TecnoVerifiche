@@ -622,7 +622,7 @@ export default function MassVerificationStarter({
   const calculatedEccentricity = useMemo(
     () =>
       sections.eccentricity.points.map((point) =>
-        calculateWeightPoint(point, false)
+        calculateWeightPoint(point, true)
       ),
     [sections.eccentricity.points]
   );
@@ -1241,7 +1241,7 @@ export default function MassVerificationStarter({
         </div>
         <div className="overflow-x-auto">
           <table className="w-full min-w-[1150px] text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <thead className="bg-slate-50 text-left text-xs tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-3">
                   {section.key === "eccentricity" || section.key === "repeatability" || section.key === "linearity" ? "Zona" : "Punto"}
@@ -1256,9 +1256,9 @@ export default function MassVerificationStarter({
                 <th className="bg-amber-100 px-4 py-3 text-amber-900">
                   Ciclo 3 ({section.unit})
                 </th>
-                <th className="px-4 py-3">Media ({section.unit})</th>
-                <th className="px-4 py-3">Errore ({section.unit})</th>
-                {section.key === "linearity" && (
+                <th className="px-4 py-3">Media letture ({section.unit})</th>
+                <th className="px-4 py-3">Errore medio ({section.unit})</th>
+                {section.key !== "repeatability" && (
                   <th className="px-4 py-3">Errore %</th>
                 )}
                 <th className="px-4 py-3">Ripetibilità %</th>
@@ -1352,7 +1352,7 @@ export default function MassVerificationStarter({
                       {formatItalianNumber(calculatedPoint.error)}
                     </td>
 
-                    {section.key === "linearity" && (
+                    {section.key !== "repeatability" && (
                       <td className="px-4 py-3">
                         {formatItalianNumber(calculatedPoint.errorPercent)}
                       </td>

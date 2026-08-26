@@ -7,6 +7,7 @@ import {
   type PressurePhase,
   type PressurePointInput} from "@/lib/calculations/pressure";
 import { supabase } from "@/lib/supabase";
+import { canonicalMeasurementUnit } from "@/lib/measurement-units";
 import PressureErrorChart from "./PressureErrorChart";
 import ReferenceInstrumentMultiSelect from "./ReferenceInstrumentMultiSelect";
 
@@ -205,7 +206,7 @@ function normalizeUnit(value: unknown) {
     return "";
   }
 
-  return unit;
+  return canonicalMeasurementUnit(unit);
 }
 
 function unitSuffix(unit: string) {
@@ -798,7 +799,7 @@ export default function EditPressureMeasurementsForm({
 
               <div className="overflow-x-auto">
                 <table className="w-full min-w-[1080px] text-sm">
-                  <thead className="text-center text-xs uppercase tracking-wide text-slate-700">
+                  <thead className="text-center text-xs tracking-wide text-slate-700">
                     <tr className="border-y border-slate-300">
                       <th className="bg-orange-200 px-3 py-3 text-orange-950">
                         Punti di verifica

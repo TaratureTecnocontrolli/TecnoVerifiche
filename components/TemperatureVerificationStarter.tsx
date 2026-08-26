@@ -1104,7 +1104,7 @@ export default function TemperatureVerificationStarter({
 
         <div className="overflow-x-auto">
           <table className="w-full min-w-[900px] text-sm">
-            <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+            <thead className="bg-slate-50 text-left text-xs tracking-wide text-slate-500">
               <tr>
                 <th className="px-4 py-3">Data</th>
                 <th className="px-4 py-3">Orario</th>

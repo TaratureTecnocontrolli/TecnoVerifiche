@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { canonicalMeasurementUnit } from "@/lib/measurement-units";
 import ReferenceInstrumentMultiSelect from "@/components/ReferenceInstrumentMultiSelect";
 import MeasurementErrorChart from "@/components/MeasurementErrorChart";
 
@@ -278,7 +279,7 @@ function normalizeUnit(value: unknown) {
     return "";
   }
 
-  return unit;
+  return canonicalMeasurementUnit(unit);
 }
 
 function unitSuffix(unit: string) {
@@ -465,7 +466,7 @@ export default function EditPullOffMeasurementsForm({
 
   const pullOffUnit =
     normalizeUnit(selectedReferenceInstruments[0]?.unit) ||
-    inferUnitFromText(initialScales[0]?.scale_range) ||
+    normalizeUnit(inferUnitFromText(initialScales[0]?.scale_range)) ||
     "kN";
 
   function resetSaveState() {
@@ -961,7 +962,7 @@ export default function EditPullOffMeasurementsForm({
 
           <div className="overflow-x-auto">
             <table className="w-full min-w-[1100px] text-sm">
-              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+              <thead className="bg-slate-50 text-left text-xs tracking-wide text-slate-500">
                 <tr>
                   <th className="px-4 py-3">Punto</th>
                   <th className="px-4 py-3">Carico applicato{unitSuffix(pullOffUnit)}</th>

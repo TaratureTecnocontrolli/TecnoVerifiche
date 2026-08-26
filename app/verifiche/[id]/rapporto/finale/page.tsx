@@ -61,13 +61,27 @@ type TechnicalPageInfo = {
   showEccentricityDiagram: boolean;
 };
 
+type TechnicalSheetInfo = {
+  key: string;
+  sections: TechnicalPageInfo[];
+  showGlobalContext: boolean;
+};
+
 type PageDescriptor =
   | { type: "cover" }
   | { type: "text" }
   | { type: "execution" }
+  | {
+      type: "references";
+      referenceSnapshots: GenericRecord[];
+      referenceStartIndex: number;
+      continuation: boolean;
+      showResults: boolean;
+    }
+  | { type: "results" }
   | { type: "formula" }
-  | { type: "technical"; page: TechnicalPageInfo }
-  | { type: "chart"; chart: ChartPageInfo }
+  | { type: "technical"; sheet: TechnicalSheetInfo }
+  | { type: "chart"; charts: ChartPageInfo[] }
   | { type: "signature" };
 
 const LETTERHEAD_IMAGE_SRC = "/carta_intestata_rev02.png";
@@ -952,6 +966,9 @@ function TextIntroPage({
 function ExecutionTextPage({
   record,
   details,
+  referenceSnapshots,
+  includeTailSections,
+  includeResultsAfterReferences,
   reportNumber,
   reportDate,
   pageNumber,
@@ -959,6 +976,9 @@ function ExecutionTextPage({
 }: {
   record: GenericRecord;
   details: GenericRecord;
+  referenceSnapshots: GenericRecord[];
+  includeTailSections: boolean;
+  includeResultsAfterReferences: boolean;
   reportNumber: string;
   reportDate: unknown;
   pageNumber: number;
@@ -1031,7 +1051,7 @@ function ExecutionTextPage({
     formulaText = [
       "La verifica è composta da tre prove distinte: ripetibilità (un punto, tre letture), eccentricità (cinque zone del piatto di pesata, tre letture ciascuna) e linearità (più punti sull'intero campo di pesata, tre letture ciascuno).",
       "Errore = Media letture - Peso nominale.",
-      "Errore % (solo prova di linearità) = (Media letture / Peso nominale - 1) × 100.",
+      "Errore % (prove di eccentricità e linearità) = (Media letture / Peso nominale - 1) × 100.",
       "Errore ripetibilità % = [(Lettura massima - Lettura minima) / Media letture] × 100.",
       "Eccentricità (zona centrale) = Media delle ripetibilità delle cinque zone - Ripetibilità della zona centrale.",
     ];
@@ -1100,39 +1120,276 @@ function ExecutionTextPage({
           ))}
         </div>
 
-        <div>
-          <h2 className="mb-2 text-[15px] font-black uppercase">
-            6. Risultati della verifica
+        {includeTailSections ? (
+          <div className="space-y-4">
+            <div className="break-inside-avoid">
+              <h2 className="mb-2 text-[15px] font-black uppercase">
+                6. Strumenti campione utilizzati
+              </h2>
+              <p className="mb-2 text-justify text-[11px] leading-4">
+                Per l&apos;esecuzione delle verifiche sono stati utilizzati gli
+                strumenti campione di seguito identificati.
+              </p>
+              {referenceSnapshots.map((referenceSnapshot, referenceIndex) => (
+                <table
+                  key={referenceIndex}
+                  className="mb-2 w-full border-collapse text-[8px] leading-tight"
+                >
+                  <thead>
+                    <tr className="bg-slate-700/65 text-left text-slate-950">
+                      <th colSpan={4} className="border border-slate-900 px-2 py-0.5">
+                        Strumento campione {referenceIndex + 1}
+                      </th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr>
+                      <DataCell label="Strumento" value={referenceSnapshot.name} />
+                      <DataCell label="Costruttore" value={referenceSnapshot.manufacturer} />
+                    </tr>
+                    <tr>
+                      <DataCell label="Modello" value={referenceSnapshot.model} />
+                      <DataCell label="Matricola" value={referenceSnapshot.serial_number} />
+                    </tr>
+                    <tr>
+                      <DataCell label="Cod. int." value={referenceSnapshot.internal_code} />
+                      <DataCell
+                        label="Fondo scala"
+                        value={[
+                          textValue(referenceSnapshot.measurement_range, ""),
+                          normalizeUnit(referenceSnapshot.unit),
+                        ].filter(Boolean).join(" ") || "-"}
+                      />
+                    </tr>
+                    <tr>
+                      <DataCell label="Certificato" value={referenceSnapshot.certificate_number} />
+                      <DataCell label="Scadenza" value={formatDate(referenceSnapshot.certificate_expiry)} />
+                    </tr>
+                  </tbody>
+                </table>
+              ))}
+            </div>
+
+            {includeResultsAfterReferences ? <div className="break-inside-avoid">
+              <h2 className="mb-2 text-[15px] font-black uppercase">
+                7. Risultati della verifica
+              </h2>
+              <table className="w-full border-collapse text-center text-[10px]">
+                <thead>
+                  <tr className="bg-slate-700/65 text-slate-950">
+                    <th className="border border-slate-900 px-2 py-0.5">Temperatura ambientale (°C)</th>
+                    <th className="border border-slate-900 px-2 py-0.5">Umidità ambientale (%)</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td className="border border-slate-900 px-2 py-1 font-bold">{textValue(details.temperature)}</td>
+                    <td className="border border-slate-900 px-2 py-1 font-bold">{textValue(details.humidity)}</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div> : null}
+          </div>
+        ) : null}
+
+      </section>
+    </PageShell>
+  );
+}
+
+function ReferenceInstrumentsPage({
+  referenceSnapshots,
+  details,
+  showResults,
+  continuation,
+  referenceStartIndex,
+  reportNumber,
+  reportDate,
+  pageNumber,
+  totalPages,
+}: {
+  referenceSnapshots: GenericRecord[];
+  details: GenericRecord;
+  showResults: boolean;
+  continuation: boolean;
+  referenceStartIndex: number;
+  reportNumber: string;
+  reportDate: unknown;
+  pageNumber: number;
+  totalPages: number;
+}) {
+  return (
+    <PageShell
+      pageNumber={pageNumber}
+      totalPages={totalPages}
+      reportNumber={reportNumber}
+      reportDate={reportDate}
+    >
+      <section className="text-slate-950">
+        <h2 className={(continuation ? "mt-3 mb-2" : "mt-8 mb-4") + " text-[15px] font-black uppercase"}>
+          6. Strumenti campione utilizzati{continuation ? " - continua" : ""}
+        </h2>
+
+        {!continuation ? <p className="mb-4 text-justify text-[12px] leading-5">
+          Per l&apos;esecuzione delle verifiche sono stati utilizzati gli strumenti
+          campione di seguito identificati.
+        </p> : null}
+
+        <div className="space-y-3">
+          {referenceSnapshots.length > 0 ? (
+            referenceSnapshots.map((referenceSnapshot, referenceIndex) => (
+              <table
+                key={referenceIndex}
+                className="w-full border-collapse text-[9px]"
+              >
+                <thead>
+                  <tr className="bg-slate-700/65 text-left text-slate-950">
+                    <th colSpan={4} className="border border-slate-900 px-2 py-1">
+                      Strumento campione {referenceStartIndex + referenceIndex + 1}
+                    </th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <DataCell label="Strumento" value={referenceSnapshot.name} />
+                    <DataCell
+                      label="Costruttore"
+                      value={referenceSnapshot.manufacturer}
+                    />
+                  </tr>
+                  <tr>
+                    <DataCell label="Modello" value={referenceSnapshot.model} />
+                    <DataCell
+                      label="Matricola"
+                      value={referenceSnapshot.serial_number}
+                    />
+                  </tr>
+                  <tr>
+                    <DataCell
+                      label="Cod. int."
+                      value={referenceSnapshot.internal_code}
+                    />
+                    <DataCell
+                      label="Fondo scala"
+                      value={[
+                        textValue(referenceSnapshot.measurement_range, ""),
+                        normalizeUnit(referenceSnapshot.unit),
+                      ]
+                        .filter(Boolean)
+                        .join(" ") || "-"}
+                    />
+                  </tr>
+                  <tr>
+                    <DataCell
+                      label="Certificato"
+                      value={referenceSnapshot.certificate_number}
+                    />
+                    <DataCell
+                      label="Scadenza"
+                      value={formatDate(referenceSnapshot.certificate_expiry)}
+                    />
+                  </tr>
+                </tbody>
+              </table>
+            ))
+          ) : (
+            <div className="rounded-sm border border-slate-900 bg-white/40 p-4 text-center text-[11px]">
+              Nessuno strumento campione associato alla verifica.
+            </div>
+          )}
+        </div>
+
+        {showResults ? <div className="mt-6 break-inside-avoid">
+          <h2 className="mb-3 text-[15px] font-black uppercase">
+            7. Risultati della verifica
           </h2>
 
-          <table className="w-full border-collapse text-center text-[11px]">
+          <table className="w-full border-collapse text-center text-[12px]">
             <thead>
               <tr className="bg-slate-700/65 text-slate-950">
-                <th className="border border-slate-900 px-2 py-0.5">
+                <th className="border border-slate-900 px-2 py-1">
                   Temperatura ambientale (°C)
                 </th>
-                <th className="border border-slate-900 px-2 py-0.5">
+                <th className="border border-slate-900 px-2 py-1">
                   Umidità ambientale (%)
                 </th>
               </tr>
             </thead>
             <tbody>
               <tr>
-                <td className="border border-slate-900 px-2 py-1 font-bold">
+                <td className="border border-slate-900 px-2 py-2 font-bold">
                   {textValue(details.temperature)}
                 </td>
-                <td className="border border-slate-900 px-2 py-1 font-bold">
+                <td className="border border-slate-900 px-2 py-2 font-bold">
                   {textValue(details.humidity)}
                 </td>
               </tr>
             </tbody>
           </table>
 
-          <div className="mt-5 rounded-lg border border-slate-200 p-3 text-[11px] leading-5">
-            Nota: la sezione tecnica di verifica taratura costituisce
-            parte integrante del presente Rapporto di Prova ed è riportata nelle
-            pagine successive prima della sottoscrizione finale.
+          <div className="mt-4 rounded-lg border border-slate-200 p-3 text-[11px] leading-5">
+            Nota: la sezione tecnica di verifica taratura costituisce parte
+            integrante del presente Rapporto di Prova ed è riportata di seguito
+            prima della sottoscrizione finale.
           </div>
+        </div> : null}
+      </section>
+    </PageShell>
+  );
+}
+
+function ResultsPage({
+  details,
+  reportNumber,
+  reportDate,
+  pageNumber,
+  totalPages,
+}: {
+  details: GenericRecord;
+  reportNumber: string;
+  reportDate: unknown;
+  pageNumber: number;
+  totalPages: number;
+}) {
+  return (
+    <PageShell
+      pageNumber={pageNumber}
+      totalPages={totalPages}
+      reportNumber={reportNumber}
+      reportDate={reportDate}
+    >
+      <section className="text-slate-950">
+        <h2 className="mt-8 mb-4 text-[15px] font-black uppercase">
+          7. Risultati della verifica
+        </h2>
+
+        <table className="w-full border-collapse text-center text-[12px]">
+          <thead>
+            <tr className="bg-slate-700/65 text-slate-950">
+              <th className="border border-slate-900 px-2 py-1">
+                Temperatura ambientale (°C)
+              </th>
+              <th className="border border-slate-900 px-2 py-1">
+                Umidità ambientale (%)
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td className="border border-slate-900 px-2 py-2 font-bold">
+                {textValue(details.temperature)}
+              </td>
+              <td className="border border-slate-900 px-2 py-2 font-bold">
+                {textValue(details.humidity)}
+              </td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div className="mt-8 rounded-lg border border-slate-200 p-4 text-[12px] leading-6">
+          Nota: la sezione tecnica di verifica taratura costituisce parte
+          integrante del presente Rapporto di Prova ed è riportata nelle pagine
+          successive prima della sottoscrizione finale.
         </div>
       </section>
     </PageShell>
@@ -1215,7 +1472,7 @@ function FormulaPage({
     formulaText = [
       "La verifica è composta da tre prove distinte: ripetibilità (un punto, tre letture), eccentricità (cinque zone del piatto di pesata, tre letture ciascuna) e linearità (più punti sull'intero campo di pesata, tre letture ciascuno).",
       "Errore = Media letture - Peso nominale.",
-      "Errore % (solo prova di linearità) = (Media letture / Peso nominale - 1) × 100.",
+      "Errore % (prove di eccentricità e linearità) = (Media letture / Peso nominale - 1) × 100.",
       "Errore ripetibilità % = [(Lettura massima - Lettura minima) / Media letture] × 100.",
       "Eccentricità (zona centrale) = Media delle ripetibilità delle cinque zone - Ripetibilità della zona centrale.",
     ];
@@ -1269,7 +1526,7 @@ function FormulaPage({
 
         <div>
           <h2 className="mb-4 text-[15px] font-black uppercase">
-            6. Risultati della verifica
+            7. Risultati della verifica
           </h2>
 
           <table className="w-full border-collapse text-center text-[12px]">
@@ -1529,7 +1786,7 @@ function TechnicalPage({
     >
       <div
         className={
-          (isCompactMassEccentricity ? "mt-5" : "mt-10") +
+          (isCompactMassEccentricity ? "mt-3" : "mt-10") +
           " text-right text-[11px] font-semibold text-slate-900"
         }
       >
@@ -1634,7 +1891,10 @@ function TechnicalPage({
         <tbody>
           <tr>
             <DataCell label="Scala" value={scale.scale_name} />
-            <DataCell label="Fondo scala" value={scale.scale_range} />
+            <DataCell
+              label="Fondo scala"
+              value={formatNumberWithUnit(scale.scale_range, measurementUnit)}
+            />
           </tr>
           <tr>
             <DataCell
@@ -1648,73 +1908,6 @@ function TechnicalPage({
           </tr>
         </tbody>
       </table>}
-
-      {!continuation && referenceSnapshots.map((referenceSnapshot, referenceIndex) => (
-        <table
-          key={referenceIndex}
-          className={(isCompactMassEccentricity ? "mt-1.5" : "mt-3") + " w-full border-collapse text-[9px]"}
-        >
-          <thead>
-            <tr className="bg-slate-700/65 text-left text-slate-950">
-              <th colSpan={4} className="border border-slate-900 px-2 py-0.5">
-                {referenceSnapshots.length > 1
-                  ? "Strumento campione usato " + String(referenceIndex + 1)
-                  : "Strumento campione usato"}
-              </th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr>
-              <DataCell label="Strumento" value={referenceSnapshot.name} />
-              <DataCell
-                label="Costruttore"
-                value={referenceSnapshot.manufacturer}
-              />
-            </tr>
-            <tr>
-              <DataCell label="Modello" value={referenceSnapshot.model} />
-              <DataCell
-                label="Matricola"
-                value={referenceSnapshot.serial_number}
-              />
-            </tr>
-            <tr>
-              <DataCell
-                label="Cod. int."
-                value={referenceSnapshot.internal_code}
-              />
-              <DataCell
-                label="Fondo scala"
-                value={
-                  [
-                    textValue(referenceSnapshot.measurement_range, ""),
-                    normalizeUnit(
-                      firstTextValueFromSources([referenceSnapshot], [
-                        "unit",
-                        "measurement_unit",
-                        "unita_misura",
-                        "unit_of_measure",
-                      ])
-                    ),
-                  ]
-                    .filter(Boolean)
-                    .join(" ") || "-"
-                }
-              />
-            </tr>
-            <tr>
-              <DataCell
-                label="Certificato"
-                value={referenceSnapshot.certificate_number}
-              />
-              <DataCell
-                label="Scadenza"
-                value={formatDate(referenceSnapshot.certificate_expiry)}
-              />
-            </tr>
-          </tbody>
-        </table>
-      ))}
 
       {showEccentricityDiagram &&
         isMass &&
@@ -1730,7 +1923,11 @@ function TechnicalPage({
           />
           <div className="max-w-[245px] text-[9px] leading-snug text-slate-800">
             <p className="font-bold">Schema prova di eccentricità</p>
-         </div>
+            <p className="mt-1">
+              Posizioni di applicazione del carico: zona centrale C e zone
+              periferiche 1, 2, 3 e 4.
+            </p>
+          </div>
         </div>
       )}
 
@@ -1763,16 +1960,223 @@ function TechnicalPage({
   );
 }
 
-function ChartPage({
-  measurements,
-  title,
+function TechnicalScaleSection({
+  record,
+  pageInfo,
+  customerSnapshot,
+}: {
+  record: GenericRecord;
+  pageInfo: TechnicalPageInfo;
+  customerSnapshot: GenericRecord;
+}) {
+  const { plan, measurements, continuation } = pageInfo;
+  const { scale, scaleMeasurements, scaleReferenceSnapshots } = plan;
+  const isPressure =
+    record.verification_module === "PRESSURE" || record.mode === "pressione";
+  const isFlow = record.verification_module === "FLOW" || record.mode === "portata";
+  const isMass = record.verification_module === "MASS" || record.mode === "massa";
+  const isDimensional =
+    record.verification_module === "DIMENSIONAL" || record.mode === "dimensionale";
+  const measurementUnit = getMeasurementUnit({
+    record,
+    customerSnapshot,
+    referenceSnapshots: scaleReferenceSnapshots,
+    scale,
+  });
+  const maxAccuracy = maxAbsoluteValue(
+    scaleMeasurements,
+    "accuracy_error_percent"
+  );
+  const maxRepeatability = maxAbsoluteValue(
+    scaleMeasurements,
+    "repeatability_error_percent"
+  );
+  const appliedLabel = isFlow
+    ? "Volume impostato"
+    : isMass
+      ? "Peso nominale"
+      : isDimensional
+        ? "Valore nominale"
+        : "Carico applicato";
+
+  return (
+    <section className="mt-3 break-inside-avoid">
+      <div className="mb-1 flex items-end justify-between gap-3">
+        <h3 className="text-[12px] font-black uppercase">
+          {textValue(scale.scale_name)}
+        </h3>
+        {continuation && (
+          <span className="text-[8px] font-semibold text-slate-600">
+            Continuazione
+          </span>
+        )}
+      </div>
+
+      <table className="mb-2 w-full border-collapse text-[8px]">
+        <tbody>
+          <tr>
+            <DataCell label="Scala" value={scale.scale_name} />
+            <DataCell
+              label="Fondo scala"
+              value={formatNumberWithUnit(scale.scale_range, measurementUnit)}
+            />
+          </tr>
+          <tr>
+            <DataCell
+              label="Errore accuratezza max"
+              value={formatNumberWithUnit(maxAccuracy, "%")}
+            />
+            <DataCell
+              label="Errore ripetibilità max"
+              value={formatNumberWithUnit(maxRepeatability, "%")}
+            />
+          </tr>
+        </tbody>
+      </table>
+
+      {pageInfo.showEccentricityDiagram && (
+        <div className="mb-2 flex items-center justify-center gap-3 rounded-sm border border-slate-300 bg-white/45 px-3 py-1">
+          <img
+            src="/eccentricita.png"
+            alt="Schema delle posizioni per la prova di eccentricità"
+            className="h-[60px] w-auto object-contain"
+          />
+          <p className="max-w-[260px] text-[8px] leading-snug">
+            <strong>Schema prova di eccentricità.</strong> Zona centrale C e
+            zone periferiche 1, 2, 3 e 4.
+          </p>
+        </div>
+      )}
+
+      <TechnicalTable
+        measurements={measurements}
+        showNominalColumn={isFlow}
+        showUncertaintyColumn={isDimensional}
+        nominalLabel="Volume nominale"
+        appliedLabel={appliedLabel}
+        measurementUnit={measurementUnit}
+        showThirdCycleColumn={!isPressure && !isFlow}
+        firstColumnLabel={isMass ? "Zona" : "Punto di verifica"}
+        firstColumnHasUnit={!isMass}
+        pointLabelResolver={
+          isMass
+            ? (measurement, index) =>
+                massReportPointLabel(
+                  scale.scale_name || measurement.section,
+                  index,
+                  measurement.point_order
+                )
+            : undefined
+        }
+      />
+    </section>
+  );
+}
+
+function TechnicalFlowPage({
+  record,
+  details,
+  sheet,
+  customerSnapshot,
   reportNumber,
   reportDate,
   pageNumber,
   totalPages,
 }: {
-  measurements: MeasurementLike[];
-  title: string;
+  record: GenericRecord;
+  details: GenericRecord;
+  sheet: TechnicalSheetInfo;
+  customerSnapshot: GenericRecord;
+  reportNumber: string;
+  reportDate: unknown;
+  pageNumber: number;
+  totalPages: number;
+}) {
+  return (
+    <PageShell
+      pageNumber={pageNumber}
+      totalPages={totalPages}
+      reportNumber={reportNumber}
+      reportDate={reportDate}
+    >
+      <div className="mt-4 text-right text-[10px] font-semibold text-slate-900">
+        Sezione tecnica integrante del Rapporto di Prova {reportNumber}
+      </div>
+
+      <h2 className="mt-2 text-center text-[16px] font-black uppercase tracking-wide">
+        Sezione tecnica di verifica di taratura
+      </h2>
+
+      {sheet.showGlobalContext && (
+        <div className="mt-3 space-y-2 text-[8px]">
+          <table className="w-full border-collapse">
+            <tbody>
+              <tr>
+                <DataCell
+                  label="Codice cliente"
+                  value={customerSnapshot.customer_number}
+                />
+                <DataCell label="Cliente" value={customerSnapshot.customer_name} />
+              </tr>
+              <tr>
+                <DataCell
+                  label="Luogo prove"
+                  value={details.site_description ?? record.location}
+                />
+                <DataCell
+                  label="Data verifica"
+                  value={formatDate(details.test_date ?? record.verification_date)}
+                />
+              </tr>
+            </tbody>
+          </table>
+
+          <table className="w-full border-collapse">
+            <tbody>
+              <tr>
+                <DataCell
+                  label="Strumento in prova"
+                  value={customerSnapshot.instrument_name}
+                />
+                <DataCell
+                  label="Costruttore"
+                  value={customerSnapshot.manufacturer}
+                />
+              </tr>
+              <tr>
+                <DataCell label="Modello" value={customerSnapshot.model} />
+                <DataCell
+                  label="Matricola"
+                  value={customerSnapshot.serial_number}
+                />
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      <div className="mt-2">
+        {sheet.sections.map((section) => (
+          <TechnicalScaleSection
+            key={section.key}
+            record={record}
+            pageInfo={section}
+            customerSnapshot={customerSnapshot}
+          />
+        ))}
+      </div>
+    </PageShell>
+  );
+}
+
+function ChartPage({
+  charts,
+  reportNumber,
+  reportDate,
+  pageNumber,
+  totalPages,
+}: {
+  charts: ChartPageInfo[];
   reportNumber: string;
   reportDate: unknown;
   pageNumber: number;
@@ -1789,8 +2193,22 @@ function ChartPage({
         Sezione tecnica integrante del Rapporto di Prova {reportNumber}
       </div>
 
-      <div className="mt-8 rounded-2xl bg-white/45 p-2">
-        <MeasurementErrorChart measurements={measurements} title={title} />
+      <div className={(charts.length > 1 ? "mt-4 gap-3" : "mt-8 gap-6") + " flex flex-col"}>
+        {charts.map((chart) => (
+          <div
+            key={chart.key}
+            className={
+              charts.length > 1
+                ? "rounded-2xl bg-white/45 p-1 [&_svg]:!h-[235px] [&>div]:!p-3"
+                : "rounded-2xl bg-white/45 p-2"
+            }
+          >
+            <MeasurementErrorChart
+              measurements={chart.measurements}
+              title={chart.title}
+            />
+          </div>
+        ))}
       </div>
     </PageShell>
   );
@@ -1936,7 +2354,7 @@ function SignaturePage({
     >
       <section className="text-[13px] leading-5 text-slate-950">
         <h2 className="mt-10 mb-2 text-[15px] font-black uppercase">
-          7. Sottoscrizione del rapporto
+          8. Sottoscrizione del rapporto
         </h2>
 
         <p>
@@ -2054,7 +2472,6 @@ const { data: recordData, error: recordError } = await supabase
 
   const customerMaster = asObject(customerMasterData);
   const referenceSnapshot = asObject(record.reference_instrument_snapshot);
-  const procedureSnapshot = asObject(record.procedure_snapshot);
   const mainMeasurementUnit = getMeasurementUnit({
     record,
     customerSnapshot,
@@ -2182,94 +2599,189 @@ const { data: recordData, error: recordError } = await supabase
     };
   });
 
-  const technicalPages = scalePlans.flatMap((plan): TechnicalPageInfo[] => {
-    const isMassEccentricity =
-      isMass && massScaleKind(plan.scale.scale_name) === "eccentricity";
-    const isMassLinearity =
-      isMass && massScaleKind(plan.scale.scale_name) === "linearity";
+  const uniqueReferenceSnapshots = Array.from(
+    new Map(
+      scalePlans
+        .flatMap((plan) => plan.scaleReferenceSnapshots)
+        .filter(
+          (snapshot) =>
+            snapshot.name ||
+            snapshot.instrument_id ||
+            snapshot.internal_code ||
+            snapshot.serial_number
+        )
+        .map((snapshot, index) => {
+          const identity =
+            textValue(snapshot.instrument_id, "") ||
+            textValue(snapshot.internal_code, "") ||
+            textValue(snapshot.serial_number, "") ||
+            [
+              textValue(snapshot.name, ""),
+              textValue(snapshot.certificate_number, ""),
+            ].join("|") ||
+            "reference-" + String(index);
 
-    if (isMassEccentricity) {
-      return [
-        {
-          key: String(plan.scale.id) + "-1",
-          plan,
-          measurements: plan.scaleMeasurements,
-          continuation: false,
-          showMeasurementsTable: true,
-          showEccentricityDiagram: true,
-        },
-      ];
-    }
+          return [identity, snapshot] as const;
+        })
+    ).values()
+  );
 
-    if (!isMassLinearity || plan.scaleMeasurements.length <= 6) {
-      return [
-        {
-          key: String(plan.scale.id) + "-1",
-          plan,
-          measurements: plan.scaleMeasurements,
-          continuation: false,
-          showMeasurementsTable: true,
-          showEccentricityDiagram: false,
-        },
-      ];
-    }
+  const technicalSheets: TechnicalSheetInfo[] = [];
+  const remainingBudgetBySheet: number[] = [];
+  const firstSheetBudget = 500;
+  const continuationSheetBudget = 700;
+  const measurementRowCost = 18;
+  const scaleSectionCost = 92;
+  const eccentricityDiagramCost = 74;
 
-    const pages: TechnicalPageInfo[] = [
-      {
-        key: String(plan.scale.id) + "-1",
-        plan,
-        measurements: plan.scaleMeasurements.slice(0, 6),
-        continuation: false,
-        showMeasurementsTable: true,
-        showEccentricityDiagram: false,
-      },
-    ];
+  function createTechnicalSheet() {
+    const sheetIndex = technicalSheets.length;
+    const showGlobalContext = sheetIndex === 0;
 
-    const continuationRows = plan.scaleMeasurements.slice(6);
-    const rowsPerContinuationPage = 20;
+    technicalSheets.push({
+      key: "technical-sheet-" + String(sheetIndex + 1),
+      sections: [],
+      showGlobalContext,
+    });
+    remainingBudgetBySheet.push(
+      showGlobalContext ? firstSheetBudget : continuationSheetBudget
+    );
 
-    for (
-      let start = 0;
-      start < continuationRows.length;
-      start += rowsPerContinuationPage
-    ) {
-      pages.push({
+    return sheetIndex;
+  }
+
+  if (scalePlans.length > 0) {
+    createTechnicalSheet();
+  }
+
+  scalePlans.forEach((plan) => {
+    const allMeasurements = plan.scaleMeasurements;
+    const isEccentricity =
+      massScaleKind(plan.scale.scale_name) === "eccentricity";
+    let measurementOffset = 0;
+    let chunkIndex = 0;
+    let needsEmptySection = allMeasurements.length === 0;
+
+    while (measurementOffset < allMeasurements.length || needsEmptySection) {
+      let sheetIndex = technicalSheets.length - 1;
+      const showDiagram = isEccentricity && chunkIndex === 0;
+      const fixedCost =
+        scaleSectionCost + (showDiagram ? eccentricityDiagramCost : 0);
+      const minimumCost = fixedCost + (needsEmptySection ? 0 : measurementRowCost);
+
+      if (
+        remainingBudgetBySheet[sheetIndex] < minimumCost &&
+        technicalSheets[sheetIndex].sections.length > 0
+      ) {
+        sheetIndex = createTechnicalSheet();
+      }
+
+      const availableForRows = Math.max(
+        measurementRowCost,
+        remainingBudgetBySheet[sheetIndex] - fixedCost
+      );
+      const rowsThatFit = needsEmptySection
+        ? 0
+        : Math.max(1, Math.floor(availableForRows / measurementRowCost));
+      const chunk = allMeasurements.slice(
+        measurementOffset,
+        measurementOffset + rowsThatFit
+      );
+
+      technicalSheets[sheetIndex].sections.push({
         key:
           String(plan.scale.id) +
-          "-" +
-          String(Math.floor(start / rowsPerContinuationPage) + 2),
+          "-chunk-" +
+          String(chunkIndex + 1),
         plan,
-        measurements: continuationRows.slice(
-          start,
-          start + rowsPerContinuationPage
-        ),
-        continuation: true,
+        measurements: chunk,
+        continuation: chunkIndex > 0,
         showMeasurementsTable: true,
-        showEccentricityDiagram: false,
+        showEccentricityDiagram: showDiagram,
+      });
+
+      remainingBudgetBySheet[sheetIndex] -=
+        fixedCost + chunk.length * measurementRowCost;
+      measurementOffset += chunk.length;
+      chunkIndex += 1;
+      needsEmptySection = false;
+    }
+  });
+
+  const hasTestPhasePhotos = reportPhotos.some(
+    (photo) => photo.photo_category === "test_phase"
+  );
+  const executionTextLength = splitText(details.execution_method).join(" ").length;
+  const canStartReferencesInline =
+    !hasTestPhasePhotos && executionTextLength <= 1200;
+  const inlineReferenceCapacity = canStartReferencesInline
+    ? executionTextLength <= 650
+      ? 3
+      : 1
+    : 0;
+  const inlineReferenceSnapshots = uniqueReferenceSnapshots.slice(
+    0,
+    inlineReferenceCapacity
+  );
+  const remainingReferenceSnapshots = uniqueReferenceSnapshots.slice(
+    inlineReferenceCapacity
+  );
+  const referenceDescriptors: PageDescriptor[] = [];
+  const referenceTablesPerFullPage = 4;
+
+  if (remainingReferenceSnapshots.length > 0) {
+    for (
+      let index = 0;
+      index < remainingReferenceSnapshots.length;
+      index += referenceTablesPerFullPage
+    ) {
+      const referenceChunk = remainingReferenceSnapshots.slice(
+        index,
+        index + referenceTablesPerFullPage
+      );
+      const isLastChunk =
+        index + referenceTablesPerFullPage >= remainingReferenceSnapshots.length;
+
+      referenceDescriptors.push({
+        type: "references",
+        referenceSnapshots: referenceChunk,
+        referenceStartIndex: inlineReferenceCapacity + index,
+        continuation: canStartReferencesInline || index > 0,
+        showResults: isLastChunk,
       });
     }
+  } else if (!canStartReferencesInline) {
+    referenceDescriptors.push({
+      type: "references",
+      referenceSnapshots: [],
+      referenceStartIndex: 0,
+      continuation: false,
+      showResults: true,
+    });
+  }
 
-    return pages;
-  });
+  const showInlineTail = canStartReferencesInline;
+  const showInlineResults =
+    showInlineTail && remainingReferenceSnapshots.length === 0;
+  const allChartPages = scalePlans.flatMap((plan) => plan.chartPages);
+  const chartDescriptors: PageDescriptor[] = [];
+
+  for (let index = 0; index < allChartPages.length; index += 2) {
+    chartDescriptors.push({
+      type: "chart",
+      charts: allChartPages.slice(index, index + 2),
+    });
+  }
 
   const pageDescriptors: PageDescriptor[] = [
     { type: "cover" },
     { type: "text" },
     { type: "execution" },
-    ...scalePlans.flatMap((plan): PageDescriptor[] => {
-      const planTechnicalPages = technicalPages.filter(
-        (page) => page.plan.scale.id === plan.scale.id
-      );
-
-      return [
-        ...planTechnicalPages.map(
-          (page): PageDescriptor => ({ type: "technical", page })
-        ),
-        ...plan.chartPages.map(
-          (chart): PageDescriptor => ({ type: "chart", chart })
-        ),
-      ];
-    }),
+    ...referenceDescriptors,
+    ...technicalSheets.map(
+      (sheet): PageDescriptor => ({ type: "technical", sheet })
+    ),
+    ...chartDescriptors,
     { type: "signature" },
   ];
 
@@ -2386,6 +2898,39 @@ const { data: recordData, error: recordError } = await supabase
                 key="execution"
                 record={record}
                 details={details}
+                referenceSnapshots={inlineReferenceSnapshots}
+                includeTailSections={showInlineTail}
+                includeResultsAfterReferences={showInlineResults}
+                reportNumber={reportNumber}
+                reportDate={reportDate}
+                pageNumber={pageNumber}
+                totalPages={totalPages}
+              />
+            );
+          }
+
+          if (descriptor.type === "references") {
+            return (
+              <ReferenceInstrumentsPage
+                key="references"
+                referenceSnapshots={descriptor.referenceSnapshots}
+                details={details}
+                showResults={descriptor.showResults}
+                continuation={descriptor.continuation}
+                referenceStartIndex={descriptor.referenceStartIndex}
+                reportNumber={reportNumber}
+                reportDate={reportDate}
+                pageNumber={pageNumber}
+                totalPages={totalPages}
+              />
+            );
+          }
+
+          if (descriptor.type === "results") {
+            return (
+              <ResultsPage
+                key="results"
+                details={details}
                 reportNumber={reportNumber}
                 reportDate={reportDate}
                 pageNumber={pageNumber}
@@ -2410,23 +2955,16 @@ const { data: recordData, error: recordError } = await supabase
 
           if (descriptor.type === "technical") {
             return (
-              <TechnicalPage
-                key={"technical-" + descriptor.page.key}
+              <TechnicalFlowPage
+                key={descriptor.sheet.key}
                 record={record}
                 details={details}
-                scale={descriptor.page.plan.scale}
-                measurements={descriptor.page.measurements}
-                summaryMeasurements={descriptor.page.plan.scaleMeasurements}
+                sheet={descriptor.sheet}
                 customerSnapshot={customerSnapshot}
-                referenceSnapshots={descriptor.page.plan.scaleReferenceSnapshots}
-                procedureSnapshot={procedureSnapshot}
                 reportNumber={reportNumber}
                 reportDate={reportDate}
                 pageNumber={pageNumber}
                 totalPages={totalPages}
-                continuation={descriptor.page.continuation}
-                showMeasurementsTable={descriptor.page.showMeasurementsTable}
-                showEccentricityDiagram={descriptor.page.showEccentricityDiagram}
               />
             );
           }
@@ -2434,9 +2972,8 @@ const { data: recordData, error: recordError } = await supabase
           if (descriptor.type === "chart") {
             return (
               <ChartPage
-                key={"chart-" + descriptor.chart.key}
-                measurements={descriptor.chart.measurements}
-                title={descriptor.chart.title}
+                key={"chart-" + descriptor.charts.map((chart) => chart.key).join("-")}
+                charts={descriptor.charts}
                 reportNumber={reportNumber}
                 reportDate={reportDate}
                 pageNumber={pageNumber}
