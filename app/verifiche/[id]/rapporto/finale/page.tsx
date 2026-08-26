@@ -5,6 +5,7 @@ import MeasurementErrorChart from "@/components/MeasurementErrorChart";
 import ReportPrintButton from "@/components/ReportPrintButton";
 import FinalReportPhotosInline from "@/components/FinalReportPhotosInline";
 import ReportStatusActions from "@/components/ReportStatusActions";
+import AutoPaginatedReport from "@/components/AutoPaginatedReport";
 import { hasValidChartMeasurements, type MeasurementLike } from "@/lib/chart-utils";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 
@@ -728,7 +729,8 @@ function PageShell({
 
       <div className="absolute bottom-[28px] left-[60px] right-[60px] z-10 border-t border-slate-300 pt-2 text-center text-[10px] leading-tight text-slate-700">
         <p>
-          Pagina {pageNumber} di {totalPages} del Rapporto di Prova{" "}
+          Pagina <span data-report-page-number>{pageNumber}</span> di{" "}
+          <span data-report-total-pages>{totalPages}</span> del Rapporto di Prova{" "}
           {reportNumber} del {formatDate(reportDate)}
         </p>
         <p>
@@ -918,8 +920,8 @@ function TextIntroPage({
       reportNumber={reportNumber}
       reportDate={reportDate}
     >
-      <section className="space-y-6 text-justify text-[13px] leading-5 text-slate-950">
-        <div>
+      <section className="space-y-4 text-justify text-[12px] leading-4 text-slate-950">
+        <div data-report-flow-block>
           <h2 className="mt-10 mb-1 text-[15px] font-black uppercase">1. Premessa</h2>
           {premiseParagraphs.map((paragraph, index) => (
             <p key={index} className="mb-0.5 text-justify">
@@ -935,8 +937,8 @@ function TextIntroPage({
           />
         </div>
 
-        <div>
-          <h2 className="mb-3 text-[15px] font-black uppercase">
+        <div data-report-flow-block>
+          <h2 className="mb-1 text-[15px] font-black uppercase">
             2. Scopo della prova
           </h2>
           {scopeParagraphs.map((paragraph, index) => (
@@ -946,8 +948,8 @@ function TextIntroPage({
           ))}
         </div>
 
-        <div>
-          <h2 className="mb-3 text-[15px] font-black uppercase">
+        <div data-report-flow-block>
+          <h2 className="mb-1 text-[15px] font-black uppercase">
             3. Descrizione dell&apos;apparato di verifica
           </h2>
           {apparatusDescriptionText().map((paragraph, index) => (
@@ -1090,8 +1092,8 @@ function ExecutionTextPage({
       reportNumber={reportNumber}
       reportDate={reportDate}
     >
-      <section className="space-y-5 text-justify text-[12px] leading-5 text-slate-950">
-        <div>
+      <section className="space-y-4 text-justify text-[11px] leading-4 text-slate-950">
+        <div data-report-flow-block>
           <h2 className="mt-8 mb-2 text-[15px] font-black uppercase">
             4. Descrizione e modalità di esecuzione della verifica di taratura
           </h2>
@@ -1108,7 +1110,7 @@ function ExecutionTextPage({
           />
         </div>
 
-        <div>
+        <div data-report-flow-block>
           <h2 className="mb-2 text-[15px] font-black uppercase">
             5. Espressione dei risultati
           </h2>
@@ -1123,17 +1125,19 @@ function ExecutionTextPage({
         {includeTailSections ? (
           <div className="space-y-4">
             <div className="break-inside-avoid">
-              <h2 className="mb-2 text-[15px] font-black uppercase">
+              <h2 data-report-flow-block data-report-flow-group="reference-start" className="mb-2 text-[15px] font-black uppercase">
                 6. Strumenti campione utilizzati
               </h2>
-              <p className="mb-2 text-justify text-[11px] leading-4">
+              <p data-report-flow-block data-report-flow-group="reference-start" className="mb-2 text-justify text-[11px] leading-4">
                 Per l&apos;esecuzione delle verifiche sono stati utilizzati gli
                 strumenti campione di seguito identificati.
               </p>
               {referenceSnapshots.map((referenceSnapshot, referenceIndex) => (
                 <table
                   key={referenceIndex}
-                  className="mb-2 w-full border-collapse text-[8px] leading-tight"
+                  data-report-flow-block
+                  data-report-flow-group={referenceIndex === 0 ? "reference-start" : undefined}
+                  className="mb-2 w-full border-collapse text-[9px] leading-tight"
                 >
                   <thead>
                     <tr className="bg-slate-700/65 text-left text-slate-950">
@@ -1170,7 +1174,7 @@ function ExecutionTextPage({
               ))}
             </div>
 
-            {includeResultsAfterReferences ? <div className="break-inside-avoid">
+            {includeResultsAfterReferences ? <div data-report-flow-block className="break-inside-avoid">
               <h2 className="mb-2 text-[15px] font-black uppercase">
                 7. Risultati della verifica
               </h2>
@@ -1194,6 +1198,66 @@ function ExecutionTextPage({
 
       </section>
     </PageShell>
+  );
+}
+
+function ReferenceInstrumentTable({
+  referenceSnapshot,
+  referenceNumber,
+  flowBlock = false,
+}: {
+  referenceSnapshot: GenericRecord;
+  referenceNumber: number;
+  flowBlock?: boolean;
+}) {
+  return (
+    <table
+      data-report-flow-block={flowBlock ? true : undefined}
+      className="w-full border-collapse text-[9px]"
+    >
+      <thead>
+        <tr className="bg-slate-700/65 text-left text-slate-950">
+          <th colSpan={4} className="border border-slate-900 px-2 py-1">
+            Strumento campione {referenceNumber}
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <DataCell label="Strumento" value={referenceSnapshot.name} />
+          <DataCell
+            label="Costruttore"
+            value={referenceSnapshot.manufacturer}
+          />
+        </tr>
+        <tr>
+          <DataCell label="Modello" value={referenceSnapshot.model} />
+          <DataCell label="Matricola" value={referenceSnapshot.serial_number} />
+        </tr>
+        <tr>
+          <DataCell label="Cod. int." value={referenceSnapshot.internal_code} />
+          <DataCell
+            label="Fondo scala"
+            value={[
+              textValue(referenceSnapshot.measurement_range, ""),
+              normalizeUnit(referenceSnapshot.unit),
+            ]
+              .filter(Boolean)
+              .join(" ") || "-"}
+          />
+        </tr>
+        <tr>
+          <DataCell
+            label="Certificato"
+            value={referenceSnapshot.certificate_number}
+          />
+          <DataCell
+            label="Scadenza"
+            value={formatDate(referenceSnapshot.certificate_expiry)}
+          />
+        </tr>
+      </tbody>
+    </table>
   );
 }
 
@@ -1226,72 +1290,29 @@ function ReferenceInstrumentsPage({
       reportDate={reportDate}
     >
       <section className="text-slate-950">
-        <h2 className={(continuation ? "mt-3 mb-2" : "mt-8 mb-4") + " text-[15px] font-black uppercase"}>
-          6. Strumenti campione utilizzati{continuation ? " - continua" : ""}
-        </h2>
+        <div data-report-flow-block className="break-inside-avoid">
+          <h2
+            className={
+              (continuation ? "mt-2 mb-1" : "mt-5 mb-2") +
+              " text-[15px] font-black uppercase"
+            }
+          >
+            6. Strumenti campione utilizzati
+            {continuation ? " - continua" : ""}
+          </h2>
 
-        {!continuation ? <p className="mb-4 text-justify text-[12px] leading-5">
-          Per l&apos;esecuzione delle verifiche sono stati utilizzati gli strumenti
-          campione di seguito identificati.
-        </p> : null}
+          {!continuation ? (
+            <p className="mb-2 text-justify text-[11px] leading-4">
+              Per l&apos;esecuzione delle verifiche sono stati utilizzati gli
+              strumenti campione di seguito identificati.
+            </p>
+          ) : null}
 
-        <div className="space-y-3">
-          {referenceSnapshots.length > 0 ? (
-            referenceSnapshots.map((referenceSnapshot, referenceIndex) => (
-              <table
-                key={referenceIndex}
-                className="w-full border-collapse text-[9px]"
-              >
-                <thead>
-                  <tr className="bg-slate-700/65 text-left text-slate-950">
-                    <th colSpan={4} className="border border-slate-900 px-2 py-1">
-                      Strumento campione {referenceStartIndex + referenceIndex + 1}
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr>
-                    <DataCell label="Strumento" value={referenceSnapshot.name} />
-                    <DataCell
-                      label="Costruttore"
-                      value={referenceSnapshot.manufacturer}
-                    />
-                  </tr>
-                  <tr>
-                    <DataCell label="Modello" value={referenceSnapshot.model} />
-                    <DataCell
-                      label="Matricola"
-                      value={referenceSnapshot.serial_number}
-                    />
-                  </tr>
-                  <tr>
-                    <DataCell
-                      label="Cod. int."
-                      value={referenceSnapshot.internal_code}
-                    />
-                    <DataCell
-                      label="Fondo scala"
-                      value={[
-                        textValue(referenceSnapshot.measurement_range, ""),
-                        normalizeUnit(referenceSnapshot.unit),
-                      ]
-                        .filter(Boolean)
-                        .join(" ") || "-"}
-                    />
-                  </tr>
-                  <tr>
-                    <DataCell
-                      label="Certificato"
-                      value={referenceSnapshot.certificate_number}
-                    />
-                    <DataCell
-                      label="Scadenza"
-                      value={formatDate(referenceSnapshot.certificate_expiry)}
-                    />
-                  </tr>
-                </tbody>
-              </table>
-            ))
+          {referenceSnapshots[0] ? (
+            <ReferenceInstrumentTable
+              referenceSnapshot={referenceSnapshots[0]}
+              referenceNumber={referenceStartIndex + 1}
+            />
           ) : (
             <div className="rounded-sm border border-slate-900 bg-white/40 p-4 text-center text-[11px]">
               Nessuno strumento campione associato alla verifica.
@@ -1299,7 +1320,18 @@ function ReferenceInstrumentsPage({
           )}
         </div>
 
-        {showResults ? <div className="mt-6 break-inside-avoid">
+        <div className="mt-3 space-y-3">
+          {referenceSnapshots.slice(1).map((referenceSnapshot, referenceIndex) => (
+            <ReferenceInstrumentTable
+              key={referenceIndex + 1}
+              referenceSnapshot={referenceSnapshot}
+              referenceNumber={referenceStartIndex + referenceIndex + 2}
+              flowBlock
+            />
+          ))}
+        </div>
+
+        {showResults ? <div data-report-flow-block className="mt-6 break-inside-avoid">
           <h2 className="mb-3 text-[15px] font-black uppercase">
             7. Risultati della verifica
           </h2>
@@ -1358,7 +1390,7 @@ function ResultsPage({
       reportNumber={reportNumber}
       reportDate={reportDate}
     >
-      <section className="text-slate-950">
+      <section data-report-flow-block className="text-slate-950">
         <h2 className="mt-8 mb-4 text-[15px] font-black uppercase">
           7. Risultati della verifica
         </h2>
@@ -1511,7 +1543,7 @@ function FormulaPage({
       reportNumber={reportNumber}
       reportDate={reportDate}
     >
-      <section className="space-y-6 text-justify text-[13px] leading-5 text-slate-950">
+      <section data-report-flow-block className="space-y-6 text-justify text-[13px] leading-5 text-slate-950">
         <div>
           <h2 className="mt-5 mb-2 text-[15px] font-black uppercase">
             5. Espressione dei risultati
@@ -1617,7 +1649,7 @@ function TechnicalTable({
     (showInstrumentalUncertaintyColumn ? 1 : 0);
 
   return (
-    <table className="w-full border-collapse bg-white/35 text-center text-[8px]">
+    <table className="w-full border-collapse bg-white/35 text-center text-[9px]">
       <thead>
         <tr className="bg-slate-700/65 text-slate-950">
           <th className="border border-slate-600 px-1 py-0.5">
@@ -1921,7 +1953,7 @@ function TechnicalPage({
               " w-auto object-contain"
             }
           />
-          <div className="max-w-[245px] text-[9px] leading-snug text-slate-800">
+          <div className="min-w-0 flex-1 whitespace-nowrap text-[9px] leading-snug text-slate-800">
             <p className="font-bold">Schema prova di eccentricità</p>
             <p className="mt-1">
               Posizioni di applicazione del carico: zona centrale C e zone
@@ -1964,10 +1996,12 @@ function TechnicalScaleSection({
   record,
   pageInfo,
   customerSnapshot,
+  flowBlock = true,
 }: {
   record: GenericRecord;
   pageInfo: TechnicalPageInfo;
   customerSnapshot: GenericRecord;
+  flowBlock?: boolean;
 }) {
   const { plan, measurements, continuation } = pageInfo;
   const { scale, scaleMeasurements, scaleReferenceSnapshots } = plan;
@@ -2000,7 +2034,10 @@ function TechnicalScaleSection({
         : "Carico applicato";
 
   return (
-    <section className="mt-3 break-inside-avoid">
+    <section
+      data-report-flow-block={flowBlock ? true : undefined}
+      className="mt-3 break-inside-avoid"
+    >
       <div className="mb-1 flex items-end justify-between gap-3">
         <h3 className="text-[12px] font-black uppercase">
           {textValue(scale.scale_name)}
@@ -2012,7 +2049,7 @@ function TechnicalScaleSection({
         )}
       </div>
 
-      <table className="mb-2 w-full border-collapse text-[8px]">
+      <table className="mb-2 w-full border-collapse text-[9px]">
         <tbody>
           <tr>
             <DataCell label="Scala" value={scale.scale_name} />
@@ -2041,7 +2078,7 @@ function TechnicalScaleSection({
             alt="Schema delle posizioni per la prova di eccentricità"
             className="h-[60px] w-auto object-contain"
           />
-          <p className="max-w-[260px] text-[8px] leading-snug">
+          <p className="min-w-0 flex-1 whitespace-nowrap text-[9px] leading-snug">
             <strong>Schema prova di eccentricità.</strong> Zona centrale C e
             zone periferiche 1, 2, 3 e 4.
           </p>
@@ -2099,64 +2136,84 @@ function TechnicalFlowPage({
       reportNumber={reportNumber}
       reportDate={reportDate}
     >
-      <div className="mt-4 text-right text-[10px] font-semibold text-slate-900">
-        Sezione tecnica integrante del Rapporto di Prova {reportNumber}
+      <div
+        data-report-flow-block
+        data-report-page-break-before="true"
+        className="break-inside-avoid"
+      >
+        <div className="mt-4 text-right text-[10px] font-semibold text-slate-900">
+          Sezione tecnica integrante del Rapporto di Prova {reportNumber}
+        </div>
+
+        <h2 className="mt-2 text-center text-[16px] font-black uppercase tracking-wide">
+          Sezione tecnica di verifica di taratura
+        </h2>
+
+        {sheet.showGlobalContext && (
+          <div className="mt-3 space-y-2 text-[9px]">
+            <table className="w-full border-collapse">
+              <tbody>
+                <tr>
+                  <DataCell
+                    label="Codice cliente"
+                    value={customerSnapshot.customer_number}
+                  />
+                  <DataCell
+                    label="Cliente"
+                    value={customerSnapshot.customer_name}
+                  />
+                </tr>
+                <tr>
+                  <DataCell
+                    label="Luogo prove"
+                    value={details.site_description ?? record.location}
+                  />
+                  <DataCell
+                    label="Data verifica"
+                    value={formatDate(
+                      details.test_date ?? record.verification_date
+                    )}
+                  />
+                </tr>
+              </tbody>
+            </table>
+
+            <table className="w-full border-collapse">
+              <tbody>
+                <tr>
+                  <DataCell
+                    label="Strumento in prova"
+                    value={customerSnapshot.instrument_name}
+                  />
+                  <DataCell
+                    label="Costruttore"
+                    value={customerSnapshot.manufacturer}
+                  />
+                </tr>
+                <tr>
+                  <DataCell label="Modello" value={customerSnapshot.model} />
+                  <DataCell
+                    label="Matricola"
+                    value={customerSnapshot.serial_number}
+                  />
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {sheet.sections[0] ? (
+          <TechnicalScaleSection
+            record={record}
+            pageInfo={sheet.sections[0]}
+            customerSnapshot={customerSnapshot}
+            flowBlock={false}
+          />
+        ) : null}
       </div>
 
-      <h2 className="mt-2 text-center text-[16px] font-black uppercase tracking-wide">
-        Sezione tecnica di verifica di taratura
-      </h2>
-
-      {sheet.showGlobalContext && (
-        <div className="mt-3 space-y-2 text-[8px]">
-          <table className="w-full border-collapse">
-            <tbody>
-              <tr>
-                <DataCell
-                  label="Codice cliente"
-                  value={customerSnapshot.customer_number}
-                />
-                <DataCell label="Cliente" value={customerSnapshot.customer_name} />
-              </tr>
-              <tr>
-                <DataCell
-                  label="Luogo prove"
-                  value={details.site_description ?? record.location}
-                />
-                <DataCell
-                  label="Data verifica"
-                  value={formatDate(details.test_date ?? record.verification_date)}
-                />
-              </tr>
-            </tbody>
-          </table>
-
-          <table className="w-full border-collapse">
-            <tbody>
-              <tr>
-                <DataCell
-                  label="Strumento in prova"
-                  value={customerSnapshot.instrument_name}
-                />
-                <DataCell
-                  label="Costruttore"
-                  value={customerSnapshot.manufacturer}
-                />
-              </tr>
-              <tr>
-                <DataCell label="Modello" value={customerSnapshot.model} />
-                <DataCell
-                  label="Matricola"
-                  value={customerSnapshot.serial_number}
-                />
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      )}
-
       <div className="mt-2">
-        {sheet.sections.map((section) => (
+        {sheet.sections.slice(1).map((section) => (
           <TechnicalScaleSection
             key={section.key}
             record={record}
@@ -2189,18 +2246,33 @@ function ChartPage({
       reportNumber={reportNumber}
       reportDate={reportDate}
     >
-      <div className="mt-10 text-right text-[11px] font-semibold text-slate-900">
-        Sezione tecnica integrante del Rapporto di Prova {reportNumber}
+      <div data-report-flow-block className="break-inside-avoid">
+        <div className="mt-6 text-right text-[11px] font-semibold text-slate-900">
+          Sezione tecnica integrante del Rapporto di Prova {reportNumber}
+        </div>
+
+        {charts[0] ? (
+          <div
+            className={
+              (charts.length > 1 ? "mt-4" : "mt-6") +
+              " rounded-2xl bg-white/45 p-1 [&_svg]:!h-[260px] [&>div]:!p-3"
+            }
+          >
+            <MeasurementErrorChart
+              measurements={charts[0].measurements}
+              title={charts[0].title}
+            />
+          </div>
+        ) : null}
       </div>
 
-      <div className={(charts.length > 1 ? "mt-4 gap-3" : "mt-8 gap-6") + " flex flex-col"}>
-        {charts.map((chart) => (
+      <div className="mt-3 flex flex-col gap-3">
+        {charts.slice(1).map((chart) => (
           <div
             key={chart.key}
+            data-report-flow-block
             className={
-              charts.length > 1
-                ? "rounded-2xl bg-white/45 p-1 [&_svg]:!h-[235px] [&>div]:!p-3"
-                : "rounded-2xl bg-white/45 p-2"
+              "rounded-2xl bg-white/45 p-1 [&_svg]:!h-[260px] [&>div]:!p-3"
             }
           >
             <MeasurementErrorChart
@@ -2628,11 +2700,11 @@ const { data: recordData, error: recordError } = await supabase
 
   const technicalSheets: TechnicalSheetInfo[] = [];
   const remainingBudgetBySheet: number[] = [];
-  const firstSheetBudget = 500;
-  const continuationSheetBudget = 700;
-  const measurementRowCost = 18;
-  const scaleSectionCost = 92;
-  const eccentricityDiagramCost = 74;
+  const firstSheetBudget = 675;
+  const continuationSheetBudget = 810;
+  const measurementRowCost = 16;
+  const scaleSectionCost = 78;
+  const eccentricityDiagramCost = 72;
 
   function createTechnicalSheet() {
     const sheetIndex = technicalSheets.length;
@@ -2708,63 +2780,30 @@ const { data: recordData, error: recordError } = await supabase
     }
   });
 
-  const hasTestPhasePhotos = reportPhotos.some(
-    (photo) => photo.photo_category === "test_phase"
-  );
-  const executionTextLength = splitText(details.execution_method).join(" ").length;
-  const canStartReferencesInline =
-    !hasTestPhasePhotos && executionTextLength <= 1200;
-  const inlineReferenceCapacity = canStartReferencesInline
-    ? executionTextLength <= 650
-      ? 3
-      : 1
-    : 0;
-  const inlineReferenceSnapshots = uniqueReferenceSnapshots.slice(
-    0,
-    inlineReferenceCapacity
-  );
-  const remainingReferenceSnapshots = uniqueReferenceSnapshots.slice(
-    inlineReferenceCapacity
-  );
-  const referenceDescriptors: PageDescriptor[] = [];
-  const referenceTablesPerFullPage = 4;
-
-  if (remainingReferenceSnapshots.length > 0) {
-    for (
-      let index = 0;
-      index < remainingReferenceSnapshots.length;
-      index += referenceTablesPerFullPage
-    ) {
-      const referenceChunk = remainingReferenceSnapshots.slice(
-        index,
-        index + referenceTablesPerFullPage
-      );
-      const isLastChunk =
-        index + referenceTablesPerFullPage >= remainingReferenceSnapshots.length;
-
-      referenceDescriptors.push({
-        type: "references",
-        referenceSnapshots: referenceChunk,
-        referenceStartIndex: inlineReferenceCapacity + index,
-        continuation: canStartReferencesInline || index > 0,
-        showResults: isLastChunk,
-      });
-    }
-  } else if (!canStartReferencesInline) {
-    referenceDescriptors.push({
+  const referenceDescriptors: PageDescriptor[] = [
+    {
       type: "references",
-      referenceSnapshots: [],
+      referenceSnapshots: uniqueReferenceSnapshots,
       referenceStartIndex: 0,
       continuation: false,
       showResults: true,
-    });
-  }
-
-  const showInlineTail = canStartReferencesInline;
-  const showInlineResults =
-    showInlineTail && remainingReferenceSnapshots.length === 0;
+    },
+  ];
+  const inlineReferenceSnapshots: GenericRecord[] = [];
+  const showInlineTail = false;
+  const showInlineResults = false;
   const allChartPages = scalePlans.flatMap((plan) => plan.chartPages);
   const chartDescriptors: PageDescriptor[] = [];
+  const continuousTechnicalSheets: TechnicalSheetInfo[] =
+    technicalSheets.length > 0
+      ? [
+          {
+            key: "technical-continuous-flow",
+            showGlobalContext: true,
+            sections: technicalSheets.flatMap((sheet) => sheet.sections),
+          },
+        ]
+      : [];
 
   for (let index = 0; index < allChartPages.length; index += 2) {
     chartDescriptors.push({
@@ -2778,7 +2817,7 @@ const { data: recordData, error: recordError } = await supabase
     { type: "text" },
     { type: "execution" },
     ...referenceDescriptors,
-    ...technicalSheets.map(
+    ...continuousTechnicalSheets.map(
       (sheet): PageDescriptor => ({ type: "technical", sheet })
     ),
     ...chartDescriptors,
@@ -2828,6 +2867,17 @@ const { data: recordData, error: recordError } = await supabase
             overflow: visible !important;
           }
         }
+
+        .auto-report-content table th,
+        .auto-report-content table td {
+          padding-top: 1px !important;
+          padding-bottom: 1px !important;
+          line-height: 1.15 !important;
+        }
+
+        .auto-report-content p:not(.text-center):not(.text-right) {
+          text-align: justify;
+        }
       `}</style>
 
       <div className="space-y-8 bg-slate-100 p-6 print:space-y-0 print:bg-white print:p-0">
@@ -2856,24 +2906,29 @@ const { data: recordData, error: recordError } = await supabase
           />
         </div>
 
-        {pageDescriptors.map((descriptor, index) => {
-          const pageNumber = index + 1;
+        <CoverPage
+          record={record}
+          details={details}
+          customerSnapshot={customerSnapshot}
+          customerMaster={customerMaster}
+          reportNumber={reportNumber}
+          reportDate={reportDate}
+          pageNumber={1}
+          totalPages={totalPages}
+        />
 
-          if (descriptor.type === "cover") {
-            return (
-              <CoverPage
-                key="cover"
-                record={record}
-                details={details}
-                customerSnapshot={customerSnapshot}
-                customerMaster={customerMaster}
-                reportNumber={reportNumber}
-                reportDate={reportDate}
-                pageNumber={pageNumber}
-                totalPages={totalPages}
-              />
-            );
-          }
+        <AutoPaginatedReport
+          letterheadSrc={LETTERHEAD_IMAGE_SRC}
+          reportNumber={reportNumber}
+          reportDateLabel={formatDate(reportDate)}
+        >
+        {pageDescriptors
+          .filter(
+            (descriptor) =>
+              descriptor.type !== "cover" && descriptor.type !== "signature"
+          )
+          .map((descriptor, index) => {
+          const pageNumber = index + 2;
 
           if (descriptor.type === "text") {
             return (
@@ -2982,20 +3037,20 @@ const { data: recordData, error: recordError } = await supabase
             );
           }
 
-          return (
-            <SignaturePage
-              key="signature"
-              details={details}
-              testingSignatures={testingSignatures}
-              reviewerSignatures={reviewerSignatures}
-              directorSignature={directorSignature}
-              reportNumber={reportNumber}
-              reportDate={reportDate}
-              pageNumber={pageNumber}
-              totalPages={totalPages}
-            />
-          );
+          return null;
         })}
+        </AutoPaginatedReport>
+
+        <SignaturePage
+          details={details}
+          testingSignatures={testingSignatures}
+          reviewerSignatures={reviewerSignatures}
+          directorSignature={directorSignature}
+          reportNumber={reportNumber}
+          reportDate={reportDate}
+          pageNumber={totalPages}
+          totalPages={totalPages}
+        />
       </div>
     </AppShell>
   );

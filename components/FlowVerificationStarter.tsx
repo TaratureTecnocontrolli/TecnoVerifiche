@@ -483,7 +483,7 @@ export default function FlowVerificationStarter({
 
   const [selectedReferenceInstrumentIds, setSelectedReferenceInstrumentIds] =
     useState<string[]>([]);
-  const [verificationDate, setVerificationDate] = useState(todayInputDate());
+  const [verificationDate] = useState(todayInputDate());
   const [operatorName, setOperatorName] = useState("");
   const [ambientTemperature, setAmbientTemperature] = useState("");
   const [ambientHumidity, setAmbientHumidity] = useState("");
@@ -1096,20 +1096,6 @@ export default function FlowVerificationStarter({
         </h2>
 
         <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">
-              Data verifica *
-            </span>
-            <input
-              type="date"
-              value={verificationDate}
-              onChange={(event) => {
-                setVerificationDate(event.target.value);
-                resetSaveState();
-              }}
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
-          </label>
 
           <label className="space-y-1">
             <span className="text-sm font-medium text-slate-700">Tecnico</span>
@@ -1235,40 +1221,6 @@ export default function FlowVerificationStarter({
                 ))}
               </select>
             </label>
-
-            <label className="space-y-1">
-              <span className="text-sm font-medium text-slate-700">
-                Strumento *
-              </span>
-              <select
-                value={selectedCustomerInstrumentId}
-                onChange={(event) => {
-                  setSelectedCustomerInstrumentId(event.target.value);
-                  resetSaveState();
-                }}
-                disabled={!selectedCustomerId}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100"
-              >
-                <option value="">
-                  {selectedCustomerId
-                    ? "Seleziona strumento"
-                    : "Seleziona prima il cliente"}
-                </option>
-
-                {filteredCustomerInstruments.map((instrument) => (
-                  <option key={instrument.id} value={instrument.id}>
-                    {instrument.internal_code
-                      ? instrument.internal_code + " - "
-                      : ""}
-                    {getCustomerInstrumentName(instrument)}
-                    {instrument.model ? " - " + instrument.model : ""}
-                    {instrument.serial_number
-                      ? " - Matr. " + instrument.serial_number
-                      : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
           </div>
 
           <div className="mt-4 space-y-2">
@@ -1374,6 +1326,42 @@ export default function FlowVerificationStarter({
                 </div>
               </div>
             )}
+          </div>
+
+          <div className="mt-4 grid gap-4 md:grid-cols-3">
+            <label className="space-y-1">
+              <span className="text-sm font-medium text-slate-700">
+                Strumento *
+              </span>
+              <select
+                value={selectedCustomerInstrumentId}
+                onChange={(event) => {
+                  setSelectedCustomerInstrumentId(event.target.value);
+                  resetSaveState();
+                }}
+                disabled={!selectedCustomerId}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100"
+              >
+                <option value="">
+                  {selectedCustomerId
+                    ? "Seleziona strumento"
+                    : "Seleziona prima il cliente"}
+                </option>
+            
+                {filteredCustomerInstruments.map((instrument) => (
+                  <option key={instrument.id} value={instrument.id}>
+                    {instrument.internal_code
+                      ? instrument.internal_code + " - "
+                      : ""}
+                    {getCustomerInstrumentName(instrument)}
+                    {instrument.model ? " - " + instrument.model : ""}
+                    {instrument.serial_number
+                      ? " - Matr. " + instrument.serial_number
+                      : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
 
           {selectedCustomerInstrument && (

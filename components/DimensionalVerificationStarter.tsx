@@ -4,6 +4,10 @@ import Link from "next/link";
 import SimpleAccuracyChart from "@/components/SimpleAccuracyChart";
 import { useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import CustomerVerificationSection, {
+  buildVerificationSiteDescription,
+  type VerificationCustomerSite,
+} from "@/components/CustomerVerificationSection";
 import { canonicalMeasurementUnit } from "@/lib/measurement-units";
 import {
   combineReferenceInstrumentNames,
@@ -322,12 +326,19 @@ function getRange(instrument: {
 
 function buildCustomerInstrumentSnapshot(
   instrument: CustomerInstrument,
-  customer: Customer
+  customer: Customer,
+  site: VerificationCustomerSite | null
 ) {
   return {
     customer_id: customer.id,
     customer_number: customer.customer_number ?? null,
     customer_name: getCustomerName(customer),
+    site_id: site?.id ?? null,
+    site_name: site?.name ?? null,
+    site_address: site?.address ?? null,
+    site_city: site?.city ?? null,
+    site_province: site?.province ?? null,
+    site_postal_code: site?.postal_code ?? null,
     instrument_id: instrument.id,
     customer_instrument_id: instrument.id,
     instrument_name: getCustomerInstrumentName(instrument),
@@ -453,14 +464,16 @@ export default function DimensionalVerificationStarter({
 
   const [subtype, setSubtype] = useState<DimensionalSubtype>("caliper");
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
+  const [selectedSiteId, setSelectedSiteId] = useState("");
+  const [selectedSite, setSelectedSite] = useState<VerificationCustomerSite | null>(null);
   const [selectedCustomerInstrumentId, setSelectedCustomerInstrumentId] =
     useState("");
   const [selectedInternalInstrumentId, setSelectedInternalInstrumentId] =
     useState("");
   const [selectedReferenceInstrumentIds, setSelectedReferenceInstrumentIds] =
     useState<string[]>([]);
-  const [verificationDate, setVerificationDate] = useState(todayInputDate());
-  const location = "";
+  const [verificationDate] = useState(todayInputDate());
+  const location = isInternalVerification ? "" : buildVerificationSiteDescription(selectedSite);
   const [operatorName, setOperatorName] = useState("");
   const [ambientTemperature, setAmbientTemperature] = useState("");
   const [ambientHumidity, setAmbientHumidity] = useState("");
@@ -481,15 +494,6 @@ export default function DimensionalVerificationStarter({
     return customers.find((customer) => customer.id === selectedCustomerId) ?? null;
   }, [customers, selectedCustomerId]);
 
-  const filteredCustomerInstruments = useMemo(() => {
-    if (!selectedCustomerId) {
-      return [];
-    }
-
-    return customerInstruments.filter(
-      (instrument) => instrument.customer_id === selectedCustomerId
-    );
-  }, [customerInstruments, selectedCustomerId]);
 
   const selectedCustomerInstrument = useMemo(() => {
     return (
@@ -704,6 +708,10 @@ export default function DimensionalVerificationStarter({
         throw new Error("Seleziona il cliente.");
       }
 
+      if (!selectedSite) {
+        throw new Error("Seleziona il luogo prove del cliente.");
+      }
+
       if (!selectedCustomerInstrument) {
         throw new Error("Seleziona lo strumento cliente da verificare.");
       }
@@ -793,7 +801,8 @@ export default function DimensionalVerificationStarter({
 
         instrumentSnapshot = buildCustomerInstrumentSnapshot(
           selectedCustomerInstrument,
-          selectedCustomer
+          selectedCustomer,
+          selectedSite
         );
         instrumentName = getCustomerInstrumentName(selectedCustomerInstrument);
         customerName = getCustomerName(selectedCustomer);
@@ -822,7 +831,9 @@ export default function DimensionalVerificationStarter({
         .eq("code", "DIMENSIONAL")
         .maybeSingle();
 
+      // Il numero record viene generato al submit; manteniamo la logica esistente.
       const recordNumber =
+        // eslint-disable-next-line react-hooks/purity
         "DIM-" + String(new Date().getFullYear()) + "-" + String(Date.now());
 
       const { data: insertedRecord, error: insertError } = await supabase
@@ -834,7 +845,7 @@ export default function DimensionalVerificationStarter({
           verification_module: "DIMENSIONAL",
           verification_date: verificationDate,
           operator_name: operatorName.trim() || null,
-          location: null,
+          location: location || null,
           environmental_conditions:
             ambientTemperature.trim() || ambientHumidity.trim()
               ? [
@@ -907,7 +918,7 @@ export default function DimensionalVerificationStarter({
           selectedReferenceInstruments.length === 1
             ? primaryReference.internal_code
             : null,
-        location: "",
+        location,
       });
 
       const { error: reportDetailsError } = await supabase
@@ -921,7 +932,7 @@ export default function DimensionalVerificationStarter({
           report_date: null,
           test_date: verificationDate,
           customer_name: customerName,
-          site_description: null,
+          site_description: location || null,
           work_object: isInternalVerification
             ? "Verifica interna di " + instrumentName
             : reportDefaults.work_object,
@@ -1294,7 +1305,7 @@ export default function DimensionalVerificationStarter({
         </h2>
 
         <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          <label className="space-y-1 lg:col-span-3">
+          <label className="space-y-1">
             <span className="text-sm font-medium text-slate-700">
               Tipo di controllo dimensionale *
             </span>
@@ -1312,21 +1323,6 @@ export default function DimensionalVerificationStarter({
                 Setacci / sfere (misure di interni asse X + asse Y)
               </option>
             </select>
-          </label>
-
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">
-              Data verifica *
-            </span>
-            <input
-              type="date"
-              value={verificationDate}
-              onChange={(event) => {
-                setVerificationDate(event.target.value);
-                resetSaveState();
-              }}
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
           </label>
 
           <label className="space-y-1">
@@ -1395,113 +1391,27 @@ export default function DimensionalVerificationStarter({
       </section>
 
       {!isInternalVerification && (
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-900">
-            Strumento cliente verificato
-          </h2>
-
-          <div className="mt-5 grid gap-4 md:grid-cols-2">
-            <label className="space-y-1">
-              <span className="text-sm font-medium text-slate-700">
-                Cliente *
-              </span>
-              <select
-                value={selectedCustomerId}
-                onChange={(event) => {
-                  setSelectedCustomerId(event.target.value);
-                  setSelectedCustomerInstrumentId("");
-                  resetSaveState();
-                }}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
-              >
-                <option value="">Seleziona cliente</option>
-                {customers.map((customer) => (
-                  <option key={customer.id} value={customer.id}>
-                    {customer.customer_number
-                      ? customer.customer_number + " - "
-                      : ""}
-                    {getCustomerName(customer)}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label className="space-y-1">
-              <span className="text-sm font-medium text-slate-700">
-                Strumento *
-              </span>
-              <select
-                value={selectedCustomerInstrumentId}
-                onChange={(event) => {
-                  setSelectedCustomerInstrumentId(event.target.value);
-                  resetSaveState();
-                }}
-                disabled={!selectedCustomerId}
-                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100"
-              >
-                <option value="">
-                  {selectedCustomerId
-                    ? "Seleziona strumento"
-                    : "Seleziona prima il cliente"}
-                </option>
-
-                {filteredCustomerInstruments.map((instrument) => (
-                  <option key={instrument.id} value={instrument.id}>
-                    {instrument.internal_code
-                      ? instrument.internal_code + " - "
-                      : ""}
-                    {getCustomerInstrumentName(instrument)}
-                    {instrument.model ? " - " + instrument.model : ""}
-                    {instrument.serial_number
-                      ? " - Matr. " + instrument.serial_number
-                      : ""}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          {selectedCustomerInstrument && (
-            <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-800">
-              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
-                <DataPreview
-                  label="Strumento"
-                  value={getCustomerInstrumentName(selectedCustomerInstrument)}
-                />
-                <DataPreview
-                  label="Costruttore / modello"
-                  value={
-                    [
-                      selectedCustomerInstrument.manufacturer,
-                      selectedCustomerInstrument.model,
-                    ]
-                      .filter(Boolean)
-                      .join(" - ") || "-"
-                  }
-                />
-                <DataPreview
-                  label="Matricola"
-                  value={selectedCustomerInstrument.serial_number}
-                />
-                <DataPreview
-                  label="Grandezza / unità"
-                  value={
-                    [
-                      selectedCustomerInstrument.measurement_quantity,
-                      selectedCustomerInstrument.unit,
-                    ]
-                      .filter(Boolean)
-                      .join(" / ") || "-"
-                  }
-                />
-                <DataPreview
-                  label="Fondo scala"
-                  value={getRange(selectedCustomerInstrument)}
-                />
-              </div>
-            </div>
-          )}
-        </section>
+        <CustomerVerificationSection
+          customers={customers}
+          customerInstruments={customerInstruments}
+          selectedCustomerId={selectedCustomerId}
+          selectedSiteId={selectedSiteId}
+          selectedInstrumentId={selectedCustomerInstrumentId}
+          onCustomerChange={(customerId) => {
+            setSelectedCustomerId(customerId);
+            setSelectedCustomerInstrumentId("");
+            resetSaveState();
+          }}
+          onSiteChange={(siteId, site) => {
+            setSelectedSiteId(siteId);
+            setSelectedSite(site);
+            resetSaveState();
+          }}
+          onInstrumentChange={(instrumentId) => {
+            setSelectedCustomerInstrumentId(instrumentId);
+            resetSaveState();
+          }}
+        />
       )}
 
       {isInternalVerification && (

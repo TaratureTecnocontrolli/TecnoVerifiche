@@ -3,6 +3,10 @@
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import CustomerVerificationSection, {
+  buildVerificationSiteDescription,
+  type VerificationCustomerSite,
+} from "@/components/CustomerVerificationSection";
 import {
   combineReferenceInstrumentNames,
   getTemperatureReportDefaults,
@@ -219,12 +223,19 @@ function getRange(instrument: {
 
 function buildCustomerInstrumentSnapshot(
   instrument: CustomerInstrument,
-  customer: Customer
+  customer: Customer,
+  site: VerificationCustomerSite | null
 ) {
   return {
     customer_id: customer.id,
     customer_number: customer.customer_number ?? null,
     customer_name: getCustomerName(customer),
+    site_id: site?.id ?? null,
+    site_name: site?.name ?? null,
+    site_address: site?.address ?? null,
+    site_city: site?.city ?? null,
+    site_province: site?.province ?? null,
+    site_postal_code: site?.postal_code ?? null,
     customer_instrument_id: instrument.id,
     instrument_name: getCustomerInstrumentName(instrument),
     manufacturer: instrument.manufacturer ?? null,
@@ -299,15 +310,19 @@ export default function TemperatureVerificationStarter({
   const isInternalVerification = verificationScope === "VI";
 
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
+  const [selectedSiteId, setSelectedSiteId] = useState("");
+  const [selectedSite, setSelectedSite] = useState<VerificationCustomerSite | null>(null);
   const [selectedCustomerInstrumentId, setSelectedCustomerInstrumentId] =
     useState("");
   const [selectedInternalInstrumentId, setSelectedInternalInstrumentId] =
     useState("");
   const [selectedReferenceInstrumentIds, setSelectedReferenceInstrumentIds] =
     useState<string[]>([]);
-  const [verificationDate, setVerificationDate] = useState(todayInputDate());
-  const location = "";
+  const [verificationDate] = useState(todayInputDate());
+  const location = isInternalVerification ? "" : buildVerificationSiteDescription(selectedSite);
   const [operatorName, setOperatorName] = useState("");
+  const [ambientTemperature, setAmbientTemperature] = useState("");
+  const [ambientHumidity, setAmbientHumidity] = useState("");
   const [notes, setNotes] = useState("");
   const [scaleNotes, setScaleNotes] = useState("");
   const [points, setPoints] = useState<EditableTemperaturePoint[]>(() => [emptyTemperaturePoint()]);
@@ -321,15 +336,6 @@ export default function TemperatureVerificationStarter({
     return customers.find((customer) => customer.id === selectedCustomerId) ?? null;
   }, [customers, selectedCustomerId]);
 
-  const filteredCustomerInstruments = useMemo(() => {
-    if (!selectedCustomerId) {
-      return [];
-    }
-
-    return customerInstruments.filter(
-      (instrument) => instrument.customer_id === selectedCustomerId
-    );
-  }, [customerInstruments, selectedCustomerId]);
 
   const selectedCustomerInstrument = useMemo(() => {
     return (
@@ -539,7 +545,8 @@ export default function TemperatureVerificationStarter({
 
         instrumentSnapshot = buildCustomerInstrumentSnapshot(
           selectedCustomerInstrument,
-          selectedCustomer
+          selectedCustomer,
+          selectedSite
         );
         customerName = getCustomerName(selectedCustomer);
         customerNumber = selectedCustomer.customer_number;
@@ -573,8 +580,20 @@ export default function TemperatureVerificationStarter({
           verification_module: "TEMPERATURE",
           verification_date: verificationDate,
           operator_name: operatorName.trim() || null,
-          location: null,
-          environmental_conditions: null,
+          location: location || null,
+          environmental_conditions:
+            ambientTemperature.trim() || ambientHumidity.trim()
+              ? [
+                  ambientTemperature.trim()
+                    ? "Temperatura: " + ambientTemperature.trim() + " °C"
+                    : null,
+                  ambientHumidity.trim()
+                    ? "Umidità: " + ambientHumidity.trim() + " %"
+                    : null,
+                ]
+                  .filter(Boolean)
+                  .join("; ")
+              : null,
           status: "draft",
           report_status: "draft",
           final_result: null,
@@ -632,7 +651,7 @@ export default function TemperatureVerificationStarter({
           selectedReferenceInstruments.length === 1
             ? primaryReference.internal_code
             : null,
-        location: "",
+        location,
         testDate: verificationDate,
       });
 
@@ -647,7 +666,7 @@ export default function TemperatureVerificationStarter({
           report_date: null,
           test_date: verificationDate,
           customer_name: customerName,
-          site_description: null,
+          site_description: location || null,
           work_object: isInternalVerification
             ? "Verifica interna di " + instrumentName
             : reportDefaults.work_object,
@@ -659,8 +678,8 @@ export default function TemperatureVerificationStarter({
           apparatus_description: reportDefaults.apparatus_description,
           execution_method: reportDefaults.execution_method,
           results_text: reportDefaults.results_text,
-          temperature: null,
-          humidity: null,
+          temperature: ambientTemperature.trim() || null,
+          humidity: ambientHumidity.trim() || null,
           technician_name: operatorName.trim() || null,
           reviewer_name: null,
           director_name: null,
@@ -752,20 +771,103 @@ export default function TemperatureVerificationStarter({
     <form onSubmit={createVerification} className="space-y-6">
       <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
         <h2 className="text-lg font-semibold text-slate-900">
-          Dati iniziali verifica temperatura
+          Dati generali verifica temperatura
         </h2>
 
-        <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          {isInternalVerification ? (
-            <label className="space-y-1 xl:col-span-2">
-              <span className="text-sm font-medium text-slate-700">
-                Strumento interno da verificare *
-              </span>
+        <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+
+          <label className="space-y-1">
+            <span className="text-sm font-medium text-slate-700">Tecnico</span>
+            <input
+              value={operatorName}
+              onChange={(event) => {
+                setOperatorName(event.target.value);
+                resetSaveState();
+              }}
+              placeholder="Nome tecnico"
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+            />
+          </label>
+          <label className="space-y-1">
+            <span className="text-sm font-medium text-slate-700">Temperatura ambiente °C</span>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={ambientTemperature}
+              onChange={(event) => {
+                setAmbientTemperature(event.target.value.replace(",", "."));
+                resetSaveState();
+              }}
+              placeholder="Es. 20"
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+            />
+          </label>
+
+          <label className="space-y-1">
+            <span className="text-sm font-medium text-slate-700">Umidità ambiente %</span>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={ambientHumidity}
+              onChange={(event) => {
+                setAmbientHumidity(event.target.value.replace(",", "."));
+                resetSaveState();
+              }}
+              placeholder="Es. 50"
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+            />
+          </label>
+        </div>
+
+        <label className="mt-4 block space-y-1">
+          <span className="text-sm font-medium text-slate-700">Note</span>
+          <textarea
+            value={notes}
+            onChange={(event) => {
+              setNotes(event.target.value);
+              resetSaveState();
+            }}
+            rows={3}
+            placeholder="Eventuali note operative"
+            className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+          />
+        </label>
+      </section>
+
+      {!isInternalVerification ? (
+        <CustomerVerificationSection
+          customers={customers}
+          customerInstruments={customerInstruments}
+          selectedCustomerId={selectedCustomerId}
+          selectedSiteId={selectedSiteId}
+          selectedInstrumentId={selectedCustomerInstrumentId}
+          onCustomerChange={(customerId) => {
+            setSelectedCustomerId(customerId);
+            setSelectedCustomerInstrumentId("");
+            resetSaveState();
+          }}
+          onSiteChange={(siteId, site) => {
+            setSelectedSiteId(siteId);
+            setSelectedSite(site);
+            resetSaveState();
+          }}
+          onInstrumentChange={(instrumentId) => {
+            setSelectedCustomerInstrumentId(instrumentId);
+            resetSaveState();
+          }}
+        />
+      ) : (
+        <section className="rounded-2xl border border-sky-200 bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-semibold text-slate-900">Strumento interno verificato</h2>
+
+          <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+            <label className="space-y-1 lg:col-span-2">
+              <span className="text-sm font-medium text-slate-700">Strumento interno *</span>
               <select
                 value={selectedInternalInstrumentId}
                 onChange={(event) => {
                   setSelectedInternalInstrumentId(event.target.value);
-                  setSaveError("");
+                  resetSaveState();
                 }}
                 className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
               >
@@ -775,220 +877,42 @@ export default function TemperatureVerificationStarter({
                     {instrument.internal_code ? instrument.internal_code + " - " : ""}
                     {instrument.name}
                     {instrument.model ? " - " + instrument.model : ""}
-                    {instrument.serial_number
-                      ? " - Matr. " + instrument.serial_number
-                      : ""}
+                    {instrument.serial_number ? " - Matr. " + instrument.serial_number : ""}
                   </option>
                 ))}
               </select>
             </label>
-          ) : (
-            <>
-              <label className="space-y-1">
-                <span className="text-sm font-medium text-slate-700">
-                  Cliente *
-                </span>
-                <select
-                  value={selectedCustomerId}
-                  onChange={(event) => {
-                    setSelectedCustomerId(event.target.value);
-                    setSelectedCustomerInstrumentId("");
-                    setSaveError("");
-                  }}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
-                >
-                  <option value="">Seleziona cliente</option>
-                  {customers.map((customer) => (
-                    <option key={customer.id} value={customer.id}>
-                      {customer.customer_number ? customer.customer_number + " - " : ""}
-                      {getCustomerName(customer)}
-                    </option>
-                  ))}
-                </select>
-              </label>
+          </div>
 
-              <label className="space-y-1 xl:col-span-2">
-                <span className="text-sm font-medium text-slate-700">
-                  Strumento cliente da verificare *
-                </span>
-                <select
-                  value={selectedCustomerInstrumentId}
-                  onChange={(event) => {
-                    setSelectedCustomerInstrumentId(event.target.value);
-                    setSaveError("");
-                  }}
-                  disabled={!selectedCustomerId}
-                  className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm disabled:bg-slate-100"
-                >
-                  <option value="">
-                    {selectedCustomerId
-                      ? "Seleziona strumento cliente"
-                      : "Seleziona prima un cliente"}
-                  </option>
-
-                  {filteredCustomerInstruments.map((instrument) => (
-                    <option key={instrument.id} value={instrument.id}>
-                      {instrument.internal_code ? instrument.internal_code + " - " : ""}
-                      {getCustomerInstrumentName(instrument)}
-                      {instrument.model ? " - " + instrument.model : ""}
-                      {instrument.serial_number
-                        ? " - Matr. " + instrument.serial_number
-                        : ""}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </>
+          {selectedInternalInstrument && (
+            <div className="mt-5 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-800">
+              <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-4">
+                <div><p className="font-semibold">Strumento</p><p>{selectedInternalInstrument.name}</p></div>
+                <div><p className="font-semibold">Costruttore / modello</p><p>{[selectedInternalInstrument.manufacturer, selectedInternalInstrument.model].filter(Boolean).join(" - ") || "-"}</p></div>
+                <div><p className="font-semibold">Matricola</p><p>{selectedInternalInstrument.serial_number ?? "-"}</p></div>
+                <div><p className="font-semibold">Codice interno</p><p>{selectedInternalInstrument.internal_code ?? "-"}</p></div>
+                <div><p className="font-semibold">Grandezza / unità</p><p>{[selectedInternalInstrument.measurement_quantity, selectedInternalInstrument.unit].filter(Boolean).join(" / ") || "-"}</p></div>
+                <div><p className="font-semibold">Fondo scala</p><p>{selectedInternalInstrument.measurement_range ?? "-"}</p></div>
+                <div><p className="font-semibold">Reparto</p><p>{selectedInternalInstrument.department ?? "-"}</p></div>
+                <div><p className="font-semibold">Ubicazione</p><p>{selectedInternalInstrument.location ?? "-"}</p></div>
+              </div>
+            </div>
           )}
+        </section>
+      )}
 
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">
-              Data verifica *
-            </span>
-            <input
-              type="date"
-              value={verificationDate}
-              onChange={(event) => setVerificationDate(event.target.value)}
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
-          </label>
-
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">
-              Operatore
-            </span>
-            <input
-              value={operatorName}
-              onChange={(event) => {
-                setOperatorName(event.target.value);
-                resetSaveState();
-              }}
-              placeholder="Nome tecnico / operatore"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
-          </label>
-        </div>
-
-        <div className="mt-4">
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="text-lg font-semibold text-slate-900">Strumenti campione</h2>
+        <div className="mt-5">
           <ReferenceInstrumentMultiSelect
             instruments={availableReferenceInstruments}
             selectedIds={selectedReferenceInstrumentIds}
             onToggle={toggleReferenceInstrument}
             label="Termometri / termostati di riferimento usati *"
+            emptyLabel="Nessuno strumento di riferimento disponibile."
           />
         </div>
-
-        <label className="mt-4 block space-y-1">
-          <span className="text-sm font-medium text-slate-700">Note</span>
-          <textarea
-            value={notes}
-            onChange={(event) => setNotes(event.target.value)}
-            rows={3}
-            placeholder="Note iniziali sulla verifica"
-            className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-          />
-        </label>
       </section>
-
-      {!isInternalVerification && selectedCustomerInstrument && (
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-900">
-            Anteprima strumento cliente
-          </h2>
-
-          <div className="mt-4 grid gap-4 text-sm md:grid-cols-3">
-            <div>
-              <p className="font-semibold text-slate-700">Strumento</p>
-              <p className="text-slate-600">
-                {getCustomerInstrumentName(selectedCustomerInstrument)}
-              </p>
-            </div>
-            <div>
-              <p className="font-semibold text-slate-700">Costruttore / modello</p>
-              <p className="text-slate-600">
-                {[selectedCustomerInstrument.manufacturer, selectedCustomerInstrument.model]
-                  .filter(Boolean)
-                  .join(" - ") || "-"}
-              </p>
-            </div>
-            <div>
-              <p className="font-semibold text-slate-700">Matricola</p>
-              <p className="text-slate-600">
-                {selectedCustomerInstrument.serial_number ?? "-"}
-              </p>
-            </div>
-            <div>
-              <p className="font-semibold text-slate-700">Grandezza / unità</p>
-              <p className="text-slate-600">
-                {[selectedCustomerInstrument.measurement_quantity, selectedCustomerInstrument.unit]
-                  .filter(Boolean)
-                  .join(" / ") || "-"}
-              </p>
-            </div>
-            <div>
-              <p className="font-semibold text-slate-700">Campo</p>
-              <p className="text-slate-600">
-                {getRange(selectedCustomerInstrument) ?? "-"}
-              </p>
-            </div>
-            <div>
-              <p className="font-semibold text-slate-700">Risoluzione</p>
-              <p className="text-slate-600">
-                {selectedCustomerInstrument.resolution ?? "-"}
-              </p>
-            </div>
-          </div>
-        </section>
-      )}
-
-      {isInternalVerification && selectedInternalInstrument && (
-        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
-          <h2 className="text-lg font-semibold text-slate-900">
-            Anteprima strumento interno
-          </h2>
-
-          <div className="mt-4 grid gap-4 text-sm md:grid-cols-3">
-            <div>
-              <p className="font-semibold text-slate-700">Strumento</p>
-              <p className="text-slate-600">{selectedInternalInstrument.name}</p>
-            </div>
-            <div>
-              <p className="font-semibold text-slate-700">Costruttore / modello</p>
-              <p className="text-slate-600">
-                {[selectedInternalInstrument.manufacturer, selectedInternalInstrument.model]
-                  .filter(Boolean)
-                  .join(" - ") || "-"}
-              </p>
-            </div>
-            <div>
-              <p className="font-semibold text-slate-700">Matricola</p>
-              <p className="text-slate-600">
-                {selectedInternalInstrument.serial_number ?? "-"}
-              </p>
-            </div>
-            <div>
-              <p className="font-semibold text-slate-700">Codice interno</p>
-              <p className="text-slate-600">
-                {selectedInternalInstrument.internal_code ?? "-"}
-              </p>
-            </div>
-            <div>
-              <p className="font-semibold text-slate-700">Grandezza / unità</p>
-              <p className="text-slate-600">
-                {[selectedInternalInstrument.measurement_quantity, selectedInternalInstrument.unit]
-                  .filter(Boolean)
-                  .join(" / ") || "-"}
-              </p>
-            </div>
-            <div>
-              <p className="font-semibold text-slate-700">Campo</p>
-              <p className="text-slate-600">
-                {selectedInternalInstrument.measurement_range ?? "-"}
-              </p>
-            </div>
-          </div>
-        </section>
-      )}
 
       {selectedReferenceInstruments.length > 0 && (
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
