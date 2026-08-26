@@ -407,6 +407,18 @@ function buildInitialSections(): Record<MassSectionKey, MassSection> {
   };
 }
 
+function scaleRangeWithUnit(section: MassSection) {
+  const range = section.scaleRange.trim();
+
+  if (!range) {
+    return null;
+  }
+
+  const rangeWithoutMassUnit = range.replace(/\s*(?:kg|g)\s*$/i, "").trim();
+
+  return rangeWithoutMassUnit + " " + section.unit;
+}
+
 function calculateWeightPoint(
   point: EditableWeightPoint,
   hasErrorPercent: boolean
@@ -1032,7 +1044,7 @@ export default function MassVerificationStarter({
         calibration_record_id: insertedRecord.id,
         scale_order: index + 1,
         scale_name: section.scaleName.trim(),
-        scale_range: section.scaleRange.trim() || null,
+        scale_range: scaleRangeWithUnit(section),
         reference_instrument_id: primaryReference.id,
         reference_instrument_snapshot: primaryReferenceSnapshot,
         reference_instrument_ids: selectedReferenceInstruments.map(

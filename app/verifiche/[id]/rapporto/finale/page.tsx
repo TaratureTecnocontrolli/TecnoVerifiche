@@ -52,12 +52,21 @@ type ScalePlan = {
   chartPages: ChartPageInfo[];
 };
 
+type TechnicalPageInfo = {
+  key: string;
+  plan: ScalePlan;
+  measurements: GenericRecord[];
+  continuation: boolean;
+  showMeasurementsTable: boolean;
+  showEccentricityDiagram: boolean;
+};
+
 type PageDescriptor =
   | { type: "cover" }
   | { type: "text" }
   | { type: "execution" }
   | { type: "formula" }
-  | { type: "technical"; plan: ScalePlan }
+  | { type: "technical"; page: TechnicalPageInfo }
   | { type: "chart"; chart: ChartPageInfo }
   | { type: "signature" };
 
@@ -236,9 +245,24 @@ function getMeasurementUnit(input: {
   scale?: GenericRecord;
 }) {
   const referenceSnapshots = input.referenceSnapshots ?? [];
+  const scaleSource = input.scale ?? {};
+
+  const scaleExplicitUnit = normalizeUnit(
+    firstTextValueFromSources([scaleSource], [
+      "unit",
+      "measurement_unit",
+      "unita_misura",
+      "unit_of_measure",
+    ])
+  );
+  const scaleRangeUnit = detectMassUnitFromText(scaleSource.scale_range);
+
+  if (scaleExplicitUnit || scaleRangeUnit) {
+    return scaleExplicitUnit || scaleRangeUnit;
+  }
+
   const sources = [
     input.customerSnapshot ?? {},
-    input.scale ?? {},
     ...referenceSnapshots,
     input.record ?? {},
   ];
@@ -252,7 +276,51 @@ function getMeasurementUnit(input: {
     ])
   );
 
-  return explicitUnit || detectMassUnitFromText(input.scale?.scale_range);
+  const legacyMassUnit = inferLegacyMassUnit({
+    scale: scaleSource,
+    customerSnapshot: input.customerSnapshot ?? {},
+    fallbackUnit: explicitUnit,
+  });
+
+  return legacyMassUnit || explicitUnit;
+}
+
+function maxNumberFromText(value: unknown) {
+  const matches = String(value ?? "").match(/\d+(?:[.,]\d+)?/g) ?? [];
+  const values = matches
+    .map((item) => Number(item.replace(",", ".")))
+    .filter((item) => Number.isFinite(item));
+
+  return values.length > 0 ? Math.max(...values) : null;
+}
+
+function inferLegacyMassUnit(input: {
+  scale: GenericRecord;
+  customerSnapshot: GenericRecord;
+  fallbackUnit: string;
+}) {
+  if (input.fallbackUnit.toLowerCase() !== "kg") {
+    return "";
+  }
+
+  const scaleMaximum = maxNumberFromText(input.scale.scale_range);
+  const instrumentDescription = [
+    input.customerSnapshot.measurement_range,
+    input.customerSnapshot.range,
+    input.customerSnapshot.capacity,
+    input.customerSnapshot.instrument_name,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  const instrumentMaximum = maxNumberFromText(instrumentDescription);
+
+  if (!scaleMaximum || !instrumentMaximum) {
+    return "";
+  }
+
+  const conversionRatio = scaleMaximum / instrumentMaximum;
+
+  return conversionRatio >= 999 && conversionRatio <= 1001 ? "g" : "";
 }
 
 function addUnitToNumberText(text: string, unit: string) {
@@ -1247,6 +1315,7 @@ function TechnicalTable({
   appliedLabel = "Carico applicato",
   measurementUnit = "",
   firstColumnLabel = "Punto di verifica",
+  firstColumnHasUnit = true,
   pointLabelResolver,
 }: {
   measurements: GenericRecord[];
@@ -1257,6 +1326,7 @@ function TechnicalTable({
   appliedLabel?: string;
   measurementUnit?: string;
   firstColumnLabel?: string;
+  firstColumnHasUnit?: boolean;
   pointLabelResolver?: (measurement: GenericRecord, index: number) => string;
 }) {
   const showThirdCycle =
@@ -1293,7 +1363,11 @@ function TechnicalTable({
     <table className="w-full border-collapse bg-white/35 text-center text-[8px]">
       <thead>
         <tr className="bg-slate-700/65 text-slate-950">
-          <th className="border border-slate-600 px-1 py-0.5">{labelWithUnit(firstColumnLabel, measurementUnit)}</th>
+          <th className="border border-slate-600 px-1 py-0.5">
+            {firstColumnHasUnit
+              ? labelWithUnit(firstColumnLabel, measurementUnit)
+              : firstColumnLabel}
+          </th>
           {showNominalColumn && (
             <th className="border border-slate-600 px-1 py-0.5">{labelWithUnit(nominalLabel, measurementUnit)}</th>
           )}
@@ -1383,6 +1457,7 @@ function TechnicalPage({
   details,
   scale,
   measurements,
+  summaryMeasurements,
   customerSnapshot,
   referenceSnapshots,
   procedureSnapshot,
@@ -1390,11 +1465,15 @@ function TechnicalPage({
   reportDate,
   pageNumber,
   totalPages,
+  continuation = false,
+  showMeasurementsTable = true,
+  showEccentricityDiagram = false,
 }: {
   record: GenericRecord;
   details: GenericRecord;
   scale: GenericRecord;
   measurements: GenericRecord[];
+  summaryMeasurements?: GenericRecord[];
   customerSnapshot: GenericRecord;
   referenceSnapshots: GenericRecord[];
   procedureSnapshot: GenericRecord;
@@ -1402,11 +1481,16 @@ function TechnicalPage({
   reportDate: unknown;
   pageNumber: number;
   totalPages: number;
+  continuation?: boolean;
+  showMeasurementsTable?: boolean;
+  showEccentricityDiagram?: boolean;
 }) {
   const isPressure =
     record.verification_module === "PRESSURE" || record.mode === "pressione";
   const isFlow = record.verification_module === "FLOW" || record.mode === "portata";
   const isMass = record.verification_module === "MASS" || record.mode === "massa";
+  const isCompactMassEccentricity =
+    isMass && massScaleKind(scale.scale_name) === "eccentricity";
   const isDimensional =
     record.verification_module === "DIMENSIONAL" || record.mode === "dimensionale";
   const showNominalColumn = isFlow;
@@ -1425,10 +1509,14 @@ function TechnicalPage({
     scale,
   });
 
-  const maxAccuracy = maxAbsoluteValue(measurements, "accuracy_error_percent");
+  const measurementsForSummary = summaryMeasurements ?? measurements;
+  const maxAccuracy = maxAbsoluteValue(
+    measurementsForSummary,
+    "accuracy_error_percent"
+  );
 
   const maxRepeatability = maxAbsoluteValue(
-    measurements,
+    measurementsForSummary,
     "repeatability_error_percent"
   );
 
@@ -1439,19 +1527,42 @@ function TechnicalPage({
       reportNumber={reportNumber}
       reportDate={reportDate}
     >
-      <div className="mt-10 text-right text-[11px] font-semibold text-slate-900">
+      <div
+        className={
+          (isCompactMassEccentricity ? "mt-5" : "mt-10") +
+          " text-right text-[11px] font-semibold text-slate-900"
+        }
+      >
         Sezione tecnica integrante del Rapporto di Prova {reportNumber}
       </div>
 
-      <h2 className="mt-6 text-center text-[18px] font-black uppercase tracking-wide">
+      <h2
+        className={
+          (isCompactMassEccentricity
+            ? "mt-2 text-[16px]"
+            : "mt-6 text-[18px]") +
+          " text-center font-black uppercase tracking-wide"
+        }
+      >
         Sezione tecnica di verifica di taratura
       </h2>
 
-      <p className="mt-2 text-center text-[12px] font-bold">
+      <p
+        className={
+          (isCompactMassEccentricity ? "mt-1" : "mt-2") +
+          " text-center text-[12px] font-bold"
+        }
+      >
         {textValue(scale.scale_name)}
       </p>
 
-      <div className="mt-5 text-[9px]">
+      {continuation && (
+        <p className="mt-1 text-center text-[10px] font-semibold text-slate-700">
+          Continuazione risultati di misura
+        </p>
+      )}
+
+      {!continuation && <div className={(isCompactMassEccentricity ? "mt-2" : "mt-5") + " text-[9px]"}>
         <table className="w-full border-collapse">
           <thead>
             <tr className="bg-slate-700/65 text-left text-slate-950">
@@ -1490,9 +1601,9 @@ function TechnicalPage({
             </tr>
            </tbody>
         </table>
-       </div>
+       </div>}
 
-      <table className="mt-3 w-full border-collapse text-[9px]">
+      {!continuation && <table className={(isCompactMassEccentricity ? "mt-1.5" : "mt-3") + " w-full border-collapse text-[9px]"}>
         <thead>
           <tr className="bg-slate-700/65 text-left text-slate-950">
             <th colSpan={4} className="border border-slate-900 px-2 py-0.5">
@@ -1510,9 +1621,9 @@ function TechnicalPage({
             <DataCell label="Matricola" value={customerSnapshot.serial_number} />
           </tr>
         </tbody>
-      </table>
+      </table>}
 
-      <table className="mt-3 w-full border-collapse text-[9px]">
+      {!continuation && <table className={(isCompactMassEccentricity ? "mt-1.5" : "mt-3") + " w-full border-collapse text-[9px]"}>
         <thead>
           <tr className="bg-slate-700/65 text-left text-slate-950">
             <th colSpan={4} className="border border-slate-900 px-2 py-0.5">
@@ -1536,12 +1647,12 @@ function TechnicalPage({
             />
           </tr>
         </tbody>
-      </table>
+      </table>}
 
-      {referenceSnapshots.map((referenceSnapshot, referenceIndex) => (
+      {!continuation && referenceSnapshots.map((referenceSnapshot, referenceIndex) => (
         <table
           key={referenceIndex}
-          className="mt-3 w-full border-collapse text-[9px]"
+          className={(isCompactMassEccentricity ? "mt-1.5" : "mt-3") + " w-full border-collapse text-[9px]"}
         >
           <thead>
             <tr className="bg-slate-700/65 text-left text-slate-950">
@@ -1605,7 +1716,26 @@ function TechnicalPage({
         </table>
       ))}
 
-      <div className="mt-3 overflow-x-auto">
+      {showEccentricityDiagram &&
+        isMass &&
+        massScaleKind(scale.scale_name) === "eccentricity" && (
+        <div className={(isCompactMassEccentricity ? "mt-1.5 px-3 py-1" : "mt-3 px-4 py-2") + " flex items-center justify-center gap-4 rounded-sm border border-slate-300 bg-white/45"}>
+          <img
+            src="/eccentricita.png"
+            alt="Schema delle posizioni per la prova di eccentricità"
+            className={
+              (isCompactMassEccentricity ? "h-[68px]" : "h-[92px]") +
+              " w-auto object-contain"
+            }
+          />
+          <div className="max-w-[245px] text-[9px] leading-snug text-slate-800">
+            <p className="font-bold">Schema prova di eccentricità</p>
+         </div>
+        </div>
+      )}
+
+      {showMeasurementsTable && (
+      <div className={(isCompactMassEccentricity ? "mt-1.5" : "mt-3") + " technical-table-container min-w-0"}>
         <TechnicalTable
           measurements={measurements}
           showNominalColumn={showNominalColumn}
@@ -1615,6 +1745,7 @@ function TechnicalPage({
           measurementUnit={measurementUnit}
           showThirdCycleColumn={!isPressure && !isFlow}
           firstColumnLabel={isMass ? "Zona" : "Punto di verifica"}
+          firstColumnHasUnit={!isMass}
           pointLabelResolver={
             isMass
               ? (measurement, index) =>
@@ -1627,6 +1758,7 @@ function TechnicalPage({
           }
         />
       </div>
+      )}
     </PageShell>
   );
 }
@@ -1954,6 +2086,7 @@ const { data: recordData, error: recordError } = await supabase
     record.verification_module === "TEMPERATURE" || record.mode === "temperatura";
   const isSclerometric =
     record.verification_module === "SCLEROMETRIC" || record.mode === "sclerometro";
+  const isMass = record.verification_module === "MASS" || record.mode === "massa";
 
   const scalePlans: ScalePlan[] = scales.map((scale) => {
     const scaleMeasurements = measurements.filter(
@@ -2027,7 +2160,10 @@ const { data: recordData, error: recordError } = await supabase
             measurements: scarico,
           });
         }
-      } else if (hasValidChartMeasurements(chartMeasurements)) {
+      } else if (
+        (!isMass || massScaleKind(scale.scale_name) === "linearity") &&
+        hasValidChartMeasurements(chartMeasurements)
+      ) {
         chartPages.push({
           key: scale.id + "-chart",
           title:
@@ -2046,16 +2182,94 @@ const { data: recordData, error: recordError } = await supabase
     };
   });
 
+  const technicalPages = scalePlans.flatMap((plan): TechnicalPageInfo[] => {
+    const isMassEccentricity =
+      isMass && massScaleKind(plan.scale.scale_name) === "eccentricity";
+    const isMassLinearity =
+      isMass && massScaleKind(plan.scale.scale_name) === "linearity";
+
+    if (isMassEccentricity) {
+      return [
+        {
+          key: String(plan.scale.id) + "-1",
+          plan,
+          measurements: plan.scaleMeasurements,
+          continuation: false,
+          showMeasurementsTable: true,
+          showEccentricityDiagram: true,
+        },
+      ];
+    }
+
+    if (!isMassLinearity || plan.scaleMeasurements.length <= 6) {
+      return [
+        {
+          key: String(plan.scale.id) + "-1",
+          plan,
+          measurements: plan.scaleMeasurements,
+          continuation: false,
+          showMeasurementsTable: true,
+          showEccentricityDiagram: false,
+        },
+      ];
+    }
+
+    const pages: TechnicalPageInfo[] = [
+      {
+        key: String(plan.scale.id) + "-1",
+        plan,
+        measurements: plan.scaleMeasurements.slice(0, 6),
+        continuation: false,
+        showMeasurementsTable: true,
+        showEccentricityDiagram: false,
+      },
+    ];
+
+    const continuationRows = plan.scaleMeasurements.slice(6);
+    const rowsPerContinuationPage = 20;
+
+    for (
+      let start = 0;
+      start < continuationRows.length;
+      start += rowsPerContinuationPage
+    ) {
+      pages.push({
+        key:
+          String(plan.scale.id) +
+          "-" +
+          String(Math.floor(start / rowsPerContinuationPage) + 2),
+        plan,
+        measurements: continuationRows.slice(
+          start,
+          start + rowsPerContinuationPage
+        ),
+        continuation: true,
+        showMeasurementsTable: true,
+        showEccentricityDiagram: false,
+      });
+    }
+
+    return pages;
+  });
+
   const pageDescriptors: PageDescriptor[] = [
     { type: "cover" },
     { type: "text" },
     { type: "execution" },
-    ...scalePlans.flatMap((plan): PageDescriptor[] => [
-      { type: "technical", plan },
-      ...plan.chartPages.map(
-        (chart): PageDescriptor => ({ type: "chart", chart })
-      ),
-    ]),
+    ...scalePlans.flatMap((plan): PageDescriptor[] => {
+      const planTechnicalPages = technicalPages.filter(
+        (page) => page.plan.scale.id === plan.scale.id
+      );
+
+      return [
+        ...planTechnicalPages.map(
+          (page): PageDescriptor => ({ type: "technical", page })
+        ),
+        ...plan.chartPages.map(
+          (chart): PageDescriptor => ({ type: "chart", chart })
+        ),
+      ];
+    }),
     { type: "signature" },
   ];
 
@@ -2096,6 +2310,10 @@ const { data: recordData, error: recordError } = await supabase
           .report-a4-page + .report-a4-page {
             page-break-before: always;
             break-before: page;
+          }
+
+          .technical-table-container {
+            overflow: visible !important;
           }
         }
       `}</style>
@@ -2193,18 +2411,22 @@ const { data: recordData, error: recordError } = await supabase
           if (descriptor.type === "technical") {
             return (
               <TechnicalPage
-                key={"technical-" + descriptor.plan.scale.id}
+                key={"technical-" + descriptor.page.key}
                 record={record}
                 details={details}
-                scale={descriptor.plan.scale}
-                measurements={descriptor.plan.scaleMeasurements}
+                scale={descriptor.page.plan.scale}
+                measurements={descriptor.page.measurements}
+                summaryMeasurements={descriptor.page.plan.scaleMeasurements}
                 customerSnapshot={customerSnapshot}
-                referenceSnapshots={descriptor.plan.scaleReferenceSnapshots}
+                referenceSnapshots={descriptor.page.plan.scaleReferenceSnapshots}
                 procedureSnapshot={procedureSnapshot}
                 reportNumber={reportNumber}
                 reportDate={reportDate}
                 pageNumber={pageNumber}
                 totalPages={totalPages}
+                continuation={descriptor.page.continuation}
+                showMeasurementsTable={descriptor.page.showMeasurementsTable}
+                showEccentricityDiagram={descriptor.page.showEccentricityDiagram}
               />
             );
           }
