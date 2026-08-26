@@ -1,3 +1,4 @@
+
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import AppShell from "@/components/AppShell";
@@ -872,7 +873,8 @@ function CoverPage({
       </table>
 
       <p className="mt-auto text-center text-[12px] font-bold">
-        Questo rapporto di prova è composto da n. {totalPages} pagine.
+        Questo rapporto di prova è composto da n. {" "}
+        <span data-report-total-pages>{totalPages}</span> pagine.
       </p>
     </PageShell>
   );

@@ -172,19 +172,24 @@ export default function AutoPaginatedReport({
       );
       const totalPages = visiblePages.length;
 
+      // Number each real page according to its actual position after automatic
+      // pagination. The hidden measurement pages are deliberately excluded.
       visiblePages.forEach((page, index) => {
         page
           .querySelectorAll<HTMLElement>("[data-report-page-number]")
           .forEach((element) => {
             element.textContent = String(index + 1);
           });
-        page
-          .querySelectorAll<HTMLElement>("[data-report-total-pages]")
-          .forEach((element) => {
-            element.textContent = String(totalPages);
-          });
       });
 
+      // IMPORTANT: update the total globally, not only inside the pages walked
+      // above. This also updates the total written in the cover text and keeps
+      // cover + every footer tied to the exact same real page count.
+      document
+        .querySelectorAll<HTMLElement>("[data-report-total-pages]")
+        .forEach((element) => {
+          element.textContent = String(totalPages);
+        });
     }
 
     void paginate();
