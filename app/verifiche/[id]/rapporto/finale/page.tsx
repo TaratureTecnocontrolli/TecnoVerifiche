@@ -1,4 +1,3 @@
-
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import AppShell from "@/components/AppShell";
@@ -530,7 +529,6 @@ function massReportPointLabel(scaleName: unknown, index: number, fallback: unkno
 }
 
 function ReportPhotosInline({
-  title,
   photos,
 }: {
   title: string;
@@ -547,24 +545,22 @@ function ReportPhotosInline({
 
   return (
     <div className="mt-3 break-inside-avoid">
-      <h3 className="mb-2 text-[12px] font-black uppercase">{title}</h3>
-
       <div className="grid grid-cols-2 gap-3">
         {photos.map((photo, index) => (
           <figure
             key={photo.id || String(index)}
-            className="break-inside-avoid rounded-sm border border-slate-300 bg-white/70 p-2"
+            className="break-inside-avoid"
           >
-            <div className="flex h-[190px] items-center justify-center border border-slate-200 bg-white">
+            <div className="flex h-[190px] items-center justify-center">
               <img
                 src={photo.photo_url}
-                alt={photo.caption || photo.file_name || title}
+                alt="Strumento in verifica"
                 className="h-full w-full object-contain"
               />
             </div>
 
             <figcaption className="mt-1 text-center text-[8.5px] leading-tight text-slate-800">
-              {photo.caption || photo.file_name || title}
+              Strumento in verifica
             </figcaption>
           </figure>
         ))}
@@ -915,6 +911,28 @@ function TextIntroPage({
         addUnitToNumberText(textValue(details.scope_text, ""), measurementUnit)
       );
 
+  const instrumentPhotosFromTable = reportPhotos.filter(
+    (photo) => isInstrumentPhoto(photo) || !isTestPhasePhoto(photo)
+  );
+
+  const legacyInstrumentPhoto =
+    typeof details.instrument_photo_url === "string" &&
+    details.instrument_photo_url.trim()
+      ? [
+          {
+            id: "legacy-instrument-photo",
+            photo_url: details.instrument_photo_url.trim(),
+            file_name: "Foto strumento",
+            caption: "Foto strumento",
+          },
+        ]
+      : [];
+
+  const instrumentPhotos =
+    instrumentPhotosFromTable.length > 0
+      ? instrumentPhotosFromTable
+      : legacyInstrumentPhoto;
+
   return (
     <PageShell
       pageNumber={pageNumber}
@@ -931,11 +949,9 @@ function TextIntroPage({
             </p>
           ))}
 
-          <FinalReportPhotosInline
-            recordId={String(record.id)}
-            category="instrument"
+          <ReportPhotosInline
             title="Foto strumento"
-            variant="clean-large"
+            photos={instrumentPhotos}
           />
         </div>
 
@@ -1214,9 +1230,12 @@ function ReferenceInstrumentTable({
 }) {
   return (
     <table
-      data-report-flow-block={flowBlock ? true : undefined}
-      className="w-full border-collapse text-[9px]"
-    >
+    data-report-flow-block={flowBlock ? true : undefined}
+    className={
+    (flowBlock ? "mt-3 " : "") +
+    "w-full border-collapse text-[9px]"
+    }
+  >
       <thead>
         <tr className="bg-slate-700/65 text-left text-slate-950">
           <th colSpan={4} className="border border-slate-900 px-2 py-1">
@@ -1322,7 +1341,7 @@ function ReferenceInstrumentsPage({
           )}
         </div>
 
-        <div className="mt-3 space-y-3">
+        <div>
           {referenceSnapshots.slice(1).map((referenceSnapshot, referenceIndex) => (
             <ReferenceInstrumentTable
               key={referenceIndex + 1}
