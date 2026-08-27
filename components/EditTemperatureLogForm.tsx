@@ -1,9 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import ReferenceInstrumentMultiSelect from "@/components/ReferenceInstrumentMultiSelect";
+import TemperatureErrorChart from "@/components/TemperatureErrorChart";
+
+type TemperatureVariant = "maturation_tank" | "instrument_calibration";
 
 type ReferenceInstrument = {
   id: string;
@@ -57,7 +60,7 @@ type InitialMeasurement = {
   notes: string | null;
 };
 
-type EditableLogPoint = {
+type EditableTankPoint = {
   id: string;
   measurementId: string | null;
   date: string;
@@ -67,11 +70,21 @@ type EditableLogPoint = {
   notes: string;
 };
 
+type EditableInstrumentPoint = {
+  id: string;
+  measurementId: string | null;
+  appliedTemp: string;
+  cycle1: string;
+  cycle2: string;
+  notes: string;
+};
+
 type EditTemperatureLogFormProps = {
   recordId: string;
   recordNumber: string | null;
   reportStatus: string | null;
   isInternalVerification?: boolean;
+  temperatureVariant?: TemperatureVariant;
   initialScales: InitialScale[];
   initialMeasurements: InitialMeasurement[];
   referenceInstruments: ReferenceInstrument[];
@@ -286,7 +299,7 @@ function joinNotes(date: string, time: string, notes: string): string | null {
   return trimmedNotes || null;
 }
 
-function emptyLogPoint(): EditableLogPoint {
+function emptyTankPoint(): EditableTankPoint {
   return {
     id: crypto.randomUUID(),
     measurementId: null,
@@ -298,10 +311,10 @@ function emptyLogPoint(): EditableLogPoint {
   };
 }
 
-function buildLogPoints(
+function buildTankPoints(
   scales: InitialScale[],
   measurements: InitialMeasurement[]
-): EditableLogPoint[] {
+): EditableTankPoint[] {
   const scale = [...scales].sort((a, b) => a.scale_order - b.scale_order)[0];
 
   const scaleMeasurements = scale
@@ -311,7 +324,7 @@ function buildLogPoints(
     : [];
 
   if (scaleMeasurements.length === 0) {
-    return [emptyLogPoint()];
+    return [emptyTankPoint()];
   }
 
   return scaleMeasurements.map((measurement) => {
@@ -329,11 +342,68 @@ function buildLogPoints(
   });
 }
 
+
+function emptyInstrumentPoint(): EditableInstrumentPoint {
+  return {
+    id: crypto.randomUUID(),
+    measurementId: null,
+    appliedTemp: "",
+    cycle1: "",
+    cycle2: "",
+    notes: "",
+  };
+}
+
+function buildInstrumentPoints(
+  scales: InitialScale[],
+  measurements: InitialMeasurement[]
+): EditableInstrumentPoint[] {
+  const scale = [...scales].sort((a, b) => a.scale_order - b.scale_order)[0];
+
+  const scaleMeasurements = scale
+    ? measurements
+        .filter((measurement) => measurement.scale_id === scale.id)
+        .sort((a, b) => a.point_order - b.point_order)
+    : [];
+
+  if (scaleMeasurements.length === 0) {
+    return [emptyInstrumentPoint()];
+  }
+
+  return scaleMeasurements.map((measurement) => ({
+    id: measurement.id || crypto.randomUUID(),
+    measurementId: measurement.id,
+    appliedTemp: numberToInputValue(measurement.applied_value),
+    cycle1: numberToInputValue(measurement.cycle_1),
+    cycle2: numberToInputValue(measurement.cycle_2),
+    notes: measurement.notes || "",
+  }));
+}
+
+function instrumentAverage(point: EditableInstrumentPoint) {
+  if (point.cycle1.trim() === "" || point.cycle2.trim() === "") {
+    return null;
+  }
+
+  return (toNumber(point.cycle1) + toNumber(point.cycle2)) / 2;
+}
+
+function instrumentError(point: EditableInstrumentPoint) {
+  const average = instrumentAverage(point);
+
+  if (average === null || point.appliedTemp.trim() === "") {
+    return null;
+  }
+
+  return toNumber(point.appliedTemp) - average;
+}
+
 export default function EditTemperatureLogForm({
   recordId,
   recordNumber,
   reportStatus,
   isInternalVerification = false,
+  temperatureVariant = "maturation_tank",
   initialScales,
   initialMeasurements,
   referenceInstruments,
@@ -354,8 +424,30 @@ export default function EditTemperatureLogForm({
     }
   );
   const [scaleNotes, setScaleNotes] = useState(() => initialScales[0]?.notes || "");
-  const [points, setPoints] = useState<EditableLogPoint[]>(() =>
-    buildLogPoints(initialScales, initialMeasurements)
+  const isTankVariant = temperatureVariant === "maturation_tank";
+  const isInstrumentVariant = temperatureVariant === "instrument_calibration";
+  const [tankPoints, setTankPoints] = useState<EditableTankPoint[]>(() =>
+    buildTankPoints(initialScales, initialMeasurements)
+  );
+  const [instrumentPoints, setInstrumentPoints] = useState<
+    EditableInstrumentPoint[]
+  >(() => buildInstrumentPoints(initialScales, initialMeasurements));
+
+  const instrumentChartMeasurements = useMemo(
+    () =>
+      instrumentPoints.map((point, index) => ({
+        id: point.id,
+        point_order: index + 1,
+        applied_value:
+          point.appliedTemp.trim() === "" ? null : toNumber(point.appliedTemp),
+        mean_error: instrumentError(point),
+      })),
+    [instrumentPoints]
+  );
+
+  const hasInstrumentChartData = instrumentChartMeasurements.some(
+    (measurement) =>
+      measurement.applied_value !== null && measurement.mean_error !== null
   );
 
   const [isSaving, setIsSaving] = useState(false);
@@ -394,9 +486,9 @@ export default function EditTemperatureLogForm({
     );
   }
 
-  function updatePoint(
+  function updateTankPoint(
     pointId: string,
-    field: keyof Omit<EditableLogPoint, "id" | "measurementId">,
+    field: keyof Omit<EditableTankPoint, "id" | "measurementId">,
     value: string
   ) {
     const normalizedValue =
@@ -406,26 +498,61 @@ export default function EditTemperatureLogForm({
 
     resetSaveState();
 
-    setPoints((current) =>
+    setTankPoints((current) =>
       current.map((point) =>
         point.id === pointId ? { ...point, [field]: normalizedValue } : point
       )
     );
   }
 
-  function addPoint() {
+  function addTankPoint() {
     resetSaveState();
-    setPoints((current) => [...current, emptyLogPoint()]);
+    setTankPoints((current) => [...current, emptyTankPoint()]);
   }
 
-  function removePoint(pointId: string) {
+  function removeTankPoint(pointId: string) {
     resetSaveState();
-    setPoints((current) => current.filter((point) => point.id !== pointId));
+    setTankPoints((current) =>
+      current.filter((point) => point.id !== pointId)
+    );
+  }
+
+  function updateInstrumentPoint(
+    pointId: string,
+    field: keyof Omit<EditableInstrumentPoint, "id" | "measurementId">,
+    value: string
+  ) {
+    const normalizedValue =
+      field === "appliedTemp" || field === "cycle1" || field === "cycle2"
+        ? normalizeEuropeanDecimalInput(value)
+        : value;
+
+    resetSaveState();
+
+    setInstrumentPoints((current) =>
+      current.map((point) =>
+        point.id === pointId ? { ...point, [field]: normalizedValue } : point
+      )
+    );
+  }
+
+  function addInstrumentPoint() {
+    resetSaveState();
+    setInstrumentPoints((current) => [...current, emptyInstrumentPoint()]);
+  }
+
+  function removeInstrumentPoint(pointId: string) {
+    resetSaveState();
+    setInstrumentPoints((current) =>
+      current.filter((point) => point.id !== pointId)
+    );
   }
 
   function validate() {
     if (selectedReferenceInstruments.length === 0) {
-      throw new Error("Seleziona almeno un termometro/termostato di riferimento usato.");
+      throw new Error(
+        "Seleziona almeno un termometro/termostato di riferimento usato."
+      );
     }
 
     if (hasBlockedReferenceInstrument) {
@@ -434,22 +561,43 @@ export default function EditTemperatureLogForm({
       );
     }
 
-    if (points.length === 0) {
-      throw new Error("Inserisci almeno una rilevazione.");
+    if (isTankVariant) {
+      if (tankPoints.length === 0) {
+        throw new Error("Inserisci almeno una rilevazione.");
+      }
+
+      const invalidPoint = tankPoints.find((point) => {
+        return (
+          !point.date ||
+          !point.time ||
+          point.measuredTemp.trim() === "" ||
+          point.referenceTemp.trim() === ""
+        );
+      });
+
+      if (invalidPoint) {
+        throw new Error(
+          "Compila data, orario, temperatura misurata e temperatura di riferimento per tutte le righe."
+        );
+      }
+
+      return;
     }
 
-    const invalidPoint = points.find((point) => {
-      return (
-        !point.date ||
-        !point.time ||
-        point.measuredTemp.trim() === "" ||
-        point.referenceTemp.trim() === ""
-      );
-    });
+    if (instrumentPoints.length === 0) {
+      throw new Error("Inserisci almeno un punto di verifica.");
+    }
+
+    const invalidPoint = instrumentPoints.find(
+      (point) =>
+        point.appliedTemp.trim() === "" ||
+        point.cycle1.trim() === "" ||
+        point.cycle2.trim() === ""
+    );
 
     if (invalidPoint) {
       throw new Error(
-        "Compila data, orario, temperatura misurata e temperatura di riferimento per tutte le righe."
+        "Compila temperatura applicata, I ciclo e II ciclo per tutti i punti di verifica."
       );
     }
   }
@@ -469,7 +617,9 @@ export default function EditTemperatureLogForm({
       .insert({
         calibration_record_id: recordId,
         scale_order: 1,
-        scale_name: "Temperatura",
+        scale_name: isInstrumentVariant
+          ? "Temperatura - Termometro / Stufa"
+          : "Temperatura - Vasca di maturazione",
         scale_range: null,
         reference_instrument_id: primaryReference.id,
         reference_instrument_snapshot: referenceSnapshots[0],
@@ -531,7 +681,8 @@ export default function EditTemperatureLogForm({
         throw new Error(scaleError.message);
       }
 
-      const keepMeasurementIds = points
+      const activePoints = isTankVariant ? tankPoints : instrumentPoints;
+      const keepMeasurementIds = activePoints
         .map((point) => point.measurementId)
         .filter((id): id is string => Boolean(id));
 
@@ -558,68 +709,148 @@ export default function EditTemperatureLogForm({
         }
       }
 
-      const sortedPoints = [...points].sort((a, b) => {
-        const aKey = a.date + " " + a.time;
-        const bKey = b.date + " " + b.time;
-        return aKey.localeCompare(bKey);
-      });
+      if (isTankVariant) {
+        const sortedPoints = [...tankPoints].sort((a, b) => {
+          const aKey = a.date + " " + a.time;
+          const bKey = b.date + " " + b.time;
+          return aKey.localeCompare(bKey);
+        });
 
-      const updatedPoints: EditableLogPoint[] = [];
+        const updatedPoints: EditableTankPoint[] = [];
 
-      for (let pointIndex = 0; pointIndex < sortedPoints.length; pointIndex += 1) {
-        const point = sortedPoints[pointIndex];
-        const measuredTemp = toNumber(point.measuredTemp);
-        const referenceTemp = toNumber(point.referenceTemp);
+        for (
+          let pointIndex = 0;
+          pointIndex < sortedPoints.length;
+          pointIndex += 1
+        ) {
+          const point = sortedPoints[pointIndex];
+          const measuredTemp = toNumber(point.measuredTemp);
+          const referenceTemp = toNumber(point.referenceTemp);
 
-        const payload = {
-          calibration_record_id: recordId,
-          scale_id: resolvedScaleId,
-          section: "Temperatura",
-          point_order: pointIndex + 1,
-          nominal_value: null,
-          applied_value: null,
-          cycle_1: measuredTemp,
-          cycle_2: referenceTemp,
-          cycle_3: null,
-          max_value: null,
-          min_value: null,
-          average_value: null,
-          mean_error: measuredTemp - referenceTemp,
-          accuracy_error_percent: null,
-          repeatability_error_percent: null,
-          result: null,
-          notes: joinNotes(point.date, point.time, point.notes),
-        };
+          const payload = {
+            calibration_record_id: recordId,
+            scale_id: resolvedScaleId,
+            section: "Temperatura - Vasca di maturazione",
+            point_order: pointIndex + 1,
+            nominal_value: null,
+            applied_value: null,
+            cycle_1: measuredTemp,
+            cycle_2: referenceTemp,
+            cycle_3: null,
+            max_value: null,
+            min_value: null,
+            average_value: null,
+            mean_error: measuredTemp - referenceTemp,
+            accuracy_error_percent: null,
+            repeatability_error_percent: null,
+            result: null,
+            notes: joinNotes(point.date, point.time, point.notes),
+          };
 
-        if (point.measurementId) {
-          const { error: updateError } = await supabase
-            .from("calibration_measurements")
-            .update(payload)
-            .eq("id", point.measurementId);
+          if (point.measurementId) {
+            const { error: updateError } = await supabase
+              .from("calibration_measurements")
+              .update(payload)
+              .eq("id", point.measurementId);
 
-          if (updateError) {
-            throw new Error(updateError.message);
+            if (updateError) {
+              throw new Error(updateError.message);
+            }
+
+            updatedPoints.push(point);
+          } else {
+            const { data: insertedMeasurement, error: insertError } =
+              await supabase
+                .from("calibration_measurements")
+                .insert(payload)
+                .select("id")
+                .single();
+
+            if (insertError || !insertedMeasurement) {
+              throw new Error(
+                insertError?.message ||
+                  "Errore durante l’inserimento della rilevazione."
+              );
+            }
+
+            updatedPoints.push({
+              ...point,
+              measurementId: insertedMeasurement.id,
+            });
           }
-
-          updatedPoints.push(point);
-        } else {
-          const { data: insertedMeasurement, error: insertError } = await supabase
-            .from("calibration_measurements")
-            .insert(payload)
-            .select("id")
-            .single();
-
-          if (insertError || !insertedMeasurement) {
-            throw new Error(
-              insertError?.message || "Errore durante l’inserimento della rilevazione."
-            );
-          }
-
-          updatedPoints.push({ ...point, measurementId: insertedMeasurement.id });
         }
-      }
 
-      setPoints(updatedPoints);
+        setTankPoints(updatedPoints);
+      } else {
+        const updatedPoints: EditableInstrumentPoint[] = [];
+
+        for (
+          let pointIndex = 0;
+          pointIndex < instrumentPoints.length;
+          pointIndex += 1
+        ) {
+          const point = instrumentPoints[pointIndex];
+          const appliedTemp = toNumber(point.appliedTemp);
+          const cycle1 = toNumber(point.cycle1);
+          const cycle2 = toNumber(point.cycle2);
+          const average = (cycle1 + cycle2) / 2;
+          const error = appliedTemp - average;
+
+          const payload = {
+            calibration_record_id: recordId,
+            scale_id: resolvedScaleId,
+            section: "Temperatura - Termometro / Stufa",
+            point_order: pointIndex + 1,
+            nominal_value: null,
+            applied_value: appliedTemp,
+            cycle_1: cycle1,
+            cycle_2: cycle2,
+            cycle_3: null,
+            max_value: Math.max(cycle1, cycle2),
+            min_value: Math.min(cycle1, cycle2),
+            average_value: average,
+            mean_error: error,
+            accuracy_error_percent: null,
+            repeatability_error_percent: null,
+            result: null,
+            notes: point.notes.trim() || null,
+          };
+
+          if (point.measurementId) {
+            const { error: updateError } = await supabase
+              .from("calibration_measurements")
+              .update(payload)
+              .eq("id", point.measurementId);
+
+            if (updateError) {
+              throw new Error(updateError.message);
+            }
+
+            updatedPoints.push(point);
+          } else {
+            const { data: insertedMeasurement, error: insertError } =
+              await supabase
+                .from("calibration_measurements")
+                .insert(payload)
+                .select("id")
+                .single();
+
+            if (insertError || !insertedMeasurement) {
+              throw new Error(
+                insertError?.message ||
+                  "Errore durante l’inserimento del punto di verifica."
+              );
+            }
+
+            updatedPoints.push({
+              ...point,
+              measurementId: insertedMeasurement.id,
+            });
+          }
+        }
+
+        setInstrumentPoints(updatedPoints);
+      }
 
       await supabase
         .from("calibration_records")
@@ -627,12 +858,16 @@ export default function EditTemperatureLogForm({
         .eq("id", recordId)
         .neq("report_status", "issued");
 
-      setSaveMessage("Log temperatura aggiornato correttamente.");
+      setSaveMessage(
+        isTankVariant
+          ? "Rilevazioni vasca aggiornate correttamente."
+          : "Verifica temperatura aggiornata correttamente."
+      );
     } catch (error) {
       const message =
         error instanceof Error
           ? error.message
-          : "Errore durante il salvataggio del log temperatura.";
+          : "Errore durante il salvataggio dei dati temperatura.";
 
       setSaveError(message);
     } finally {
@@ -656,10 +891,12 @@ export default function EditTemperatureLogForm({
         <div className="flex flex-col justify-between gap-4 md:flex-row md:items-center">
           <div>
             <h2 className="text-lg font-semibold text-slate-900">
-              Dati tecnici temperatura
+              {isTankVariant
+                ? "Rilevazioni temperatura - Vasca di maturazione"
+                : "Verifica temperatura - Termometro / Stufa"}
             </h2>
             <p className="text-sm text-slate-500">
-              Verifica interna: {recordNumber || "-"}
+              {isInternalVerification ? "VI" : "VT"} · {recordNumber || "-"}
             </p>
           </div>
 
@@ -685,7 +922,7 @@ export default function EditTemperatureLogForm({
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
           <div className="border-b border-slate-200 p-5">
             <h2 className="text-lg font-semibold text-slate-900">
-              Termometro / termostato di riferimento
+              Strumenti campione di riferimento
             </h2>
 
             <div className="mt-5">
@@ -699,7 +936,7 @@ export default function EditTemperatureLogForm({
 
             <label className="mt-4 block space-y-1">
               <span className="text-sm font-medium text-slate-700">
-                Note (comuni al log)
+                Note tecniche comuni
               </span>
               <input
                 value={scaleNotes}
@@ -779,130 +1016,319 @@ export default function EditTemperatureLogForm({
             )}
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[900px] text-sm">
-              <thead className="bg-slate-50 text-left text-xs tracking-wide text-slate-500">
-                <tr>
-                  <th className="px-4 py-3">Data</th>
-                  <th className="px-4 py-3">Orario</th>
-                  <th className="bg-amber-100 px-4 py-3 text-amber-900">
-                    Temperatura misurata (°C)
-                  </th>
-                  <th className="bg-amber-100 px-4 py-3 text-amber-900">
-                    Temperatura riferimento (°C)
-                  </th>
-                  <th className="px-4 py-3">Scostamento (°C)</th>
-                  <th className="px-4 py-3">Note</th>
-                  <th className="px-4 py-3"></th>
-                </tr>
-              </thead>
-
-              <tbody className="divide-y divide-slate-100">
-                {points.map((point) => {
-                  const deviation =
-                    point.measuredTemp.trim() !== "" && point.referenceTemp.trim() !== ""
-                      ? toNumber(point.measuredTemp) - toNumber(point.referenceTemp)
-                      : null;
-
-                  return (
-                    <tr key={point.id} className="hover:bg-slate-50">
-                      <td className="px-4 py-3">
-                        <input
-                          type="date"
-                          value={point.date}
-                          onChange={(event) =>
-                            updatePoint(point.id, "date", event.target.value)
-                          }
-                          className="rounded-lg border border-slate-300 px-2 py-1"
-                        />
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <input
-                          type="time"
-                          value={point.time}
-                          onChange={(event) =>
-                            updatePoint(point.id, "time", event.target.value)
-                          }
-                          className="rounded-lg border border-slate-300 px-2 py-1"
-                        />
-                      </td>
-
-                      <td className="bg-amber-50 px-4 py-3">
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          value={point.measuredTemp}
-                          onChange={(event) =>
-                            updatePoint(point.id, "measuredTemp", event.target.value)
-                          }
-                          className="w-24 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 font-semibold text-amber-950 focus:border-amber-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-200"
-                        />
-                      </td>
-
-                      <td className="bg-amber-50 px-4 py-3">
-                        <input
-                          type="text"
-                          inputMode="decimal"
-                          value={point.referenceTemp}
-                          onChange={(event) =>
-                            updatePoint(point.id, "referenceTemp", event.target.value)
-                          }
-                          className="w-24 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 font-semibold text-amber-950 focus:border-amber-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-200"
-                        />
-                      </td>
-
-                      <td className="px-4 py-3">{formatItalianNumber(deviation)}</td>
-
-                      <td className="px-4 py-3">
-                        <input
-                          value={point.notes}
-                          onChange={(event) =>
-                            updatePoint(point.id, "notes", event.target.value)
-                          }
-                          placeholder="Note"
-                          className="w-full min-w-[140px] rounded-lg border border-slate-300 px-2 py-1"
-                        />
-                      </td>
-
-                      <td className="px-4 py-3">
-                        <button
-                          type="button"
-                          onClick={() => removePoint(point.id)}
-                          className="rounded-lg px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
-                        >
-                          Elimina
-                        </button>
-                      </td>
+          {isTankVariant ? (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[900px] text-sm">
+                  <thead className="bg-slate-50 text-left text-xs tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-4 py-3">Data</th>
+                      <th className="px-4 py-3">Orario</th>
+                      <th className="bg-amber-100 px-4 py-3 text-amber-900">
+                        Temperatura misurata (°C)
+                      </th>
+                      <th className="bg-amber-100 px-4 py-3 text-amber-900">
+                        Temperatura riferimento (°C)
+                      </th>
+                      <th className="px-4 py-3">Scostamento (°C)</th>
+                      <th className="px-4 py-3">Note</th>
+                      <th className="px-4 py-3"></th>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                  </thead>
 
-          <div className="border-t border-slate-200 p-5">
-            <div className="flex justify-end">
-              <button
-                type="button"
-                onClick={addPoint}
-                className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700"
-              >
-                Aggiungi rilevazione
-              </button>
-            </div>
-          </div>
+                  <tbody className="divide-y divide-slate-100">
+                    {tankPoints.map((point) => {
+                      const deviation =
+                        point.measuredTemp.trim() !== "" &&
+                        point.referenceTemp.trim() !== ""
+                          ? toNumber(point.measuredTemp) -
+                            toNumber(point.referenceTemp)
+                          : null;
+
+                      return (
+                        <tr key={point.id} className="hover:bg-slate-50">
+                          <td className="px-4 py-3">
+                            <input
+                              type="date"
+                              value={point.date}
+                              onChange={(event) =>
+                                updateTankPoint(
+                                  point.id,
+                                  "date",
+                                  event.target.value
+                                )
+                              }
+                              className="rounded-lg border border-slate-300 px-2 py-1"
+                            />
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <input
+                              type="time"
+                              value={point.time}
+                              onChange={(event) =>
+                                updateTankPoint(
+                                  point.id,
+                                  "time",
+                                  event.target.value
+                                )
+                              }
+                              className="rounded-lg border border-slate-300 px-2 py-1"
+                            />
+                          </td>
+
+                          <td className="bg-amber-50 px-4 py-3">
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={point.measuredTemp}
+                              onChange={(event) =>
+                                updateTankPoint(
+                                  point.id,
+                                  "measuredTemp",
+                                  event.target.value
+                                )
+                              }
+                              className="w-24 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 font-semibold text-amber-950 focus:border-amber-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-200"
+                            />
+                          </td>
+
+                          <td className="bg-amber-50 px-4 py-3">
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={point.referenceTemp}
+                              onChange={(event) =>
+                                updateTankPoint(
+                                  point.id,
+                                  "referenceTemp",
+                                  event.target.value
+                                )
+                              }
+                              className="w-24 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 font-semibold text-amber-950 focus:border-amber-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-200"
+                            />
+                          </td>
+
+                          <td className="px-4 py-3">
+                            {formatItalianNumber(deviation)}
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <input
+                              value={point.notes}
+                              onChange={(event) =>
+                                updateTankPoint(
+                                  point.id,
+                                  "notes",
+                                  event.target.value
+                                )
+                              }
+                              placeholder="Note"
+                              className="w-full min-w-[140px] rounded-lg border border-slate-300 px-2 py-1"
+                            />
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <button
+                              type="button"
+                              onClick={() => removeTankPoint(point.id)}
+                              className="rounded-lg px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
+                            >
+                              Elimina
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="border-t border-slate-200 p-5">
+                <div className="flex justify-end">
+                  <button
+                    type="button"
+                    onClick={addTankPoint}
+                    className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700"
+                  >
+                    Aggiungi rilevazione
+                  </button>
+                </div>
+              </div>
+            </>
+          ) : (
+            <>
+              <div className="overflow-x-auto">
+                <table className="w-full min-w-[900px] text-sm">
+                  <thead className="bg-slate-50 text-left text-xs tracking-wide text-slate-500">
+                    <tr>
+                      <th className="px-4 py-3">Punto</th>
+                      <th className="bg-amber-100 px-4 py-3 text-amber-900">
+                        Temperatura applicata (°C)
+                      </th>
+                      <th className="bg-amber-100 px-4 py-3 text-amber-900">
+                        I ciclo (°C)
+                      </th>
+                      <th className="bg-amber-100 px-4 py-3 text-amber-900">
+                        II ciclo (°C)
+                      </th>
+                      <th className="px-4 py-3">Media letture (°C)</th>
+                      <th className="px-4 py-3">Errore (°C)</th>
+                      <th className="px-4 py-3">Note</th>
+                      <th className="px-4 py-3"></th>
+                    </tr>
+                  </thead>
+
+                  <tbody className="divide-y divide-slate-100">
+                    {instrumentPoints.map((point, pointIndex) => {
+                      const average = instrumentAverage(point);
+                      const error = instrumentError(point);
+
+                      return (
+                        <tr key={point.id} className="hover:bg-slate-50">
+                          <td className="px-4 py-3 font-semibold text-slate-700">
+                            {pointIndex + 1}
+                          </td>
+
+                          <td className="bg-amber-50 px-4 py-3">
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={point.appliedTemp}
+                              onChange={(event) =>
+                                updateInstrumentPoint(
+                                  point.id,
+                                  "appliedTemp",
+                                  event.target.value
+                                )
+                              }
+                              className="w-28 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 font-semibold text-amber-950 focus:border-amber-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-200"
+                            />
+                          </td>
+
+                          <td className="bg-amber-50 px-4 py-3">
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={point.cycle1}
+                              onChange={(event) =>
+                                updateInstrumentPoint(
+                                  point.id,
+                                  "cycle1",
+                                  event.target.value
+                                )
+                              }
+                              className="w-24 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 font-semibold text-amber-950 focus:border-amber-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-200"
+                            />
+                          </td>
+
+                          <td className="bg-amber-50 px-4 py-3">
+                            <input
+                              type="text"
+                              inputMode="decimal"
+                              value={point.cycle2}
+                              onChange={(event) =>
+                                updateInstrumentPoint(
+                                  point.id,
+                                  "cycle2",
+                                  event.target.value
+                                )
+                              }
+                              className="w-24 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 font-semibold text-amber-950 focus:border-amber-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-200"
+                            />
+                          </td>
+
+                          <td className="px-4 py-3 font-semibold">
+                            {formatItalianNumber(average, 3)}
+                          </td>
+
+                          <td className="px-4 py-3 font-semibold">
+                            {formatItalianNumber(error, 2)}
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <input
+                              value={point.notes}
+                              onChange={(event) =>
+                                updateInstrumentPoint(
+                                  point.id,
+                                  "notes",
+                                  event.target.value
+                                )
+                              }
+                              placeholder="Note"
+                              className="w-full min-w-[140px] rounded-lg border border-slate-300 px-2 py-1"
+                            />
+                          </td>
+
+                          <td className="px-4 py-3">
+                            <button
+                              type="button"
+                              onClick={() => removeInstrumentPoint(point.id)}
+                              className="rounded-lg px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
+                            >
+                              Elimina
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div className="border-t border-slate-200 p-5">
+                <div className="flex items-center justify-between gap-4">
+                  <p className="text-xs text-slate-500">
+                    Formula: Errore = Temperatura applicata - media di I e II ciclo.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={addInstrumentPoint}
+                    className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700"
+                  >
+                    Aggiungi punto
+                  </button>
+                </div>
+              </div>
+            </>
+          )}
         </section>
       </fieldset>
+
+      {isInstrumentVariant && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-semibold text-slate-900">
+            Grafico errore di temperatura
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Il grafico si aggiorna automaticamente mentre modifichi i punti di verifica.
+          </p>
+
+          <div className="mt-4">
+            {hasInstrumentChartData ? (
+              <TemperatureErrorChart
+                measurements={instrumentChartMeasurements}
+                title="Grafico errore di temperatura"
+              />
+            ) : (
+              <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-500">
+                Compila temperatura applicata, I ciclo e II ciclo per visualizzare il grafico.
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       <section className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm md:flex-row md:items-center md:justify-between">
         <div>
           <h2 className="text-lg font-semibold text-slate-900">
-            Salva log temperatura
+            {isTankVariant ? "Salva rilevazioni temperatura" : "Salva verifica temperatura"}
           </h2>
           <p className="text-sm text-slate-500">
-            Nessun calcolo di errore o esito: i dati vengono registrati così
-            come rilevati.
+            {isTankVariant
+              ? "La procedura a data/orario resta invariata per la vasca di maturazione."
+              : "Media ed errore vengono ricalcolati automaticamente per ogni punto."}
           </p>
         </div>
 
@@ -916,7 +1342,9 @@ export default function EditTemperatureLogForm({
             ? "Misure in sola lettura"
             : isSaving
               ? "Salvataggio..."
-              : "Salva log"}
+              : isTankVariant
+                ? "Salva rilevazioni"
+                : "Salva verifica"}
         </button>
       </section>
 

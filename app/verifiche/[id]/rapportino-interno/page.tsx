@@ -4,6 +4,7 @@ import ReportPrintButton from "@/components/ReportPrintButton";
 import ReportStatusActions from "@/components/ReportStatusActions";
 import InternalReportSignaturesForm, { InternalReportSignaturePreview } from "@/components/InternalReportSignaturesForm";
 import InternalReportNumberForm from "@/components/InternalReportNumberForm";
+import TemperatureErrorChart, { type TemperatureErrorMeasurement } from "@/components/TemperatureErrorChart";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
@@ -209,6 +210,19 @@ function isTemperature(record: CalibrationRecord) {
   return record.verification_module === "TEMPERATURE" || record.mode === "temperatura";
 }
 
+function getTemperatureVariant(record: CalibrationRecord) {
+  const procedureSnapshot = asObject(record.procedure_snapshot);
+  const variant = String(procedureSnapshot.temperature_variant ?? "").trim();
+
+  return variant === "instrument_calibration"
+    ? "instrument_calibration"
+    : "maturation_tank";
+}
+
+function isTemperatureInstrumentCalibration(record: CalibrationRecord) {
+  return isTemperature(record) && getTemperatureVariant(record) === "instrument_calibration";
+}
+
 function textFromObject(source: JsonObject, keys: string[]) {
   for (const key of keys) {
     const value = source[key];
@@ -393,6 +407,64 @@ function hasAnyNumericValue(
 ) {
   return measurements.some((measurement) =>
     hasNumericValue(measurement[field] as number | null | undefined)
+  );
+}
+
+function TemperatureInstrumentMeasurementsTable({
+  measurements,
+}: {
+  measurements: CalibrationMeasurement[];
+}) {
+  return (
+    <table className="w-full border-collapse bg-white/35 text-center text-[7px]">
+      <thead>
+        <tr className="bg-slate-700/65 text-slate-950">
+          <th className="border border-slate-600 px-1 py-[1px]">Punto</th>
+          <th className="border border-slate-600 px-1 py-[1px]">
+            Temperatura applicata (°C)
+          </th>
+          <th className="border border-slate-600 px-1 py-[1px]">
+            Lettura 1 (°C)
+          </th>
+          <th className="border border-slate-600 px-1 py-[1px]">
+            Lettura 2 (°C)
+          </th>
+          <th className="border border-slate-600 px-1 py-[1px]">
+            Media (°C)
+          </th>
+          <th className="border border-slate-600 px-1 py-[1px]">
+            Errore (°C)
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {measurements.map((measurement, index) => (
+          <tr
+            key={measurement.id}
+            className={index % 2 === 0 ? "bg-white/65" : "bg-slate-100/55"}
+          >
+            <td className="border border-slate-300 px-1 py-[1px]">
+              {textValue(measurement.point_order)}
+            </td>
+            <td className="border border-slate-300 px-1 py-[1px]">
+              {formatNumber(measurement.applied_value)}
+            </td>
+            <td className="border border-slate-300 px-1 py-[1px]">
+              {formatNumber(measurement.cycle_1)}
+            </td>
+            <td className="border border-slate-300 px-1 py-[1px]">
+              {formatNumber(measurement.cycle_2)}
+            </td>
+            <td className="border border-slate-300 px-1 py-[1px] font-bold">
+              {formatNumber(measurement.average_value)}
+            </td>
+            <td className="border border-slate-300 px-1 py-[1px]">
+              {formatNumber(measurement.mean_error)}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 
@@ -647,6 +719,8 @@ function ScaleCompactBlock({
           </div>
         ) : isSclerometric(record) ? (
           <SclerometricTable measurements={measurements} />
+        ) : isTemperatureInstrumentCalibration(record) ? (
+          <TemperatureInstrumentMeasurementsTable measurements={measurements} />
         ) : (
           <GenericMeasurementsTable
             record={record}
@@ -656,6 +730,23 @@ function ScaleCompactBlock({
           />
         )}
       </div>
+
+      {isTemperatureInstrumentCalibration(record) && measurements.length > 0 ? (
+        <div className="mt-2 break-inside-avoid">
+          <TemperatureErrorChart
+            compact
+            title="Grafico errore di temperatura"
+            measurements={measurements.map(
+              (measurement): TemperatureErrorMeasurement => ({
+                id: measurement.id,
+                point_order: measurement.point_order,
+                applied_value: measurement.applied_value,
+                mean_error: measurement.mean_error,
+              })
+            )}
+          />
+        </div>
+      ) : null}
     </div>
   );
 }

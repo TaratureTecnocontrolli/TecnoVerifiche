@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import MeasurementErrorChart from "@/components/MeasurementErrorChart";
+import TemperatureErrorChart, { type TemperatureErrorMeasurement } from "@/components/TemperatureErrorChart";
 import ReportPrintButton from "@/components/ReportPrintButton";
 import FinalReportPhotosInline from "@/components/FinalReportPhotosInline";
 import ReportStatusActions from "@/components/ReportStatusActions";
@@ -32,6 +33,12 @@ type ChartPageInfo = {
   key: string;
   title: string;
   measurements: (MeasurementLike & { section: string | null })[];
+};
+
+type TemperatureChartPageInfo = {
+  key: string;
+  title: string;
+  measurements: TemperatureErrorMeasurement[];
 };
 
 type ReportPhoto = {
@@ -83,6 +90,7 @@ type PageDescriptor =
   | { type: "formula" }
   | { type: "technical"; sheet: TechnicalSheetInfo }
   | { type: "chart"; charts: ChartPageInfo[] }
+  | { type: "temperature-chart"; chart: TemperatureChartPageInfo }
   | { type: "signature" };
 
 const LETTERHEAD_IMAGE_SRC = "/carta_intestata_rev02.png";
@@ -446,6 +454,22 @@ function isForceCompressionTrazione(record: GenericRecord) {
     mode === "compressione" ||
     mode === "trazione"
   );
+}
+
+function getTemperatureVariant(record: GenericRecord) {
+  const procedureSnapshot = asObject(record.procedure_snapshot);
+  const variant = String(procedureSnapshot.temperature_variant ?? "").trim();
+
+  return variant === "instrument_calibration"
+    ? "instrument_calibration"
+    : "maturation_tank";
+}
+
+function isTemperatureInstrumentCalibration(record: GenericRecord) {
+  const isTemperature =
+    record.verification_module === "TEMPERATURE" || record.mode === "temperatura";
+
+  return isTemperature && getTemperatureVariant(record) === "instrument_calibration";
 }
 
 function forcePremiseText(customerSnapshot: GenericRecord, details: GenericRecord) {
@@ -1088,10 +1112,17 @@ function ExecutionTextPage({
   }
 
   if (isTemperature) {
-    formulaText = [
-      "La verifica viene eseguita rilevando, a orari prefissati, la temperatura indicata dallo strumento in prova e la temperatura indicata dal termometro/termostato di riferimento.",
-      "I valori sono riportati come rilevati, senza calcolo di errore o esito automatico.",
-    ];
+    formulaText = isTemperatureInstrumentCalibration(record)
+      ? [
+          "La verifica viene eseguita sui punti di temperatura previsti confrontando lo strumento o l'apparecchiatura in prova con uno o più strumenti campione di riferimento.",
+          "Per ciascun punto vengono rilevate due letture consecutive dello strumento in prova.",
+          "Media letture = (I ciclo + II ciclo) / 2.",
+          "Errore (°C) = Temperatura applicata - Media letture.",
+        ]
+      : [
+          "La verifica viene eseguita rilevando, a orari prefissati, la temperatura indicata dallo strumento in prova e la temperatura indicata dal termometro/termostato di riferimento.",
+          "I valori sono riportati come rilevati, senza calcolo di errore o esito automatico.",
+        ];
   }
 
   if (isPullOff) {
@@ -1542,10 +1573,17 @@ function FormulaPage({
   }
 
   if (isTemperature) {
-    formulaText = [
-      "La verifica viene eseguita rilevando, a orari prefissati, la temperatura indicata dallo strumento in prova e la temperatura indicata dal termometro/termostato di riferimento.",
-      "I valori sono riportati come rilevati, senza calcolo di errore o esito automatico.",
-    ];
+    formulaText = isTemperatureInstrumentCalibration(record)
+      ? [
+          "La verifica viene eseguita sui punti di temperatura previsti confrontando lo strumento o l'apparecchiatura in prova con uno o più strumenti campione di riferimento.",
+          "Per ciascun punto vengono rilevate due letture consecutive dello strumento in prova.",
+          "Media letture = (I ciclo + II ciclo) / 2.",
+          "Errore (°C) = Temperatura applicata - Media letture.",
+        ]
+      : [
+          "La verifica viene eseguita rilevando, a orari prefissati, la temperatura indicata dallo strumento in prova e la temperatura indicata dal termometro/termostato di riferimento.",
+          "I valori sono riportati come rilevati, senza calcolo di errore o esito automatico.",
+        ];
   }
 
   if (isPullOff) {
@@ -1613,6 +1651,72 @@ function FormulaPage({
         </div>
       </section>
     </PageShell>
+  );
+}
+
+function TemperatureInstrumentMeasurementsTable({
+  measurements,
+}: {
+  measurements: GenericRecord[];
+}) {
+  return (
+    <table className="w-full border-collapse bg-white/35 text-center text-[9px]">
+      <thead>
+        <tr className="bg-slate-700/65 text-slate-950">
+          <th className="border border-slate-600 px-1 py-0.5">Punto</th>
+          <th className="border border-slate-600 px-1 py-0.5">
+            Temperatura applicata (°C)
+          </th>
+          <th className="border border-slate-600 px-1 py-0.5">
+            Lettura I° ciclo (°C)
+          </th>
+          <th className="border border-slate-600 px-1 py-0.5">
+            Lettura II° ciclo (°C)
+          </th>
+          <th className="border border-slate-600 px-1 py-0.5">
+            Media letture (°C)
+          </th>
+          <th className="border border-slate-600 px-1 py-0.5">
+            Errore (°C)
+          </th>
+        </tr>
+      </thead>
+      <tbody>
+        {measurements.length === 0 ? (
+          <tr className="bg-white/65">
+            <td colSpan={6} className="border border-slate-300 px-2 py-1">
+              Nessun punto di misura salvato.
+            </td>
+          </tr>
+        ) : (
+          measurements.map((measurement, index) => (
+            <tr
+              key={measurement.id}
+              className={index % 2 === 0 ? "bg-white/65" : "bg-slate-100/55"}
+            >
+              <td className="border border-slate-300 px-1 py-0.5">
+                {textValue(measurement.point_order)}
+              </td>
+              <td className="border border-slate-300 px-1 py-0.5">
+                {formatNumber(measurement.applied_value)}
+              </td>
+              <td className="border border-slate-300 px-1 py-0.5">
+                {formatNumber(measurement.cycle_1)}
+              </td>
+              <td className="border border-slate-300 px-1 py-0.5">
+                {formatNumber(measurement.cycle_2)}
+              </td>
+              <td className="border border-slate-300 px-1 py-0.5 font-bold">
+                {formatNumber(measurement.average_value)}
+              </td>
+              <td className="border border-slate-300 px-1 py-0.5">
+                {formatNumber(measurement.mean_error)}
+              </td>
+            </tr>
+          ))
+        )}
+      </tbody>
+    </table>
   );
 }
 
@@ -2032,6 +2136,10 @@ function TechnicalScaleSection({
   const isMass = record.verification_module === "MASS" || record.mode === "massa";
   const isDimensional =
     record.verification_module === "DIMENSIONAL" || record.mode === "dimensionale";
+  const isTemperature =
+    record.verification_module === "TEMPERATURE" || record.mode === "temperatura";
+  const isTemperatureInstrument =
+    isTemperature && isTemperatureInstrumentCalibration(record);
   const measurementUnit = getMeasurementUnit({
     record,
     customerSnapshot,
@@ -2045,6 +2153,10 @@ function TechnicalScaleSection({
   const maxRepeatability = maxAbsoluteValue(
     scaleMeasurements,
     "repeatability_error_percent"
+  );
+  const maxTemperatureError = maxAbsoluteValue(
+    scaleMeasurements,
+    "mean_error"
   );
   const appliedLabel = isFlow
     ? "Volume impostato"
@@ -2079,16 +2191,29 @@ function TechnicalScaleSection({
               value={formatNumberWithUnit(scale.scale_range, measurementUnit)}
             />
           </tr>
-          <tr>
-            <DataCell
-              label="Errore accuratezza max"
-              value={formatNumberWithUnit(maxAccuracy, "%")}
-            />
-            <DataCell
-              label="Errore ripetibilità max"
-              value={formatNumberWithUnit(maxRepeatability, "%")}
-            />
-          </tr>
+          {isTemperatureInstrument ? (
+            <tr>
+              <DataCell
+                label="Errore max assoluto"
+                value={formatNumberWithUnit(maxTemperatureError, "°C")}
+              />
+              <DataCell
+                label="N. punti"
+                value={String(scaleMeasurements.length)}
+              />
+            </tr>
+          ) : (
+            <tr>
+              <DataCell
+                label="Errore accuratezza max"
+                value={formatNumberWithUnit(maxAccuracy, "%")}
+              />
+              <DataCell
+                label="Errore ripetibilità max"
+                value={formatNumberWithUnit(maxRepeatability, "%")}
+              />
+            </tr>
+          )}
         </tbody>
       </table>
 
@@ -2106,27 +2231,31 @@ function TechnicalScaleSection({
         </div>
       )}
 
-      <TechnicalTable
-        measurements={measurements}
-        showNominalColumn={isFlow}
-        showUncertaintyColumn={isDimensional}
-        nominalLabel="Volume nominale"
-        appliedLabel={appliedLabel}
-        measurementUnit={measurementUnit}
-        showThirdCycleColumn={!isPressure && !isFlow}
-        firstColumnLabel={isMass ? "Zona" : "Punto di verifica"}
-        firstColumnHasUnit={!isMass}
-        pointLabelResolver={
-          isMass
-            ? (measurement, index) =>
-                massReportPointLabel(
-                  scale.scale_name || measurement.section,
-                  index,
-                  measurement.point_order
-                )
-            : undefined
-        }
-      />
+      {isTemperatureInstrument ? (
+        <TemperatureInstrumentMeasurementsTable measurements={measurements} />
+      ) : (
+        <TechnicalTable
+          measurements={measurements}
+          showNominalColumn={isFlow}
+          showUncertaintyColumn={isDimensional}
+          nominalLabel="Volume nominale"
+          appliedLabel={appliedLabel}
+          measurementUnit={measurementUnit}
+          showThirdCycleColumn={!isPressure && !isFlow}
+          firstColumnLabel={isMass ? "Zona" : "Punto di verifica"}
+          firstColumnHasUnit={!isMass}
+          pointLabelResolver={
+            isMass
+              ? (measurement, index) =>
+                  massReportPointLabel(
+                    scale.scale_name || measurement.section,
+                    index,
+                    measurement.point_order
+                  )
+              : undefined
+          }
+        />
+      )}
     </section>
   );
 }
@@ -2302,6 +2431,42 @@ function ChartPage({
             />
           </div>
         ))}
+      </div>
+    </PageShell>
+  );
+}
+
+function TemperatureChartPage({
+  chart,
+  reportNumber,
+  reportDate,
+  pageNumber,
+  totalPages,
+}: {
+  chart: TemperatureChartPageInfo;
+  reportNumber: string;
+  reportDate: unknown;
+  pageNumber: number;
+  totalPages: number;
+}) {
+  return (
+    <PageShell
+      pageNumber={pageNumber}
+      totalPages={totalPages}
+      reportNumber={reportNumber}
+      reportDate={reportDate}
+    >
+      <div data-report-flow-block className="break-inside-avoid">
+        <div className="mt-6 text-right text-[11px] font-semibold text-slate-900">
+          Sezione tecnica integrante del Rapporto di Prova {reportNumber}
+        </div>
+
+        <div className="mt-6 rounded-2xl bg-white/45 p-1 [&_svg]:!h-[300px] [&>div]:!p-3">
+          <TemperatureErrorChart
+            measurements={chart.measurements}
+            title={chart.title}
+          />
+        </div>
       </div>
     </PageShell>
   );
@@ -2594,6 +2759,8 @@ const { data: recordData, error: recordError } = await supabase
     record.verification_module === "PRESSURE" || record.mode === "pressione";
   const isTemperature =
     record.verification_module === "TEMPERATURE" || record.mode === "temperatura";
+  const temperatureInstrumentCalibration =
+    isTemperature && isTemperatureInstrumentCalibration(record);
   const isSclerometric =
     record.verification_module === "SCLEROMETRIC" || record.mode === "sclerometro";
   const isMass = record.verification_module === "MASS" || record.mode === "massa";
@@ -2815,6 +2982,34 @@ const { data: recordData, error: recordError } = await supabase
   const showInlineResults = false;
   const allChartPages = scalePlans.flatMap((plan) => plan.chartPages);
   const chartDescriptors: PageDescriptor[] = [];
+  const temperatureChartMeasurements: TemperatureErrorMeasurement[] =
+    temperatureInstrumentCalibration
+      ? measurements
+          .filter(
+            (measurement) =>
+              hasNumericValue(measurement.applied_value) &&
+              hasNumericValue(measurement.mean_error)
+          )
+          .map((measurement) => ({
+            id: String(measurement.id),
+            point_order: Number(measurement.point_order) || 0,
+            applied_value: Number(measurement.applied_value),
+            mean_error: Number(measurement.mean_error),
+          }))
+      : [];
+  const temperatureChartDescriptors: PageDescriptor[] =
+    temperatureChartMeasurements.length > 0
+      ? [
+          {
+            type: "temperature-chart",
+            chart: {
+              key: "temperature-error-chart",
+              title: "Grafico errore di temperatura",
+              measurements: temperatureChartMeasurements,
+            },
+          },
+        ]
+      : [];
   const continuousTechnicalSheets: TechnicalSheetInfo[] =
     technicalSheets.length > 0
       ? [
@@ -2842,6 +3037,7 @@ const { data: recordData, error: recordError } = await supabase
       (sheet): PageDescriptor => ({ type: "technical", sheet })
     ),
     ...chartDescriptors,
+    ...temperatureChartDescriptors,
     { type: "signature" },
   ];
 
@@ -3050,6 +3246,19 @@ const { data: recordData, error: recordError } = await supabase
               <ChartPage
                 key={"chart-" + descriptor.charts.map((chart) => chart.key).join("-")}
                 charts={descriptor.charts}
+                reportNumber={reportNumber}
+                reportDate={reportDate}
+                pageNumber={pageNumber}
+                totalPages={totalPages}
+              />
+            );
+          }
+
+          if (descriptor.type === "temperature-chart") {
+            return (
+              <TemperatureChartPage
+                key={descriptor.chart.key}
+                chart={descriptor.chart}
                 reportNumber={reportNumber}
                 reportDate={reportDate}
                 pageNumber={pageNumber}

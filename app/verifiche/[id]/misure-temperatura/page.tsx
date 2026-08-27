@@ -25,14 +25,17 @@ type CalibrationRecord = {
   verified_instrument_type: string | null;
   output_type: string | null;
   report_status: string | null;
+  procedure_snapshot: Record<string, unknown> | null;
 };
+
+type TemperatureVariant = "maturation_tank" | "instrument_calibration";
 
 export default async function EditTemperatureLogPage({ params }: PageProps) {
   const { id } = await params;
 
   const { data: recordData, error: recordError } = await supabase
     .from("calibration_records")
-    .select("id, record_number, mode, verification_module, verification_scope, verified_instrument_type, output_type, report_status")
+    .select("id, record_number, mode, verification_module, verification_scope, verified_instrument_type, output_type, report_status, procedure_snapshot")
     .eq("id", id)
     .single();
 
@@ -41,6 +44,21 @@ export default async function EditTemperatureLogPage({ params }: PageProps) {
   }
 
   const record = recordData as CalibrationRecord;
+  const procedureSnapshot =
+    record.procedure_snapshot &&
+    typeof record.procedure_snapshot === "object" &&
+    !Array.isArray(record.procedure_snapshot)
+      ? record.procedure_snapshot
+      : {};
+
+  const rawTemperatureVariant = procedureSnapshot.temperature_variant;
+  const temperatureVariant: TemperatureVariant =
+    rawTemperatureVariant === "instrument_calibration"
+      ? "instrument_calibration"
+      : "maturation_tank";
+
+  const isTankVariant = temperatureVariant === "maturation_tank";
+
   const isInternalVerification =
     record.verification_scope === "VI" ||
     record.output_type === "rapportino" ||
@@ -95,12 +113,15 @@ export default async function EditTemperatureLogPage({ params }: PageProps) {
             </Link>
 
             <h1 className="mt-3 text-3xl font-bold text-slate-950">
-              Log temperatura
+              {isTankVariant
+                ? "Rilevazioni temperatura - Vasca di maturazione"
+                : "Verifica temperatura - Termometro / Stufa"}
             </h1>
 
             <p className="mt-2 max-w-3xl text-slate-600">
-              Inserisci le rilevazioni giornaliere: data, orario, temperatura
-              misurata e temperatura di riferimento.
+              {isTankVariant
+                ? "Inserisci le rilevazioni giornaliere: data, orario, temperatura misurata e temperatura di riferimento."
+                : "Gestisci i punti di temperatura applicata, le due letture, la media e l'errore della verifica."}
             </p>
           </div>
 
@@ -144,9 +165,9 @@ export default async function EditTemperatureLogPage({ params }: PageProps) {
           initialMeasurements={measurementsData ?? []}
           referenceInstruments={referenceInstrumentsData ?? []}
           isInternalVerification={isInternalVerification}
+          temperatureVariant={temperatureVariant}
         />
       </div>
     </AppShell>
   );
 }
-

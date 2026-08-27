@@ -15,8 +15,10 @@ import ReferenceInstrumentMultiSelect, {
   getEffectiveReferenceInstrumentStatus,
   isReferenceInstrumentBlocked,
 } from "@/components/ReferenceInstrumentMultiSelect";
+import TemperatureErrorChart from "@/components/TemperatureErrorChart";
 
 type VerificationScope = "VT" | "VI";
+type TemperatureVariant = "maturation_tank" | "instrument_calibration";
 
 type Customer = {
   id: string;
@@ -79,13 +81,41 @@ type ReferenceInstrument = {
   status?: string | null;
 };
 
-type EditableTemperaturePoint = {
+type EditableTankPoint = {
   id: string;
   date: string;
   time: string;
   measuredTemp: string;
   referenceTemp: string;
   notes: string;
+};
+
+type EditableInstrumentPoint = {
+  id: string;
+  appliedTemp: string;
+  cycle1: string;
+  cycle2: string;
+  notes: string;
+};
+
+type TemperatureMeasurementInsert = {
+  calibration_record_id: string;
+  scale_id: string;
+  section: string;
+  point_order: number;
+  nominal_value: number | null;
+  applied_value: number | null;
+  cycle_1: number | null;
+  cycle_2: number | null;
+  cycle_3: number | null;
+  max_value: number | null;
+  min_value: number | null;
+  average_value: number | null;
+  mean_error: number | null;
+  accuracy_error_percent: number | null;
+  repeatability_error_percent: number | null;
+  result: string | null;
+  notes: string | null;
 };
 
 type TemperatureVerificationStarterProps = {
@@ -153,7 +183,7 @@ function formatItalianNumber(value: number | null | undefined, digits = 2) {
   }).format(value);
 }
 
-function emptyTemperaturePoint(): EditableTemperaturePoint {
+function emptyTankPoint(): EditableTankPoint {
   return {
     id: crypto.randomUUID(),
     date: todayInputDate(),
@@ -164,9 +194,38 @@ function emptyTemperaturePoint(): EditableTemperaturePoint {
   };
 }
 
-function joinTemperatureNotes(point: EditableTemperaturePoint): string | null {
+function emptyInstrumentPoint(): EditableInstrumentPoint {
+  return {
+    id: crypto.randomUUID(),
+    appliedTemp: "",
+    cycle1: "",
+    cycle2: "",
+    notes: "",
+  };
+}
+
+function joinTemperatureNotes(point: EditableTankPoint): string | null {
   const notes = point.notes.trim();
   return "[" + point.date + " " + point.time + "]" + (notes ? " " + notes : "");
+}
+
+function instrumentAverage(point: EditableInstrumentPoint) {
+  if (point.cycle1.trim() === "" || point.cycle2.trim() === "") {
+    return null;
+  }
+
+  return (toNumber(point.cycle1) + toNumber(point.cycle2)) / 2;
+}
+
+function instrumentError(point: EditableInstrumentPoint) {
+  const average = instrumentAverage(point);
+
+  if (average === null || point.appliedTemp.trim() === "") {
+    return null;
+  }
+
+  // Errore = temperatura applicata - media delle due temperature rilevate.
+  return toNumber(point.appliedTemp) - average;
 }
 
 function formatItalianDate(date: string | null | undefined) {
@@ -290,12 +349,25 @@ function buildReferenceInstrumentSnapshot(instrument: ReferenceInstrument) {
   };
 }
 
-function buildProcedureSnapshot() {
+function buildProcedureSnapshot(variant: TemperatureVariant) {
+  if (variant === "instrument_calibration") {
+    return {
+      code: "PROC_TEMPERATURE_INSTRUMENT",
+      name: "Verifica temperatura - termometri / stufe",
+      revision: "0",
+      calculation_engine_version: "temperature-instrument-v1",
+      temperature_variant: variant,
+      calculation_formula:
+        "Errore (°C) = Temperatura applicata - ((I ciclo + II ciclo) / 2)",
+    };
+  }
+
   return {
-    code: "PROC_TEMPERATURE",
-    name: "Procedura verifica temperatura",
+    code: "PROC_TEMPERATURE_TANK",
+    name: "Verifica temperatura - vasca di maturazione",
     revision: "0",
-    calculation_engine_version: "temperature-v1",
+    calculation_engine_version: "temperature-tank-v1",
+    temperature_variant: variant,
   };
 }
 
@@ -308,6 +380,12 @@ export default function TemperatureVerificationStarter({
 }: TemperatureVerificationStarterProps) {
   const router = useRouter();
   const isInternalVerification = verificationScope === "VI";
+  const [temperatureVariant, setTemperatureVariant] =
+    useState<TemperatureVariant>(
+      isInternalVerification ? "maturation_tank" : "instrument_calibration"
+    );
+  const isTankVariant = temperatureVariant === "maturation_tank";
+  const isInstrumentVariant = temperatureVariant === "instrument_calibration";
 
   const [selectedCustomerId, setSelectedCustomerId] = useState("");
   const [selectedSiteId, setSelectedSiteId] = useState("");
@@ -325,7 +403,29 @@ export default function TemperatureVerificationStarter({
   const [ambientHumidity, setAmbientHumidity] = useState("");
   const [notes, setNotes] = useState("");
   const [scaleNotes, setScaleNotes] = useState("");
-  const [points, setPoints] = useState<EditableTemperaturePoint[]>(() => [emptyTemperaturePoint()]);
+  const [tankPoints, setTankPoints] = useState<EditableTankPoint[]>(() => [
+    emptyTankPoint(),
+  ]);
+  const [instrumentPoints, setInstrumentPoints] = useState<
+    EditableInstrumentPoint[]
+  >(() => [emptyInstrumentPoint()]);
+
+  const instrumentChartMeasurements = useMemo(
+    () =>
+      instrumentPoints.map((point, index) => ({
+        id: point.id,
+        point_order: index + 1,
+        applied_value:
+          point.appliedTemp.trim() === "" ? null : toNumber(point.appliedTemp),
+        mean_error: instrumentError(point),
+      })),
+    [instrumentPoints]
+  );
+
+  const hasInstrumentChartData = instrumentChartMeasurements.some(
+    (measurement) =>
+      measurement.applied_value !== null && measurement.mean_error !== null
+  );
 
   const [isSaving, setIsSaving] = useState(false);
   const [saveError, setSaveError] = useState("");
@@ -360,16 +460,31 @@ export default function TemperatureVerificationStarter({
         instrument.measurement_quantity,
         instrument.unit,
         instrument.measurement_range,
+        instrument.location,
+        instrument.department,
       ]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
 
-      return (text.includes("temperatura") || text.includes("termometro") || text.includes("termostato") || text.includes("sonda") || text.includes("°c"));
+      if (isTankVariant) {
+        return text.includes("vasca") || text.includes("maturazione");
+      }
+
+      return (
+        text.includes("temperatura") ||
+        text.includes("termometro") ||
+        text.includes("termostato") ||
+        text.includes("sonda") ||
+        text.includes("stufa") ||
+        text.includes("forno") ||
+        text.includes("camera") ||
+        text.includes("°c")
+      );
     });
 
     return filtered.length > 0 ? filtered : internalInstruments;
-  }, [internalInstruments]);
+  }, [internalInstruments, isTankVariant]);
 
   const temperatureReferenceInstruments = useMemo(() => {
     return referenceInstruments.filter((instrument) => {
@@ -429,9 +544,19 @@ export default function TemperatureVerificationStarter({
     setSavedRecordId(null);
   }
 
-  function updatePoint(
+  function selectTemperatureVariant(variant: TemperatureVariant) {
+    if (!isInternalVerification && variant === "maturation_tank") {
+      return;
+    }
+
+    resetSaveState();
+    setTemperatureVariant(variant);
+    setSelectedInternalInstrumentId("");
+  }
+
+  function updateTankPoint(
     pointId: string,
-    field: keyof EditableTemperaturePoint,
+    field: keyof EditableTankPoint,
     value: string
   ) {
     const normalizedValue =
@@ -440,21 +565,53 @@ export default function TemperatureVerificationStarter({
         : value;
 
     resetSaveState();
-    setPoints((current) =>
+    setTankPoints((current) =>
       current.map((point) =>
         point.id === pointId ? { ...point, [field]: normalizedValue } : point
       )
     );
   }
 
-  function addPoint() {
+  function addTankPoint() {
     resetSaveState();
-    setPoints((current) => [...current, emptyTemperaturePoint()]);
+    setTankPoints((current) => [...current, emptyTankPoint()]);
   }
 
-  function removePoint(pointId: string) {
+  function removeTankPoint(pointId: string) {
     resetSaveState();
-    setPoints((current) => current.filter((point) => point.id !== pointId));
+    setTankPoints((current) =>
+      current.filter((point) => point.id !== pointId)
+    );
+  }
+
+  function updateInstrumentPoint(
+    pointId: string,
+    field: keyof EditableInstrumentPoint,
+    value: string
+  ) {
+    const normalizedValue =
+      field === "appliedTemp" || field === "cycle1" || field === "cycle2"
+        ? normalizeEuropeanDecimalInput(value)
+        : value;
+
+    resetSaveState();
+    setInstrumentPoints((current) =>
+      current.map((point) =>
+        point.id === pointId ? { ...point, [field]: normalizedValue } : point
+      )
+    );
+  }
+
+  function addInstrumentPoint() {
+    resetSaveState();
+    setInstrumentPoints((current) => [...current, emptyInstrumentPoint()]);
+  }
+
+  function removeInstrumentPoint(pointId: string) {
+    resetSaveState();
+    setInstrumentPoints((current) =>
+      current.filter((point) => point.id !== pointId)
+    );
   }
 
   async function createVerification(event: React.FormEvent<HTMLFormElement>) {
@@ -498,21 +655,49 @@ export default function TemperatureVerificationStarter({
         throw new Error("Inserisci la data della verifica.");
       }
 
-      if (points.length === 0) {
-        throw new Error("Inserisci almeno una rilevazione di temperatura.");
+      if (!isInternalVerification && isTankVariant) {
+        throw new Error(
+          "La verifica della vasca di maturazione è disponibile solo come verifica interna VI."
+        );
       }
 
-      const invalidPoint = points.find((point) => {
-        return (
-          !point.date ||
-          !point.time ||
-          point.measuredTemp.trim() === "" ||
-          point.referenceTemp.trim() === ""
-        );
-      });
+      if (isTankVariant) {
+        if (tankPoints.length === 0) {
+          throw new Error("Inserisci almeno una rilevazione di temperatura.");
+        }
 
-      if (invalidPoint) {
-        throw new Error("Compila data, orario, temperatura misurata e temperatura di riferimento per tutte le righe.");
+        const invalidPoint = tankPoints.find((point) => {
+          return (
+            !point.date ||
+            !point.time ||
+            point.measuredTemp.trim() === "" ||
+            point.referenceTemp.trim() === ""
+          );
+        });
+
+        if (invalidPoint) {
+          throw new Error(
+            "Compila data, orario, temperatura misurata e temperatura di riferimento per tutte le righe."
+          );
+        }
+      } else {
+        if (instrumentPoints.length === 0) {
+          throw new Error("Inserisci almeno un punto di verifica.");
+        }
+
+        const invalidPoint = instrumentPoints.find((point) => {
+          return (
+            point.appliedTemp.trim() === "" ||
+            point.cycle1.trim() === "" ||
+            point.cycle2.trim() === ""
+          );
+        });
+
+        if (invalidPoint) {
+          throw new Error(
+            "Compila temperatura applicata, I ciclo e II ciclo per tutti i punti di verifica."
+          );
+        }
       }
 
       let instrumentSnapshot:
@@ -563,7 +748,7 @@ export default function TemperatureVerificationStarter({
       const primaryReference = selectedReferenceInstruments[0];
       const primaryReferenceSnapshot = referenceSnapshots[0];
 
-      const procedureSnapshot = buildProcedureSnapshot();
+      const procedureSnapshot = buildProcedureSnapshot(temperatureVariant);
 
       const { data: calibrationType } = await supabase
         .from("calibration_types")
@@ -670,14 +855,22 @@ export default function TemperatureVerificationStarter({
           work_object: isInternalVerification
             ? "Verifica interna di " + instrumentName
             : reportDefaults.work_object,
-          requested_tests: isInternalVerification
-            ? "Verifica interna temperatura."
-            : reportDefaults.requested_tests,
+          requested_tests: isInstrumentVariant
+            ? isInternalVerification
+              ? "Verifica interna di taratura della temperatura."
+              : "Verifica di taratura della temperatura."
+            : "Verifica interna della vasca di maturazione.",
           premise_text: reportDefaults.premise_text,
-          scope_text: reportDefaults.scope_text,
+          scope_text: isInstrumentVariant
+            ? "Lo scopo della verifica è valutare la risposta dello strumento o dell'apparecchiatura di temperatura mediante confronto con uno o più strumenti campione di riferimento."
+            : reportDefaults.scope_text,
           apparatus_description: reportDefaults.apparatus_description,
-          execution_method: reportDefaults.execution_method,
-          results_text: reportDefaults.results_text,
+          execution_method: isInstrumentVariant
+            ? "La verifica viene eseguita sui punti di temperatura previsti. Per ciascun punto vengono rilevate due letture consecutive e confrontate con la temperatura applicata."
+            : reportDefaults.execution_method,
+          results_text: isInstrumentVariant
+            ? "Per ciascun punto la media è calcolata sulle due letture rilevate. Errore (°C) = Temperatura applicata - ((I ciclo + II ciclo) / 2)."
+            : reportDefaults.results_text,
           temperature: ambientTemperature.trim() || null,
           humidity: ambientHumidity.trim() || null,
           technician_name: operatorName.trim() || null,
@@ -696,7 +889,9 @@ export default function TemperatureVerificationStarter({
         .insert({
           calibration_record_id: insertedRecord.id,
           scale_order: 1,
-          scale_name: "Temperatura",
+          scale_name: isInstrumentVariant
+            ? "Temperatura - Termometro / Stufa"
+            : "Temperatura - Vasca di maturazione",
           scale_range: instrumentRange || getRange(primaryReference) || null,
           reference_instrument_id: primaryReference.id,
           reference_instrument_snapshot: primaryReferenceSnapshot,
@@ -713,36 +908,64 @@ export default function TemperatureVerificationStarter({
         throw new Error(scaleError?.message || "Errore durante il salvataggio della scala.");
       }
 
-      const sortedPoints = [...points].sort((a, b) => {
-        const aKey = a.date + " " + a.time;
-        const bKey = b.date + " " + b.time;
-        return aKey.localeCompare(bKey);
-      });
+      const measurementRows: TemperatureMeasurementInsert[] = isTankVariant
+        ? [...tankPoints]
+            .sort((a, b) => {
+              const aKey = a.date + " " + a.time;
+              const bKey = b.date + " " + b.time;
+              return aKey.localeCompare(bKey);
+            })
+            .map((point, pointIndex) => {
+              const measuredTemp = toNumber(point.measuredTemp);
+              const referenceTemp = toNumber(point.referenceTemp);
 
-      const measurementRows = sortedPoints.map((point, pointIndex) => {
-        const measuredTemp = toNumber(point.measuredTemp);
-        const referenceTemp = toNumber(point.referenceTemp);
+              return {
+                calibration_record_id: insertedRecord.id,
+                scale_id: insertedScale.id,
+                section: "Temperatura - Vasca di maturazione",
+                point_order: pointIndex + 1,
+                nominal_value: null,
+                applied_value: null,
+                cycle_1: measuredTemp,
+                cycle_2: referenceTemp,
+                cycle_3: null,
+                max_value: null,
+                min_value: null,
+                average_value: null,
+                mean_error: measuredTemp - referenceTemp,
+                accuracy_error_percent: null,
+                repeatability_error_percent: null,
+                result: null,
+                notes: joinTemperatureNotes(point),
+              };
+            })
+        : instrumentPoints.map((point, pointIndex) => {
+            const appliedTemp = toNumber(point.appliedTemp);
+            const cycle1 = toNumber(point.cycle1);
+            const cycle2 = toNumber(point.cycle2);
+            const average = (cycle1 + cycle2) / 2;
+            const error = appliedTemp - average;
 
-        return {
-          calibration_record_id: insertedRecord.id,
-          scale_id: insertedScale.id,
-          section: "Temperatura",
-          point_order: pointIndex + 1,
-          nominal_value: null,
-          applied_value: null,
-          cycle_1: measuredTemp,
-          cycle_2: referenceTemp,
-          cycle_3: null,
-          max_value: null,
-          min_value: null,
-          average_value: null,
-          mean_error: measuredTemp - referenceTemp,
-          accuracy_error_percent: null,
-          repeatability_error_percent: null,
-          result: null,
-          notes: joinTemperatureNotes(point),
-        };
-      });
+            return {
+              calibration_record_id: insertedRecord.id,
+              scale_id: insertedScale.id,
+              section: "Temperatura - Termometro / Stufa",
+              point_order: pointIndex + 1,
+              nominal_value: null,
+              applied_value: appliedTemp,
+              cycle_1: cycle1,
+              cycle_2: cycle2,
+              cycle_3: null,
+              max_value: Math.max(cycle1, cycle2),
+              min_value: Math.min(cycle1, cycle2),
+              average_value: average,
+              mean_error: error,
+              accuracy_error_percent: null,
+              repeatability_error_percent: null,
+              result: null,
+              notes: point.notes.trim() || null,
+            };
+          });
 
       const { error: measurementError } = await supabase
         .from("calibration_measurements")
@@ -832,6 +1055,59 @@ export default function TemperatureVerificationStarter({
             className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
           />
         </label>
+      </section>
+
+      <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <h2 className="text-lg font-semibold text-slate-900">
+          Tipologia verifica temperatura
+        </h2>
+        <p className="mt-1 text-sm text-slate-500">
+          Scegli la procedura da utilizzare. La vasca di maturazione è prevista
+          esclusivamente per verifiche interne VI.
+        </p>
+
+        <div className="mt-4 grid gap-4 md:grid-cols-2">
+          <button
+            type="button"
+            onClick={() => selectTemperatureVariant("instrument_calibration")}
+            className={
+              "rounded-2xl border p-4 text-left transition " +
+              (isInstrumentVariant
+                ? "border-slate-900 bg-slate-50 ring-2 ring-slate-200"
+                : "border-slate-200 hover:border-slate-400")
+            }
+          >
+            <p className="font-semibold text-slate-950">
+              Termometro / Stufa
+            </p>
+            <p className="mt-1 text-sm text-slate-600">
+              {verificationScope} · confronto su punti di temperatura con I e II
+              ciclo, media ed errore in °C.
+            </p>
+          </button>
+
+          <button
+            type="button"
+            disabled={!isInternalVerification}
+            onClick={() => selectTemperatureVariant("maturation_tank")}
+            className={
+              "rounded-2xl border p-4 text-left transition " +
+              (!isInternalVerification
+                ? "cursor-not-allowed border-slate-200 bg-slate-100 opacity-60"
+                : isTankVariant
+                  ? "border-sky-700 bg-sky-50 ring-2 ring-sky-100"
+                  : "border-slate-200 hover:border-slate-400")
+            }
+          >
+            <p className="font-semibold text-slate-950">
+              Vasca di maturazione
+            </p>
+            <p className="mt-1 text-sm text-slate-600">
+              Solo VI · rilevazioni a data/orario con temperatura misurata e temperatura
+              di riferimento, come nella procedura attuale.
+            </p>
+          </button>
+        </div>
       </section>
 
       {!isInternalVerification ? (
@@ -1006,14 +1282,20 @@ export default function TemperatureVerificationStarter({
       <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
         <div className="border-b border-slate-200 p-5">
           <h2 className="text-lg font-semibold text-slate-900">
-            Dati tecnici temperatura
+            {isTankVariant
+              ? "Dati tecnici vasca di maturazione"
+              : "Dati tecnici termometro / stufa"}
           </h2>
           <p className="text-sm text-slate-500">
-            Inserisci subito le rilevazioni, senza passare da una seconda pagina.
+            {isTankVariant
+              ? "Inserisci le rilevazioni con data, orario, temperatura misurata e temperatura di riferimento."
+              : "Inserisci i punti di temperatura applicata e le due letture. Media ed errore sono calcolati automaticamente."}
           </p>
 
           <label className="mt-4 block space-y-1">
-            <span className="text-sm font-medium text-slate-700">Note tecniche comuni</span>
+            <span className="text-sm font-medium text-slate-700">
+              Note tecniche comuni
+            </span>
             <input
               value={scaleNotes}
               onChange={(event) => {
@@ -1026,59 +1308,291 @@ export default function TemperatureVerificationStarter({
           </label>
         </div>
 
-        <div className="overflow-x-auto">
-          <table className="w-full min-w-[900px] text-sm">
-            <thead className="bg-slate-50 text-left text-xs tracking-wide text-slate-500">
-              <tr>
-                <th className="px-4 py-3">Data</th>
-                <th className="px-4 py-3">Orario</th>
-                <th className="bg-amber-100 px-4 py-3 text-amber-900">Temperatura misurata (°C)</th>
-                <th className="bg-amber-100 px-4 py-3 text-amber-900">Temperatura riferimento (°C)</th>
-                <th className="px-4 py-3">Scostamento (°C)</th>
-                <th className="px-4 py-3">Note</th>
-                <th className="px-4 py-3"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {points.map((point) => {
-                const deviation = point.measuredTemp.trim() !== "" && point.referenceTemp.trim() !== ""
-                  ? toNumber(point.measuredTemp) - toNumber(point.referenceTemp)
-                  : null;
-
-                return (
-                  <tr key={point.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3">
-                      <input type="date" value={point.date} onChange={(event) => updatePoint(point.id, "date", event.target.value)} className="rounded-lg border border-slate-300 px-2 py-1" />
-                    </td>
-                    <td className="px-4 py-3">
-                      <input type="time" value={point.time} onChange={(event) => updatePoint(point.id, "time", event.target.value)} className="rounded-lg border border-slate-300 px-2 py-1" />
-                    </td>
-                    <td className="bg-amber-50 px-4 py-3">
-                      <input type="text" inputMode="decimal" value={point.measuredTemp} onChange={(event) => updatePoint(point.id, "measuredTemp", event.target.value)} className="w-24 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 font-semibold text-amber-950" />
-                    </td>
-                    <td className="bg-amber-50 px-4 py-3">
-                      <input type="text" inputMode="decimal" value={point.referenceTemp} onChange={(event) => updatePoint(point.id, "referenceTemp", event.target.value)} className="w-24 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 font-semibold text-amber-950" />
-                    </td>
-                    <td className="px-4 py-3 font-semibold">{formatItalianNumber(deviation)}</td>
-                    <td className="px-4 py-3">
-                      <input value={point.notes} onChange={(event) => updatePoint(point.id, "notes", event.target.value)} className="w-52 rounded-lg border border-slate-300 px-2 py-1" />
-                    </td>
-                    <td className="px-4 py-3">
-                      <button type="button" onClick={() => removePoint(point.id)} className="rounded-lg px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50">Elimina</button>
-                    </td>
+        {isTankVariant ? (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[900px] text-sm">
+                <thead className="bg-slate-50 text-left text-xs tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Data</th>
+                    <th className="px-4 py-3">Orario</th>
+                    <th className="bg-amber-100 px-4 py-3 text-amber-900">
+                      Temperatura misurata (°C)
+                    </th>
+                    <th className="bg-amber-100 px-4 py-3 text-amber-900">
+                      Temperatura riferimento (°C)
+                    </th>
+                    <th className="px-4 py-3">Scostamento (°C)</th>
+                    <th className="px-4 py-3">Note</th>
+                    <th className="px-4 py-3"></th>
                   </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {tankPoints.map((point) => {
+                    const deviation =
+                      point.measuredTemp.trim() !== "" &&
+                      point.referenceTemp.trim() !== ""
+                        ? toNumber(point.measuredTemp) -
+                          toNumber(point.referenceTemp)
+                        : null;
 
-        <div className="border-t border-slate-200 p-5">
-          <div className="flex justify-end">
-            <button type="button" onClick={addPoint} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Aggiungi rilevazione</button>
-          </div>
-        </div>
+                    return (
+                      <tr key={point.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-3">
+                          <input
+                            type="date"
+                            value={point.date}
+                            onChange={(event) =>
+                              updateTankPoint(
+                                point.id,
+                                "date",
+                                event.target.value
+                              )
+                            }
+                            className="rounded-lg border border-slate-300 px-2 py-1"
+                          />
+                        </td>
+                        <td className="px-4 py-3">
+                          <input
+                            type="time"
+                            value={point.time}
+                            onChange={(event) =>
+                              updateTankPoint(
+                                point.id,
+                                "time",
+                                event.target.value
+                              )
+                            }
+                            className="rounded-lg border border-slate-300 px-2 py-1"
+                          />
+                        </td>
+                        <td className="bg-amber-50 px-4 py-3">
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={point.measuredTemp}
+                            onChange={(event) =>
+                              updateTankPoint(
+                                point.id,
+                                "measuredTemp",
+                                event.target.value
+                              )
+                            }
+                            className="w-24 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 font-semibold text-amber-950"
+                          />
+                        </td>
+                        <td className="bg-amber-50 px-4 py-3">
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={point.referenceTemp}
+                            onChange={(event) =>
+                              updateTankPoint(
+                                point.id,
+                                "referenceTemp",
+                                event.target.value
+                              )
+                            }
+                            className="w-24 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 font-semibold text-amber-950"
+                          />
+                        </td>
+                        <td className="px-4 py-3 font-semibold">
+                          {formatItalianNumber(deviation)}
+                        </td>
+                        <td className="px-4 py-3">
+                          <input
+                            value={point.notes}
+                            onChange={(event) =>
+                              updateTankPoint(
+                                point.id,
+                                "notes",
+                                event.target.value
+                              )
+                            }
+                            className="w-52 rounded-lg border border-slate-300 px-2 py-1"
+                          />
+                        </td>
+                        <td className="px-4 py-3">
+                          <button
+                            type="button"
+                            onClick={() => removeTankPoint(point.id)}
+                            className="rounded-lg px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
+                          >
+                            Elimina
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="border-t border-slate-200 p-5">
+              <div className="flex justify-end">
+                <button
+                  type="button"
+                  onClick={addTankPoint}
+                  className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700"
+                >
+                  Aggiungi rilevazione
+                </button>
+              </div>
+            </div>
+          </>
+        ) : (
+          <>
+            <div className="overflow-x-auto">
+              <table className="w-full min-w-[900px] text-sm">
+                <thead className="bg-slate-50 text-left text-xs tracking-wide text-slate-500">
+                  <tr>
+                    <th className="px-4 py-3">Punto</th>
+                    <th className="bg-amber-100 px-4 py-3 text-amber-900">
+                      Temperatura applicata (°C)
+                    </th>
+                    <th className="bg-amber-100 px-4 py-3 text-amber-900">
+                      I ciclo (°C)
+                    </th>
+                    <th className="bg-amber-100 px-4 py-3 text-amber-900">
+                      II ciclo (°C)
+                    </th>
+                    <th className="px-4 py-3">Media letture (°C)</th>
+                    <th className="px-4 py-3">Errore (°C)</th>
+                    <th className="px-4 py-3">Note</th>
+                    <th className="px-4 py-3"></th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {instrumentPoints.map((point, pointIndex) => {
+                    const average = instrumentAverage(point);
+                    const error = instrumentError(point);
+
+                    return (
+                      <tr key={point.id} className="hover:bg-slate-50">
+                        <td className="px-4 py-3 font-semibold text-slate-700">
+                          {pointIndex + 1}
+                        </td>
+                        <td className="bg-amber-50 px-4 py-3">
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={point.appliedTemp}
+                            onChange={(event) =>
+                              updateInstrumentPoint(
+                                point.id,
+                                "appliedTemp",
+                                event.target.value
+                              )
+                            }
+                            className="w-28 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 font-semibold text-amber-950"
+                          />
+                        </td>
+                        <td className="bg-amber-50 px-4 py-3">
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={point.cycle1}
+                            onChange={(event) =>
+                              updateInstrumentPoint(
+                                point.id,
+                                "cycle1",
+                                event.target.value
+                              )
+                            }
+                            className="w-24 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 font-semibold text-amber-950"
+                          />
+                        </td>
+                        <td className="bg-amber-50 px-4 py-3">
+                          <input
+                            type="text"
+                            inputMode="decimal"
+                            value={point.cycle2}
+                            onChange={(event) =>
+                              updateInstrumentPoint(
+                                point.id,
+                                "cycle2",
+                                event.target.value
+                              )
+                            }
+                            className="w-24 rounded-lg border border-amber-300 bg-amber-50 px-2 py-1 font-semibold text-amber-950"
+                          />
+                        </td>
+                        <td className="px-4 py-3 font-semibold">
+                          {formatItalianNumber(average, 3)}
+                        </td>
+                        <td className="px-4 py-3 font-semibold">
+                          {formatItalianNumber(error, 2)}
+                        </td>
+                        <td className="px-4 py-3">
+                          <input
+                            value={point.notes}
+                            onChange={(event) =>
+                              updateInstrumentPoint(
+                                point.id,
+                                "notes",
+                                event.target.value
+                              )
+                            }
+                            className="w-52 rounded-lg border border-slate-300 px-2 py-1"
+                          />
+                        </td>
+                        <td className="px-4 py-3">
+                          <button
+                            type="button"
+                            onClick={() => removeInstrumentPoint(point.id)}
+                            className="rounded-lg px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
+                          >
+                            Elimina
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="border-t border-slate-200 p-5">
+              <div className="flex items-center justify-between gap-4">
+                <p className="text-xs text-slate-500">
+                  Formula: Errore = Temperatura applicata - media di I e II ciclo.
+                </p>
+                <button
+                  type="button"
+                  onClick={addInstrumentPoint}
+                  className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700"
+                >
+                  Aggiungi punto
+                </button>
+              </div>
+            </div>
+          </>
+        )}
       </section>
+
+      {isInstrumentVariant && (
+        <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-semibold text-slate-900">
+            Grafico errore di temperatura
+          </h2>
+          <p className="mt-1 text-sm text-slate-500">
+            Il grafico si aggiorna automaticamente mentre inserisci o modifichi i punti di verifica.
+          </p>
+
+          <div className="mt-4">
+            {hasInstrumentChartData ? (
+              <TemperatureErrorChart
+                measurements={instrumentChartMeasurements}
+                title="Grafico errore di temperatura"
+              />
+            ) : (
+              <div className="rounded-xl border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-500">
+                Compila temperatura applicata, I ciclo e II ciclo per visualizzare il grafico.
+              </div>
+            )}
+          </div>
+        </section>
+      )}
 
       {saveMessage && (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-5 text-sm text-emerald-900">
