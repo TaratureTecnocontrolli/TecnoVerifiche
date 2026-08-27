@@ -86,8 +86,15 @@ export default function AutoPaginatedReport({
         page.className =
           "report-a4-page relative mx-auto h-[297mm] min-h-[297mm] w-[210mm] overflow-hidden bg-white shadow-lg ring-1 ring-slate-200 print:shadow-none print:ring-0";
         page.dataset.autoPaginatedPage = "true";
-        page.style.breakBefore = "page";
-        page.style.pageBreakBefore = "always";
+
+        // La copertina occupa già un A4 completo.
+        // Forziamo il salto pagina solo dalla seconda pagina automatica in poi:
+        // alcuni browser Chromium, se il break è applicato anche alla prima,
+        // possono generare una pagina bianca subito dopo la copertina.
+        if (outputElement.children.length > 0) {
+          page.style.breakBefore = "page";
+          page.style.pageBreakBefore = "always";
+        }
 
         const letterhead = document.createElement("img");
         letterhead.src = letterheadSrc;
