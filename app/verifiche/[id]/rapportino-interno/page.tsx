@@ -180,10 +180,18 @@ function modeLabel(record: CalibrationRecord) {
   if (module === "DIMENSIONAL" || mode === "dimensionale") return "Dimensionale";
   if (module === "TEMPERATURE" || mode === "temperatura") return "Temperatura";
   if (module === "PULLOFF" || mode === "pulloff") return "Pull-off";
+  if (module === "JACK") {
+    if (mode === "trazione") return "Martinetto - Trazione";
+    return "Martinetto - Compressione / pressione";
+  }
   if (mode === "compressione") return "Compressione";
   if (mode === "trazione") return "Trazione";
 
   return textValue(mode);
+}
+
+function isJack(record: CalibrationRecord) {
+  return record.verification_module === "JACK";
 }
 
 function isPressure(record: CalibrationRecord) {
@@ -223,6 +231,37 @@ function isTemperatureInstrumentCalibration(record: CalibrationRecord) {
   return isTemperature(record) && getTemperatureVariant(record) === "instrument_calibration";
 }
 
+function jackConversionCoefficient(measurement: CalibrationMeasurement) {
+  const pressure =
+    measurement.nominal_value !== null && Number.isFinite(measurement.nominal_value)
+      ? measurement.nominal_value
+      : measurement.applied_value !== null && Number.isFinite(measurement.applied_value)
+        ? measurement.applied_value
+        : null;
+  const averageValue =
+    measurement.average_value !== null && Number.isFinite(measurement.average_value)
+      ? measurement.average_value
+      : null;
+
+  if (pressure === null || averageValue === null || pressure === 0) {
+    return null;
+  }
+
+  return averageValue / pressure;
+}
+
+function averageJackConversionCoefficient(measurements: CalibrationMeasurement[]) {
+  const values = measurements
+    .map((measurement) => jackConversionCoefficient(measurement))
+    .filter((value): value is number => value !== null && Number.isFinite(value));
+
+  if (values.length === 0) {
+    return null;
+  }
+
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
+}
+
 function textFromObject(source: JsonObject, keys: string[]) {
   for (const key of keys) {
     const value = source[key];
@@ -252,7 +291,7 @@ function inferUnitFromText(value: unknown) {
     return "";
   }
 
-  const match = text.match(/(?:^|\s)(kg|g|kN|N|bar|MPa|Mpa|Pa|L\/min|l\/min|l|min|°C|C°|Nm|N·m|mm|cm|m)(?:\s|$)/i);
+  const match = text.match(/(?:^|\s)(kN\/bar|kg|g|kN|N|bar|MPa|Mpa|Pa|L\/min|l\/min|l|min|°C|C°|Nm|N·m|mm|cm|m)(?:\s|$)/i);
 
   if (!match) {
     return "";
@@ -260,6 +299,7 @@ function inferUnitFromText(value: unknown) {
 
   const unit = match[1];
 
+  if (unit.toLowerCase() === "kn/bar") return "kN/bar";
   if (unit.toLowerCase() === "mpa") return "MPa";
   if (unit.toLowerCase() === "l/min") return "L/min";
   if (unit === "C°") return "°C";
@@ -463,6 +503,88 @@ function TemperatureInstrumentMeasurementsTable({
             </td>
           </tr>
         ))}
+      </tbody>
+    </table>
+  );
+}
+
+function JackMeasurementsTable({
+  measurements,
+}: {
+  measurements: CalibrationMeasurement[];
+}) {
+  const averageCoefficient = averageJackConversionCoefficient(measurements);
+
+  return (
+    <table className="w-full border-collapse bg-white/35 text-center text-[6.6px]">
+      <thead>
+        <tr className="bg-slate-700/65 text-slate-950">
+          <th className="border border-slate-600 px-1 py-[1px]">Punto</th>
+          <th className="border border-slate-600 px-1 py-[1px]">Punto verifica (bar)</th>
+          <th className="border border-slate-600 px-1 py-[1px]">I ciclo (kN)</th>
+          <th className="border border-slate-600 px-1 py-[1px]">II ciclo (kN)</th>
+          <th className="border border-slate-600 px-1 py-[1px]">III ciclo (kN)</th>
+          <th className="border border-slate-600 px-1 py-[1px]">Max (kN)</th>
+          <th className="border border-slate-600 px-1 py-[1px]">Min (kN)</th>
+          <th className="border border-slate-600 px-1 py-[1px]">Media (kN)</th>
+          <th className="border border-slate-600 px-1 py-[1px]">Coeff. (kN/bar)</th>
+          <th className="border border-slate-600 px-1 py-[1px]">Ripet. %</th>
+        </tr>
+      </thead>
+      <tbody>
+        {measurements.map((measurement, index) => {
+          const pressure = measurement.nominal_value ?? measurement.applied_value;
+          const coefficient = jackConversionCoefficient(measurement);
+
+          return (
+            <tr
+              key={measurement.id}
+              className={index % 2 === 0 ? "bg-white/65" : "bg-slate-100/55"}
+            >
+              <td className="border border-slate-300 px-1 py-[1px]">
+                {textValue(measurement.point_order)}
+              </td>
+              <td className="border border-slate-300 px-1 py-[1px]">
+                {formatNumber(pressure)}
+              </td>
+              <td className="border border-slate-300 px-1 py-[1px]">
+                {formatNumber(measurement.cycle_1)}
+              </td>
+              <td className="border border-slate-300 px-1 py-[1px]">
+                {formatNumber(measurement.cycle_2)}
+              </td>
+              <td className="border border-slate-300 px-1 py-[1px]">
+                {formatNumber(measurement.cycle_3)}
+              </td>
+              <td className="border border-slate-300 px-1 py-[1px]">
+                {formatNumber(measurement.max_value)}
+              </td>
+              <td className="border border-slate-300 px-1 py-[1px]">
+                {formatNumber(measurement.min_value)}
+              </td>
+              <td className="border border-slate-300 px-1 py-[1px] font-bold">
+                {formatNumber(measurement.average_value)}
+              </td>
+              <td className="border border-slate-300 px-1 py-[1px] font-bold">
+                {formatNumber(coefficient, 6)}
+              </td>
+              <td className="border border-slate-300 px-1 py-[1px]">
+                {formatNumber(measurement.repeatability_error_percent)}
+              </td>
+            </tr>
+          );
+        })}
+        {measurements.length > 0 && (
+          <tr className="bg-slate-200/70 font-bold">
+            <td colSpan={8} className="border border-slate-300 px-1 py-[1px] text-right">
+              Coefficiente medio di conversione
+            </td>
+            <td className="border border-slate-300 px-1 py-[1px]">
+              {formatNumber(averageCoefficient, 6)}
+            </td>
+            <td className="border border-slate-300 px-1 py-[1px]">kN/bar</td>
+          </tr>
+        )}
       </tbody>
     </table>
   );
@@ -687,6 +809,9 @@ function ScaleCompactBlock({
   references: JsonObject[];
 }) {
   const measurementUnit = getMeasurementUnitForScale(record, scale, references);
+  const jackAverageCoefficient = isJack(record)
+    ? averageJackConversionCoefficient(measurements)
+    : null;
 
   return (
     <div className="mt-2 break-inside-avoid">
@@ -707,6 +832,19 @@ function ScaleCompactBlock({
             <DataCell label="Note" value={scale.notes} />
             <DataCell label="N. punti" value={String(measurements.length)} />
           </tr>
+          {isJack(record) && (
+            <tr>
+              <DataCell
+                label="Coeff. medio conversione"
+                value={
+                  jackAverageCoefficient === null
+                    ? "-"
+                    : formatNumber(jackAverageCoefficient, 6) + " kN/bar"
+                }
+              />
+              <DataCell label="Unità conversione" value="kN/bar" />
+            </tr>
+          )}
         </tbody>
       </table>
 
@@ -717,6 +855,8 @@ function ScaleCompactBlock({
           <div className="rounded border border-slate-200 bg-white/65 p-2 text-[8px] text-slate-500">
             Nessuna misura registrata per questa scala.
           </div>
+        ) : isJack(record) ? (
+          <JackMeasurementsTable measurements={measurements} />
         ) : isSclerometric(record) ? (
           <SclerometricTable measurements={measurements} />
         ) : isTemperatureInstrumentCalibration(record) ? (

@@ -443,9 +443,17 @@ function verifiedInstrumentDescription(customerSnapshot: GenericRecord, details:
   return parts.join(" ") || textValue(details.work_object, "strumento in verifica");
 }
 
+function isJack(record: GenericRecord) {
+  return String(record.verification_module ?? "").toUpperCase() === "JACK";
+}
+
 function isForceCompressionTrazione(record: GenericRecord) {
   const module = String(record.verification_module ?? "").toUpperCase();
   const mode = String(record.mode ?? "").toLowerCase();
+
+  if (module === "JACK") {
+    return false;
+  }
 
   return (
     module === "CT_FORCE" ||
@@ -454,6 +462,46 @@ function isForceCompressionTrazione(record: GenericRecord) {
     mode === "compressione" ||
     mode === "trazione"
   );
+}
+
+function jackConversionCoefficient(measurement: GenericRecord) {
+  const pressureValue = hasNumericValue(measurement.nominal_value)
+    ? Number(measurement.nominal_value)
+    : hasNumericValue(measurement.applied_value)
+      ? Number(measurement.applied_value)
+      : null;
+  const averageValue = hasNumericValue(measurement.average_value)
+    ? Number(measurement.average_value)
+    : null;
+
+  if (pressureValue === null || averageValue === null || pressureValue === 0) {
+    return null;
+  }
+
+  return averageValue / pressureValue;
+}
+
+function averageJackConversionCoefficient(measurements: GenericRecord[]) {
+  const coefficients = measurements
+    .map((measurement) => jackConversionCoefficient(measurement))
+    .filter((value): value is number => value !== null && Number.isFinite(value));
+
+  if (coefficients.length === 0) {
+    return null;
+  }
+
+  return coefficients.reduce((sum, value) => sum + value, 0) / coefficients.length;
+}
+
+function formatJackCoefficient(value: number | null | undefined) {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return "-";
+  }
+
+  return new Intl.NumberFormat("it-IT", {
+    minimumFractionDigits: 6,
+    maximumFractionDigits: 6,
+  }).format(value);
 }
 
 function getTemperatureVariant(record: GenericRecord) {
@@ -673,6 +721,11 @@ function modeLabel(mode: unknown, verificationModule: unknown) {
 
   if (verificationModule === "PULLOFF" || mode === "pulloff") {
     return "Pull-off";
+  }
+
+  if (verificationModule === "JACK") {
+    if (mode === "trazione") return "Martinetto - Trazione";
+    return "Martinetto - Compressione / pressione";
   }
 
   if (mode === "compressione") {
@@ -1055,6 +1108,18 @@ function ExecutionTextPage({
     "Per ogni livello di carico l'errore relativo di accuratezza, espresso in percentuale, viene determinato confrontando il carico indicato dalla macchina con la media delle letture del dispositivo campione.",
     "L'errore relativo di ripetibilità è determinato a partire dalla differenza tra il valore massimo e il valore minimo delle letture rilevate.",
   ];
+
+  if (isJack(record)) {
+    formulaText = [
+      "Per ogni punto viene impostata la pressione di verifica espressa in bar e vengono rilevate tre letture consecutive della forza espresse in kN.",
+      "Lettura massima = valore massimo tra I, II e III ciclo.",
+      "Lettura minima = valore minimo tra I, II e III ciclo.",
+      "Media letture = (I ciclo + II ciclo + III ciclo) / 3.",
+      "Coefficiente di conversione (kN/bar) = Media letture (kN) / Pressione (bar).",
+      "Errore di ripetibilità % = [(Lettura massima - Lettura minima) / Media letture] × 100.",
+      "Coefficiente medio di conversione = media aritmetica dei coefficienti di conversione dei punti validi.",
+    ];
+  }
 
   if (isPressure) {
     formulaText = [
@@ -1517,6 +1582,18 @@ function FormulaPage({
     "L'errore relativo di ripetibilità è determinato a partire dalla differenza tra il valore massimo e il valore minimo delle letture rilevate.",
   ];
 
+  if (isJack(record)) {
+    formulaText = [
+      "Per ogni punto viene impostata la pressione di verifica espressa in bar e vengono rilevate tre letture consecutive della forza espresse in kN.",
+      "Lettura massima = valore massimo tra I, II e III ciclo.",
+      "Lettura minima = valore minimo tra I, II e III ciclo.",
+      "Media letture = (I ciclo + II ciclo + III ciclo) / 3.",
+      "Coefficiente di conversione (kN/bar) = Media letture (kN) / Pressione (bar).",
+      "Errore di ripetibilità % = [(Lettura massima - Lettura minima) / Media letture] × 100.",
+      "Coefficiente medio di conversione = media aritmetica dei coefficienti di conversione dei punti validi.",
+    ];
+  }
+
   if (isPressure) {
     formulaText = [
       "La verifica viene eseguita confrontando i valori indicati dallo strumento in prova con i valori applicati tramite lo strumento campione.",
@@ -1714,6 +1791,98 @@ function TemperatureInstrumentMeasurementsTable({
               </td>
             </tr>
           ))
+        )}
+      </tbody>
+    </table>
+  );
+}
+
+function JackMeasurementsTable({
+  measurements,
+}: {
+  measurements: GenericRecord[];
+}) {
+  const averageCoefficient = averageJackConversionCoefficient(measurements);
+
+  return (
+    <table className="w-full border-collapse bg-white/35 text-center text-[7.7px]">
+      <thead>
+        <tr className="bg-slate-700/65 text-slate-950">
+          <th className="border border-slate-600 px-1 py-0.5">Punto</th>
+          <th className="border border-slate-600 px-1 py-0.5">Punto di verifica (bar)</th>
+          <th className="border border-slate-600 px-1 py-0.5">Lettura I° ciclo (kN)</th>
+          <th className="border border-slate-600 px-1 py-0.5">Lettura II° ciclo (kN)</th>
+          <th className="border border-slate-600 px-1 py-0.5">Lettura III° ciclo (kN)</th>
+          <th className="border border-slate-600 px-1 py-0.5">Max (kN)</th>
+          <th className="border border-slate-600 px-1 py-0.5">Min (kN)</th>
+          <th className="border border-slate-600 px-1 py-0.5">Media (kN)</th>
+          <th className="border border-slate-600 px-1 py-0.5">Coeff. conversione (kN/bar)</th>
+          <th className="border border-slate-600 px-1 py-0.5">Ripetibilità %</th>
+        </tr>
+      </thead>
+      <tbody>
+        {measurements.length === 0 ? (
+          <tr className="bg-white/65">
+            <td colSpan={10} className="border border-slate-300 px-2 py-1">
+              Nessun punto di misura salvato.
+            </td>
+          </tr>
+        ) : (
+          measurements.map((measurement, index) => {
+            const pressure = hasNumericValue(measurement.nominal_value)
+              ? measurement.nominal_value
+              : measurement.applied_value;
+            const coefficient = jackConversionCoefficient(measurement);
+
+            return (
+              <tr
+                key={measurement.id}
+                className={index % 2 === 0 ? "bg-white/65" : "bg-slate-100/55"}
+              >
+                <td className="border border-slate-300 px-1 py-0.5">
+                  {textValue(measurement.point_order)}
+                </td>
+                <td className="border border-slate-300 px-1 py-0.5">
+                  {formatNumber(pressure)}
+                </td>
+                <td className="border border-slate-300 px-1 py-0.5">
+                  {formatNumber(measurement.cycle_1)}
+                </td>
+                <td className="border border-slate-300 px-1 py-0.5">
+                  {formatNumber(measurement.cycle_2)}
+                </td>
+                <td className="border border-slate-300 px-1 py-0.5">
+                  {formatNumber(measurement.cycle_3)}
+                </td>
+                <td className="border border-slate-300 px-1 py-0.5">
+                  {formatNumber(measurement.max_value)}
+                </td>
+                <td className="border border-slate-300 px-1 py-0.5">
+                  {formatNumber(measurement.min_value)}
+                </td>
+                <td className="border border-slate-300 px-1 py-0.5 font-bold">
+                  {formatNumber(measurement.average_value)}
+                </td>
+                <td className="border border-slate-300 px-1 py-0.5 font-bold">
+                  {formatJackCoefficient(coefficient)}
+                </td>
+                <td className="border border-slate-300 px-1 py-0.5">
+                  {formatNumber(measurement.repeatability_error_percent)}
+                </td>
+              </tr>
+            );
+          })
+        )}
+        {measurements.length > 0 && (
+          <tr className="bg-slate-200/75 font-bold">
+            <td colSpan={8} className="border border-slate-400 px-1 py-1 text-right">
+              Coefficiente medio di conversione
+            </td>
+            <td className="border border-slate-400 px-1 py-1">
+              {formatJackCoefficient(averageCoefficient)}
+            </td>
+            <td className="border border-slate-400 px-1 py-1">kN/bar</td>
+          </tr>
         )}
       </tbody>
     </table>
@@ -2140,6 +2309,7 @@ function TechnicalScaleSection({
     record.verification_module === "TEMPERATURE" || record.mode === "temperatura";
   const isTemperatureInstrument =
     isTemperature && isTemperatureInstrumentCalibration(record);
+  const isJackReport = isJack(record);
   const measurementUnit = getMeasurementUnit({
     record,
     customerSnapshot,
@@ -2158,6 +2328,7 @@ function TechnicalScaleSection({
     scaleMeasurements,
     "mean_error"
   );
+  const averageJackCoefficient = averageJackConversionCoefficient(scaleMeasurements);
   const appliedLabel = isFlow
     ? "Volume impostato"
     : isMass
@@ -2187,11 +2358,30 @@ function TechnicalScaleSection({
           <tr>
             <DataCell label="Scala" value={scale.scale_name} />
             <DataCell
-              label="Fondo scala"
-              value={formatNumberWithUnit(scale.scale_range, measurementUnit)}
+              label={isJackReport ? "Campo / fondo scala" : "Fondo scala"}
+              value={
+                isJackReport
+                  ? textValue(scale.scale_range)
+                  : formatNumberWithUnit(scale.scale_range, measurementUnit)
+              }
             />
           </tr>
-          {isTemperatureInstrument ? (
+          {isJackReport ? (
+            <tr>
+              <DataCell
+                label="Coeff. medio conversione"
+                value={
+                  averageJackCoefficient === null
+                    ? "-"
+                    : formatJackCoefficient(averageJackCoefficient) + " kN/bar"
+                }
+              />
+              <DataCell
+                label="Errore ripetibilità max"
+                value={formatNumberWithUnit(maxRepeatability, "%")}
+              />
+            </tr>
+          ) : isTemperatureInstrument ? (
             <tr>
               <DataCell
                 label="Errore max assoluto"
@@ -2231,7 +2421,9 @@ function TechnicalScaleSection({
         </div>
       )}
 
-      {isTemperatureInstrument ? (
+      {isJackReport ? (
+        <JackMeasurementsTable measurements={measurements} />
+      ) : isTemperatureInstrument ? (
         <TemperatureInstrumentMeasurementsTable measurements={measurements} />
       ) : (
         <TechnicalTable

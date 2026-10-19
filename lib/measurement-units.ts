@@ -1,6 +1,8 @@
 const CANONICAL_UNITS: Record<string, string> = {
   n: "N",
   kn: "kN",
+  "kn/bar": "kN/bar",
+  "kn / bar": "kN/bar",
   kg: "kg",
   g: "g",
   mg: "mg",

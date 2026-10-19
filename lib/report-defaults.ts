@@ -147,6 +147,27 @@ export function getCtForceReportDefaults(input: ReportDefaultsInput): ReportText
   };
 }
 
+export function getJackReportDefaults(input: ReportDefaultsInput): ReportTextDefaults {
+  return baseDefaults(
+    input,
+    "Verifica di taratura di martinetto idraulico per compressione/pressione o trazione.",
+    "Scopo della verifica è determinare la relazione tra la pressione idraulica applicata, espressa in bar, e la forza rilevata, espressa in kN, mediante confronto con idonei strumenti campione.",
+    [
+      "La verifica viene eseguita sui punti di pressione previsti, rilevando per ciascun punto tre letture consecutive della forza.",
+      "Per ciascun punto vengono determinati lettura massima, lettura minima e media delle tre letture.",
+      "Il coefficiente di conversione, espresso in kN/bar, è determinato come rapporto tra la media delle letture di forza e la pressione del punto di verifica.",
+      "L'errore di ripetibilità percentuale è determinato come [(Lettura massima - Lettura minima) / Media letture] × 100.",
+      "Il coefficiente medio di conversione è la media aritmetica dei coefficienti di conversione dei punti validi.",
+    ].join("\n"),
+    [
+      "I risultati della verifica sono riportati nella sezione tecnica integrante del presente rapporto.",
+      "Per ciascun punto sono indicati pressione in bar, tre letture in kN, valore massimo, valore minimo, media, coefficiente di conversione in kN/bar ed errore di ripetibilità percentuale.",
+      "È inoltre riportato il coefficiente medio di conversione della verifica.",
+    ].join("\n"),
+    "strumenti campione"
+  );
+}
+
 export function getPressureReportDefaults(input: ReportDefaultsInput): ReportTextDefaults {
   return baseDefaults(
     input,
@@ -293,6 +314,7 @@ export function getReportDefaultsByModule(
   mode: string | null | undefined,
   input: ReportDefaultsInput
 ): ReportTextDefaults {
+  if (module === "JACK") return getJackReportDefaults(input);
   if (module === "PRESSURE" || mode === "pressione") return getPressureReportDefaults(input);
   if (module === "TORQUE" || mode === "dinamometria") return getTorqueReportDefaults(input);
   if (module === "FLOW" || mode === "portata") return getFlowReportDefaults(input);

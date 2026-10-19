@@ -63,6 +63,7 @@ const measurementOptions: MeasurementOption[] = [
 
 const unitOptions: string[] = [
   "kN",
+  "kN/bar",
   "N",
   "daN",
   "MN",

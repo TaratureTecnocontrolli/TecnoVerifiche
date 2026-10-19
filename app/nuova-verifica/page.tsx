@@ -36,6 +36,21 @@ const modules: VerificationModule[] = [
     ],
   },
   {
+    title: "Martinetti",
+    badge: "MAR",
+    description:
+      "Verifica di martinetti idraulici per compressione/pressione e trazione.",
+    href: "/nuova-verifica/martinetti",
+    status: "active",
+    bookmark: "Modulo attivo",
+    details: [
+      "pressione in bar",
+      "letture forza in kN",
+      "coefficiente kN/bar",
+      "ripetibilità e coefficiente medio",
+    ],
+  },
+  {
     title: "Pressione / manometri",
     badge: "PRS",
     description:
