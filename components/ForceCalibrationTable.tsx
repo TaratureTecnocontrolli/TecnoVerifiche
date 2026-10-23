@@ -255,6 +255,10 @@ function todayItalianDateLabel() {
   return new Intl.DateTimeFormat("it-IT").format(new Date());
 }
 
+function todayInputDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function formatItalianDate(date: string | null) {
   if (!date) {
     return "-";
@@ -489,6 +493,7 @@ export default function ForceCalibrationTable({
   verificationScope = "VT",
 }: ForceCalibrationTableProps) {
   const isInternalVerification = verificationScope === "VI";
+  const [verificationDate, setVerificationDate] = useState(todayInputDate());
   const [mode, setMode] = useState<"compressione" | "trazione">("compressione");
   const [operatorName, setOperatorName] = useState("");
   const [ambientTemperature, setAmbientTemperature] = useState("");
@@ -1054,6 +1059,10 @@ function resetSaveState() {
     setSavedRecordNumber(null);
 
     try {
+      if (isInternalVerification && !verificationDate) {
+        throw new Error("Inserisci la data della verifica.");
+      }
+
       if (isInternalVerification) {
         if (!selectedInternalInstrument) {
           throw new Error("Seleziona lo strumento interno da verificare.");
@@ -1193,7 +1202,7 @@ function resetSaveState() {
           mode,
           verification_module: "CT_FORCE",
           report_status: "draft",
-          verification_date: new Date().toISOString().slice(0, 10),
+          verification_date: verificationDate,
           operator_name: operatorName || null,
           location: isInternalVerification
             ? verificationLocation.trim()
@@ -1224,7 +1233,6 @@ function resetSaveState() {
         );
       }
 
-      const verificationDate = new Date().toISOString().slice(0, 10);
 
       const reportCustomerName = isInternalVerification
         ? "Tecnocontrolli S.r.l."
@@ -1464,6 +1472,23 @@ function resetSaveState() {
         </h2>
 
         <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {isInternalVerification && (
+            <label className="space-y-1">
+              <span className="text-sm font-medium text-slate-700">
+                Data verifica *
+              </span>
+              <input
+                type="date"
+                value={verificationDate}
+                onChange={(event) => {
+                  setVerificationDate(event.target.value);
+                  resetSaveState();
+                }}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+              />
+            </label>
+          )}
+
           <label className="space-y-1">
             <span className="text-sm font-medium text-slate-700">
               Tipo verifica

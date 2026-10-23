@@ -19,6 +19,7 @@ type PageProps = {
 type CalibrationRecord = {
   id: string;
   record_number: string | null;
+  verification_date: string | null;
   mode: string | null;
   verification_module: string | null;
   verification_scope: string | null;
@@ -32,7 +33,7 @@ export default async function EditMassMeasurementsPage({ params }: PageProps) {
 
   const { data: recordData, error: recordError } = await supabase
     .from("calibration_records")
-    .select("id, record_number, mode, verification_module, verification_scope, verified_instrument_type, output_type, report_status")
+    .select("id, record_number, verification_date, mode, verification_module, verification_scope, verified_instrument_type, output_type, report_status")
     .eq("id", id)
     .single();
 
@@ -137,6 +138,7 @@ export default async function EditMassMeasurementsPage({ params }: PageProps) {
           recordId={id}
           recordNumber={record.record_number}
           reportStatus={record.report_status}
+          initialVerificationDate={record.verification_date}
           initialScales={scalesData ?? []}
           initialMeasurements={measurementsData ?? []}
           referenceInstruments={referenceInstrumentsData ?? []}

@@ -2076,6 +2076,7 @@ function TechnicalPage({
     isMass && massScaleKind(scale.scale_name) === "eccentricity";
   const isDimensional =
     record.verification_module === "DIMENSIONAL" || record.mode === "dimensionale";
+  const isJackReport = isJack(record);
   const showNominalColumn = isFlow;
   const nominalLabel = "Volume nominale";
   const appliedLabel = isFlow
@@ -2102,6 +2103,10 @@ function TechnicalPage({
     measurementsForSummary,
     "repeatability_error_percent"
   );
+
+  const averageJackCoefficient = isJackReport
+    ? averageJackConversionCoefficient(measurementsForSummary)
+    : null;
 
   return (
     <PageShell
@@ -2218,20 +2223,41 @@ function TechnicalPage({
           <tr>
             <DataCell label="Scala" value={scale.scale_name} />
             <DataCell
-              label="Fondo scala"
-              value={formatNumberWithUnit(scale.scale_range, measurementUnit)}
+              label={isJackReport ? "Campo / fondo scala" : "Fondo scala"}
+              value={
+                isJackReport
+                  ? textValue(scale.scale_range)
+                  : formatNumberWithUnit(scale.scale_range, measurementUnit)
+              }
             />
           </tr>
-          <tr>
-            <DataCell
-              label="Errore accuratezza max"
-              value={formatNumberWithUnit(maxAccuracy, "%")}
-            />
-            <DataCell
-              label="Errore ripetibilità max"
-              value={formatNumberWithUnit(maxRepeatability, "%")}
-            />
-          </tr>
+          {isJackReport ? (
+            <tr>
+              <DataCell
+                label="Coeff. medio conversione"
+                value={
+                  averageJackCoefficient === null
+                    ? "-"
+                    : formatJackCoefficient(averageJackCoefficient) + " kN/bar"
+                }
+              />
+              <DataCell
+                label="Errore ripetibilità max"
+                value={formatNumberWithUnit(maxRepeatability, "%")}
+              />
+            </tr>
+          ) : (
+            <tr>
+              <DataCell
+                label="Errore accuratezza max"
+                value={formatNumberWithUnit(maxAccuracy, "%")}
+              />
+              <DataCell
+                label="Errore ripetibilità max"
+                value={formatNumberWithUnit(maxRepeatability, "%")}
+              />
+            </tr>
+          )}
         </tbody>
       </table>}
 
@@ -2316,10 +2342,9 @@ function TechnicalScaleSection({
     referenceSnapshots: scaleReferenceSnapshots,
     scale,
   });
-  const maxAccuracy = maxAbsoluteValue(
-    scaleMeasurements,
-    "accuracy_error_percent"
-  );
+  const maxAccuracy = isJackReport
+    ? null
+    : maxAbsoluteValue(scaleMeasurements, "accuracy_error_percent");
   const maxRepeatability = maxAbsoluteValue(
     scaleMeasurements,
     "repeatability_error_percent"
@@ -2956,6 +2981,7 @@ const { data: recordData, error: recordError } = await supabase
   const isSclerometric =
     record.verification_module === "SCLEROMETRIC" || record.mode === "sclerometro";
   const isMass = record.verification_module === "MASS" || record.mode === "massa";
+  const isJackReport = isJack(record);
 
   const scalePlans: ScalePlan[] = scales.map((scale) => {
     const scaleMeasurements = measurements.filter(
@@ -2995,9 +3021,10 @@ const { data: recordData, error: recordError } = await supabase
           measurement.applied_value === undefined
             ? null
             : Number(measurement.applied_value),
-        accuracy_error_percent:
-          measurement.accuracy_error_percent === null ||
-          measurement.accuracy_error_percent === undefined
+        accuracy_error_percent: isJackReport
+          ? null
+          : measurement.accuracy_error_percent === null ||
+              measurement.accuracy_error_percent === undefined
             ? null
             : Number(measurement.accuracy_error_percent),
         section: measurement.section ?? null,
@@ -3005,7 +3032,7 @@ const { data: recordData, error: recordError } = await supabase
 
     const chartPages: ChartPageInfo[] = [];
 
-    if (!isTemperature && !isSclerometric) {
+    if (!isJackReport && !isTemperature && !isSclerometric) {
       if (isPressure) {
         const carico = chartMeasurements.filter(
           (measurement) => measurement.section?.toLowerCase() !== "scarico"

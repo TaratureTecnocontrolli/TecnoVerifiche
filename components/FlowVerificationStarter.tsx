@@ -483,7 +483,7 @@ export default function FlowVerificationStarter({
 
   const [selectedReferenceInstrumentIds, setSelectedReferenceInstrumentIds] =
     useState<string[]>([]);
-  const [verificationDate] = useState(todayInputDate());
+  const [verificationDate, setVerificationDate] = useState(todayInputDate());
   const [operatorName, setOperatorName] = useState("");
   const [ambientTemperature, setAmbientTemperature] = useState("");
   const [ambientHumidity, setAmbientHumidity] = useState("");
@@ -1096,6 +1096,23 @@ export default function FlowVerificationStarter({
         </h2>
 
         <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {isInternalVerification && (
+            <label className="space-y-1">
+              <span className="text-sm font-medium text-slate-700">
+                Data verifica *
+              </span>
+              <input
+                type="date"
+                value={verificationDate}
+                onChange={(event) => {
+                  setVerificationDate(event.target.value);
+                  resetSaveState();
+                }}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+              />
+            </label>
+          )}
+
 
           <label className="space-y-1">
             <span className="text-sm font-medium text-slate-700">Tecnico</span>

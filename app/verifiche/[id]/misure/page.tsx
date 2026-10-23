@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import EditForceMeasurementsForm from "@/components/EditForceMeasurementsForm";
+import EditJackMeasurementsForm from "@/components/EditJackMeasurementsForm";
 import { supabase } from "@/lib/supabase";
 
 export const dynamic = "force-dynamic";
@@ -11,28 +12,66 @@ export const fetchCache = "force-no-store";
 type PageProps = {
   params: Promise<{
     id: string;
-
-
-}>;
+  }>;
 };
 
 type CalibrationRecord = {
   id: string;
   record_number: string | null;
+  verification_date: string | null;
   mode: string | null;
   verification_module: string | null;
   verification_scope: string | null;
   verified_instrument_type: string | null;
   output_type: string | null;
   report_status: string | null;
+  procedure_snapshot: unknown;
+  customer_instrument_snapshot: unknown;
 };
+
+type JsonObject = Record<string, unknown>;
+
+function asObject(value: unknown): JsonObject {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value as JsonObject;
+  }
+  return {};
+}
+
+function isJackRecord(record: CalibrationRecord) {
+  const module = String(record.verification_module ?? "").trim().toUpperCase();
+  const recordNumber = String(record.record_number ?? "").trim().toUpperCase();
+  const procedureSnapshot = asObject(record.procedure_snapshot);
+  const instrumentSnapshot = asObject(record.customer_instrument_snapshot);
+  const conversionUnit = String(procedureSnapshot.conversion_unit ?? "")
+    .trim()
+    .toLowerCase();
+  const calculationVersion = String(
+    procedureSnapshot.calculation_engine_version ?? ""
+  )
+    .trim()
+    .toLowerCase();
+  const procedureCode = String(procedureSnapshot.code ?? "").trim().toUpperCase();
+  const instrumentUnit = String(instrumentSnapshot.unit ?? "").trim().toLowerCase();
+
+  return (
+    module === "JACK" ||
+    recordNumber.startsWith("MAR-") ||
+    conversionUnit === "kn/bar" ||
+    instrumentUnit === "kn/bar" ||
+    calculationVersion.startsWith("martinetti") ||
+    (procedureCode === "PTS6" && conversionUnit === "kn/bar")
+  );
+}
 
 export default async function EditMeasurementsPage({ params }: PageProps) {
   const { id } = await params;
 
   const { data: recordData, error: recordError } = await supabase
     .from("calibration_records")
-    .select("id, record_number, mode, verification_module, verification_scope, verified_instrument_type, output_type, report_status")
+    .select(
+      "id, record_number, verification_date, mode, verification_module, verification_scope, verified_instrument_type, output_type, report_status, procedure_snapshot, customer_instrument_snapshot"
+    )
     .eq("id", id)
     .single();
 
@@ -41,6 +80,7 @@ export default async function EditMeasurementsPage({ params }: PageProps) {
   }
 
   const record = recordData as CalibrationRecord;
+  const isJack = isJackRecord(record);
   const isInternalVerification =
     record.verification_scope === "VI" ||
     record.output_type === "rapportino" ||
@@ -56,7 +96,6 @@ export default async function EditMeasurementsPage({ params }: PageProps) {
     ? "/verifiche/" + id + "/rapportino-interno"
     : "/verifiche/" + id + "/rapporto/finale";
 
-
   const { data: scalesData, error: scalesError } = await supabase
     .from("calibration_record_scales")
     .select(
@@ -68,6 +107,8 @@ export default async function EditMeasurementsPage({ params }: PageProps) {
       scale_range,
       reference_instrument_id,
       reference_instrument_snapshot,
+      reference_instrument_ids,
+      reference_instruments_snapshot,
       notes
     `
     )
@@ -139,8 +180,9 @@ export default async function EditMeasurementsPage({ params }: PageProps) {
             </h1>
 
             <p className="mt-2 max-w-3xl text-slate-600">
-              Modifica i dati tecnici della verifica compressione/trazione:
-              scale, strumento campione usato e punti di misura.
+              {isJack
+                ? "Modifica i dati tecnici della verifica martinetto: pressione, letture in kN, coefficiente di conversione e ripetibilità."
+                : "Modifica i dati tecnici della verifica compressione/trazione: scale, strumento campione usato e punti di misura."}
             </p>
           </div>
 
@@ -175,17 +217,30 @@ export default async function EditMeasurementsPage({ params }: PageProps) {
           </div>
         )}
 
-        <EditForceMeasurementsForm
-          recordId={id}
-          recordNumber={record.record_number}
-          reportStatus={record.report_status}
-          initialScales={scalesData ?? []}
-          initialMeasurements={measurementsData ?? []}
-          referenceInstruments={referenceInstrumentsData ?? []}
-          isInternalVerification={isInternalVerification}
-        />
+        {isJack ? (
+          <EditJackMeasurementsForm
+            recordId={id}
+            recordNumber={record.record_number}
+            reportStatus={record.report_status}
+            initialVerificationDate={record.verification_date}
+            isInternalVerification={isInternalVerification}
+            initialScales={scalesData ?? []}
+            initialMeasurements={measurementsData ?? []}
+            referenceInstruments={referenceInstrumentsData ?? []}
+          />
+        ) : (
+          <EditForceMeasurementsForm
+            recordId={id}
+            recordNumber={record.record_number}
+            reportStatus={record.report_status}
+            initialVerificationDate={record.verification_date}
+            initialScales={scalesData ?? []}
+            initialMeasurements={measurementsData ?? []}
+            referenceInstruments={referenceInstrumentsData ?? []}
+            isInternalVerification={isInternalVerification}
+          />
+        )}
       </div>
     </AppShell>
   );
 }
-

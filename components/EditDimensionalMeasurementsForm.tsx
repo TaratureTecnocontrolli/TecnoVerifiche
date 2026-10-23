@@ -94,6 +94,7 @@ type EditDimensionalMeasurementsFormProps = {
   recordId: string;
   recordNumber: string | null;
   reportStatus: string | null;
+  initialVerificationDate?: string | null;
   isInternalVerification?: boolean;
   initialScales: InitialScale[];
   initialMeasurements: InitialMeasurement[];
@@ -408,11 +409,16 @@ export default function EditDimensionalMeasurementsForm({
   recordId,
   recordNumber,
   reportStatus,
+  initialVerificationDate,
   isInternalVerification = false,
   initialScales,
   initialMeasurements,
   referenceInstruments,
 }: EditDimensionalMeasurementsFormProps) {
+  const [verificationDate, setVerificationDate] = useState(
+    initialVerificationDate || ""
+  );
+
   const [referenceInstrumentIds, setReferenceInstrumentIds] = useState<string[]>(
     () => {
       const firstScale = initialScales[0];
@@ -587,6 +593,10 @@ export default function EditDimensionalMeasurementsForm({
     setIsSaving(true);
 
     try {
+      if (isInternalVerification && !verificationDate) {
+        throw new Error("Inserisci la data della verifica.");
+      }
+
       validate();
 
       const referenceSnapshots = selectedReferenceInstruments.map(
@@ -741,6 +751,27 @@ export default function EditDimensionalMeasurementsForm({
       }
 
       setSections(updatedSections);
+      if (isInternalVerification) {
+        const { error: verificationDateRecordError } = await supabase
+          .from("calibration_records")
+          .update({ verification_date: verificationDate })
+          .eq("id", recordId);
+
+        if (verificationDateRecordError) {
+          throw new Error(verificationDateRecordError.message);
+        }
+
+        const { error: verificationDateDetailsError } = await supabase
+          .from("calibration_report_details")
+          .update({ test_date: verificationDate })
+          .eq("calibration_record_id", recordId);
+
+        if (verificationDateDetailsError) {
+          throw new Error(verificationDateDetailsError.message);
+        }
+      }
+
+
 
       await supabase
         .from("calibration_records")
@@ -763,6 +794,30 @@ export default function EditDimensionalMeasurementsForm({
 
   return (
     <div className="space-y-6">
+      {isInternalVerification && (
+        <div className="rounded-2xl border border-sky-200 bg-white p-5 shadow-sm">
+          <h2 className="text-lg font-semibold text-slate-900">Data verifica interna</h2>
+          <div className="mt-4 max-w-sm">
+            <label className="space-y-1">
+              <span className="text-sm font-medium text-slate-700">Data verifica *</span>
+              <input
+                type="date"
+                value={verificationDate}
+                disabled={isReadOnly}
+                onChange={(event) => {
+                  setVerificationDate(event.target.value);
+                  resetSaveState();
+                }}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm disabled:bg-slate-100 disabled:text-slate-500"
+              />
+            </label>
+          </div>
+          <p className="mt-3 text-xs text-slate-500">
+            La modifica aggiorna la data della verifica e la data prova riportata nel rapportino interno.
+          </p>
+        </div>
+      )}
+
       {isReadOnly && (
         <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950 shadow-sm">
           <p className="font-bold">Rapporto emesso: misure in sola lettura</p>

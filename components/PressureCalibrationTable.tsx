@@ -234,6 +234,10 @@ function todayItalianDateLabel() {
   return new Intl.DateTimeFormat("it-IT").format(new Date());
 }
 
+function todayInputDate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
 function formatItalianDate(date: string | null) {
   if (!date) {
     return "-";
@@ -392,6 +396,7 @@ export default function PressureCalibrationTable({
   verificationScope = "VT",
 }: PressureCalibrationTableProps) {
   const isInternalVerification = verificationScope === "VI";
+  const [verificationDate, setVerificationDate] = useState(todayInputDate());
   const [operatorName, setOperatorName] = useState("");
   const [ambientTemperature, setAmbientTemperature] = useState("");
   const [ambientHumidity, setAmbientHumidity] = useState("");
@@ -884,6 +889,10 @@ function resetSaveState() {
     setSavedRecordNumber(null);
 
     try {
+      if (isInternalVerification && !verificationDate) {
+        throw new Error("Inserisci la data della verifica.");
+      }
+
       validate();
 
       if (!isInternalVerification && (!selectedCustomer || !selectedSite || !selectedCustomerInstrument)) {
@@ -1007,7 +1016,7 @@ function resetSaveState() {
           procedure_snapshot: procedureSnapshot,
           verification_module: "PRESSURE",
           mode: "pressione",
-          verification_date: new Date().toISOString().slice(0, 10),
+          verification_date: verificationDate,
           operator_name: operatorName || null,
           location: isInternalVerification
             ? internalVerificationLocation.trim()
@@ -1111,7 +1120,7 @@ function resetSaveState() {
           calibration_record_id: record.id,
           main_report_number: null,
           report_date: null,
-          test_date: new Date().toISOString().slice(0, 10),
+          test_date: verificationDate,
           customer_name: reportCustomerName,
           site_description: reportLocation,
           work_object: verifiedInstrumentName
@@ -1176,6 +1185,23 @@ function resetSaveState() {
         </h2>
 
         <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+          {isInternalVerification && (
+            <label className="space-y-1">
+              <span className="text-sm font-medium text-slate-700">
+                Data verifica *
+              </span>
+              <input
+                type="date"
+                value={verificationDate}
+                onChange={(event) => {
+                  setVerificationDate(event.target.value);
+                  resetSaveState();
+                }}
+                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+              />
+            </label>
+          )}
+
           <label className="space-y-1">
             <span className="text-sm font-medium text-slate-700">Tecnico</span>
             <input
