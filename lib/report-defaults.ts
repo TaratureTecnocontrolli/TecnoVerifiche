@@ -190,15 +190,19 @@ export function getTorqueReportDefaults(input: ReportDefaultsInput): ReportTextD
   return baseDefaults(
     input,
     "Verifica di taratura di chiave dinamometrica / strumento di coppia.",
-    "Scopo della verifica è valutare la risposta metrologica dello strumento di coppia mediante confronto con idoneo strumento campione.",
+    "Scopo della verifica è valutare la risposta metrologica della chiave dinamometrica mediante applicazione di masse campione a distanza nota dal centro di rotazione.",
     [
-      "La verifica viene eseguita applicando i punti di coppia previsti e rilevando, per ciascun punto, tre letture consecutive dello strumento in prova.",
-      "Per ogni punto vengono determinati il valore massimo, il valore minimo, la media delle letture, l'errore medio, l'errore di accuratezza percentuale e l'errore di ripetibilità percentuale.",
-      "Le formule utilizzate sono riportate nella sezione di espressione dei risultati del presente rapporto.",
+      "Il punto di verifica viene determinato come Massa teorica di riferimento × g × lunghezza del braccio.",
+      "Per ciascuno dei tre cicli viene registrata la massa applicata e la relativa coppia viene calcolata come Massa applicata × g × lunghezza del braccio.",
+      "Scostamento = Media letture - Punto di verifica.",
+      "Errore accuratezza % = Scostamento / Punto di verifica × 100.",
+      "Errore ripetibilità % = (Lettura massima - Lettura minima) / Media letture × 100.",
+      "La verifica è conforme quando il valore assoluto dell'errore di accuratezza è minore o uguale al 3% per tutti i punti di verifica.",
     ].join("\n"),
     [
       "I risultati della verifica sono riportati nella sezione tecnica integrante del presente rapporto.",
-      "Per ciascun punto di coppia sono indicati il valore applicato, le tre letture rilevate, la media, l'errore medio, l'errore di accuratezza percentuale e l'errore di ripetibilità percentuale.",
+      "Per ciascun punto sono riportati massa teorica di riferimento, masse applicate nei tre cicli, coppie calcolate, massimo, minimo, media, scostamento, errore di accuratezza percentuale ed errore di ripetibilità percentuale.",
+      "Il criterio di conformità applicato è |Errore accuratezza| ≤ 3% su tutti i punti.",
     ].join("\n")
   );
 }

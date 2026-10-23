@@ -94,10 +94,10 @@ function scopeLabel(scope: VerificationScope) {
 
 function scopeDescription(scope: VerificationScope) {
   if (scope === "VI") {
-    return "Flusso per verifica interna di strumenti aziendali, con inserimento immediato dei punti di coppia e rapportino tecnico finale.";
+    return "Flusso per verifica interna di chiavi dinamometriche mediante masse campione e braccio di leva, con rapportino tecnico finale.";
   }
 
-  return "Flusso per verifica/taratura di strumenti cliente, con inserimento immediato dei punti di coppia e rapporto finale.";
+  return "Flusso per verifica/taratura di chiavi dinamometriche mediante masse campione e braccio di leva, con rapporto finale.";
 }
 
 export default async function NewTorqueVerificationPage({

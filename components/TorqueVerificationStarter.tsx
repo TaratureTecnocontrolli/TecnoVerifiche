@@ -2,10 +2,17 @@
 
 import Link from "next/link";
 import SimpleAccuracyChart from "@/components/SimpleAccuracyChart";
-import { type KeyboardEvent, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
-import { canonicalMeasurementUnit } from "@/lib/measurement-units";
 import { combineReferenceInstrumentNames } from "@/lib/report-defaults";
+import {
+  calculateTorqueMassPoint,
+  overallTorqueResult,
+  serializeTorqueMeasurementMetadata,
+  STANDARD_GRAVITY_M_S2,
+  TORQUE_ACCURACY_LIMIT_PERCENT,
+  type TorqueMassCalculatedPoint,
+} from "@/lib/torque-calculations";
 import ReferenceInstrumentMultiSelect, {
   getEffectiveReferenceInstrumentStatus,
   isReferenceInstrumentBlocked,
@@ -88,26 +95,14 @@ type ReferenceInstrument = {
 
 type EditableTorquePoint = {
   id: string;
-  nominalTorque: string;
-  reading1: string;
-  reading2: string;
-  reading3: string;
+  theoreticalMassKg: string;
+  appliedMass1Kg: string;
+  appliedMass2Kg: string;
+  appliedMass3Kg: string;
   notes: string;
 };
 
-type CalculatedTorquePoint = {
-  id: string;
-  nominalTorque: number;
-  reading1: number;
-  reading2: number;
-  reading3: number;
-  average: number;
-  min: number;
-  max: number;
-  error: number;
-  errorPercent: number;
-  repeatabilityPercent: number;
-};
+type CalculatedTorquePoint = TorqueMassCalculatedPoint;
 
 type TorqueVerificationStarterProps = {
   verificationScope: VerificationScope;
@@ -118,30 +113,9 @@ type TorqueVerificationStarterProps = {
 };
 
 const defaultTorquePoints: EditableTorquePoint[] = [
-  {
-    id: "1",
-    nominalTorque: "",
-    reading1: "",
-    reading2: "",
-    reading3: "",
-    notes: "",
-  },
-  {
-    id: "2",
-    nominalTorque: "",
-    reading1: "",
-    reading2: "",
-    reading3: "",
-    notes: "",
-  },
-  {
-    id: "3",
-    nominalTorque: "",
-    reading1: "",
-    reading2: "",
-    reading3: "",
-    notes: "",
-  },
+  { id: "1", theoreticalMassKg: "", appliedMass1Kg: "", appliedMass2Kg: "", appliedMass3Kg: "", notes: "" },
+  { id: "2", theoreticalMassKg: "", appliedMass1Kg: "", appliedMass2Kg: "", appliedMass3Kg: "", notes: "" },
+  { id: "3", theoreticalMassKg: "", appliedMass1Kg: "", appliedMass2Kg: "", appliedMass3Kg: "", notes: "" },
 ];
 
 function todayInputDate() {
@@ -193,14 +167,6 @@ function normalizeEuropeanDecimalInput(value: string) {
   const result = integerPart + "," + decimalPart;
 
   return hasMinus ? "-" + result : result;
-}
-
-function numberToInputValue(value: number | null | undefined) {
-  if (value === null || value === undefined || !Number.isFinite(value)) {
-    return "";
-  }
-
-  return String(value).replace(".", ",");
 }
 
 function formatItalianNumber(value: number | null | undefined, digits = 4) {
@@ -401,12 +367,15 @@ function buildReferenceInstrumentSnapshot(instrument: ReferenceInstrument) {
   };
 }
 
-function buildProcedureSnapshot() {
+function buildProcedureSnapshot(armLengthM: number) {
   return {
-    code: "PROC_TORQUE",
-    name: "Procedura verifica chiavi dinamometriche / coppia",
-    revision: "0",
-    calculation_engine_version: "torque-v1",
+    code: "PTS13",
+    name: "Verifica chiavi dinamometriche mediante masse campione e braccio di leva",
+    revision: null,
+    calculation_engine_version: "torque-mass-v1",
+    gravity_acceleration_m_s2: STANDARD_GRAVITY_M_S2,
+    arm_length_m: armLengthM,
+    accuracy_limit_percent: TORQUE_ACCURACY_LIMIT_PERCENT,
   };
 }
 
@@ -437,14 +406,14 @@ function buildTorquePremiseText(scope: VerificationScope) {
 function buildTorqueScopeText(instrumentName: string) {
   return [
     "Scopo della verifica è valutare la risposta metrologica dello strumento di coppia mediante confronto con idoneo strumento campione.",
-    "La verifica è eseguita su punti di coppia prestabiliti, rilevando tre letture per ciascun punto e calcolando media, errore medio, errore di accuratezza percentuale e ripetibilità.",
+    "La verifica è eseguita applicando masse campione a distanza nota dal centro di rotazione. La coppia è determinata come massa × accelerazione di gravità × lunghezza del braccio.",
     "Strumento sottoposto a verifica: " + instrumentName + ".",
   ].join("\n");
 }
 
 function buildTorqueApparatusText(referenceName: string) {
   return [
-    "L'apparato di verifica è costituito dallo strumento campione indicato nella sezione tecnica del rapporto e dagli eventuali accessori necessari all'applicazione controllata della coppia.",
+    "L'apparato di verifica è costituito dalle masse campione indicate nella sezione tecnica del rapporto e dal braccio di leva utilizzato per l'applicazione della coppia.",
     "Lo strumento campione utilizzato risulta identificato mediante codice interno, matricola, certificato e relativa scadenza, come riportato nello snapshot tecnico della verifica.",
     "Strumento campione utilizzato: " + referenceName + ".",
   ].join("\n");
@@ -452,55 +421,37 @@ function buildTorqueApparatusText(referenceName: string) {
 
 function buildTorqueExecutionMethodText() {
   return [
-    "La verifica viene eseguita applicando i punti di coppia previsti e rilevando, per ciascun punto, tre letture consecutive dello strumento in prova.",
-    "Per ogni punto vengono determinati il valore massimo, il valore minimo, la media delle letture, l'errore medio, l'errore di accuratezza percentuale e l'errore di ripetibilità percentuale.",
-    "Le formule utilizzate sono riportate nella sezione di espressione dei risultati del presente rapporto.",
-    "La valutazione di conformità, ove richiesta, viene effettuata confrontando l'errore di accuratezza percentuale con la tolleranza impostata per il punto di verifica.",
+    "Per ciascun punto viene definita la massa teorica di riferimento. Il punto di verifica è calcolato come Massa teorica × g × L braccio.",
+    "Per ognuno dei tre cicli viene registrata la massa applicata e la corrispondente lettura di coppia è calcolata come Massa applicata × g × L braccio.",
+    "Scostamento = Media letture - Punto di verifica.",
+    "Errore accuratezza % = Scostamento / Punto di verifica × 100.",
+    "Errore ripetibilità % = (Lettura massima - Lettura minima) / Media letture × 100.",
+    "La verifica è conforme quando, per tutti i punti, il valore assoluto dell'errore di accuratezza è ≤ 3%.",
   ].join("\n");
 }
 
 function buildTorqueResultsText() {
   return [
     "I risultati della verifica sono riportati nella sezione tecnica integrante del presente rapporto.",
-    "Per ciascun punto di coppia sono indicati il valore applicato, le tre letture rilevate, la media, l'errore medio, l'errore di accuratezza percentuale e l'errore di ripetibilità percentuale.",
-    "L'eventuale esito di conformità è espresso sulla base dei limiti/tolleranze impostati in fase di inserimento delle misure.",
+    "Per ciascun punto sono riportati massa teorica di riferimento, masse applicate nei tre cicli, coppie calcolate, massimo, minimo, media, scostamento, errore di accuratezza percentuale ed errore di ripetibilità percentuale.",
+    "Il criterio di conformità applicato è |Errore accuratezza| ≤ 3% su tutti i punti di verifica.",
   ].join("\n");
 }
 
-function calculateTorquePoint(point: EditableTorquePoint): CalculatedTorquePoint {
-  const nominalTorque = toNumber(point.nominalTorque);
-  const reading1 = toNumber(point.reading1);
-  const reading2 = toNumber(point.reading2);
-  const reading3 = toNumber(point.reading3);
-  const values = [reading1, reading2, reading3];
-
-  const average =
-    values.length > 0
-      ? values.reduce((sum, value) => sum + value, 0) / values.length
-      : 0;
-
-  const min = Math.min(...values);
-  const max = Math.max(...values);
-
-  const error = nominalTorque - average;
-  const errorPercent =
-    nominalTorque !== 0 ? (error / nominalTorque) * 100 : 0;
-  const repeatabilityPercent =
-    average !== 0 ? ((max - min) / average) * 100 : 0;
-
-  return {
-    id: point.id,
-    nominalTorque,
-    reading1,
-    reading2,
-    reading3,
-    average,
-    min,
-    max,
-    error,
-    errorPercent,
-    repeatabilityPercent,
-  };
+function calculateTorquePoint(
+  point: EditableTorquePoint,
+  armLengthM: number
+): CalculatedTorquePoint {
+  return calculateTorqueMassPoint(
+    {
+      id: point.id,
+      theoreticalMassKg: toNumber(point.theoreticalMassKg),
+      appliedMass1Kg: toNumber(point.appliedMass1Kg),
+      appliedMass2Kg: toNumber(point.appliedMass2Kg),
+      appliedMass3Kg: toNumber(point.appliedMass3Kg),
+    },
+    armLengthM
+  );
 }
 
 
@@ -555,6 +506,7 @@ export default function TorqueVerificationStarter({
 
   const [scaleName, setScaleName] = useState("Scala coppia");
   const [scaleRange, setScaleRange] = useState("");
+  const [armLength, setArmLength] = useState("1");
   const [scaleNotes, setScaleNotes] = useState("");
   const [points, setPoints] =
     useState<EditableTorquePoint[]>(defaultTorquePoints);
@@ -651,7 +603,7 @@ export default function TorqueVerificationStarter({
   }, [internalInstruments]);
 
   const availableReferenceInstruments = useMemo(() => {
-    const torqueOnly = referenceInstruments.filter((instrument) => {
+    const massOnly = referenceInstruments.filter((instrument) => {
       const text = [
         instrument.name,
         instrument.measurement_quantity,
@@ -663,15 +615,16 @@ export default function TorqueVerificationStarter({
         .toLowerCase();
 
       return (
-        text.includes("coppia") ||
-        text.includes("torque") ||
-        text.includes("nm") ||
-        text.includes("n·m") ||
-        text.includes("dinamometr")
+        text.includes("massa") ||
+        text.includes("mass") ||
+        text.includes("pesiera") ||
+        text.includes("peso") ||
+        text.includes("kg") ||
+        text.includes("gram")
       );
     });
 
-    return torqueOnly.length > 0 ? torqueOnly : referenceInstruments;
+    return massOnly.length > 0 ? massOnly : referenceInstruments;
   }, [referenceInstruments]);
 
   const selectedReferenceInstruments = useMemo(() => {
@@ -679,14 +632,6 @@ export default function TorqueVerificationStarter({
       selectedReferenceInstrumentIds.includes(instrument.id)
     );
   }, [referenceInstruments, selectedReferenceInstrumentIds]);
-
-  const torqueUnit = canonicalMeasurementUnit(
-    selectedCustomerInstrument?.unit ||
-    selectedInternalInstrument?.unit ||
-    selectedReferenceInstruments[0]?.unit ||
-    "N·m"
-  );
-  const torqueUnitLabel = torqueUnit ? " (" + torqueUnit + ")" : "";
 
   const hasBlockedReferenceInstrument = selectedReferenceInstruments.some(
     (instrument) =>
@@ -698,40 +643,17 @@ export default function TorqueVerificationStarter({
       )
   );
 
+  const armLengthM = toNumber(armLength);
   const calculatedPoints = useMemo(() => {
-    return points.map(calculateTorquePoint);
-  }, [points]);
+    return points.map((point) => calculateTorquePoint(point, armLengthM));
+  }, [points, armLengthM]);
+  const overallResult = useMemo(
+    () => overallTorqueResult(calculatedPoints),
+    [calculatedPoints]
+  );
 
   
-  function handleCycleTab(
-    event: KeyboardEvent<HTMLInputElement>,
-    field: string
-  ) {
-    if (event.key !== "Tab" || event.shiftKey) {
-      return;
-    }
-
-    const currentInput = event.currentTarget;
-    const currentRow = currentInput.closest("tr");
-    let nextRow = currentRow?.nextElementSibling;
-
-    while (nextRow) {
-      const nextInput = nextRow.querySelector<HTMLInputElement>(
-        'input[data-cycle-field="' + field + '"]'
-      );
-
-      if (nextInput) {
-        event.preventDefault();
-        nextInput.focus();
-        nextInput.select();
-        return;
-      }
-
-      nextRow = nextRow.nextElementSibling;
-    }
-  }
-
-function resetSaveState() {
+  function resetSaveState() {
     setSavedRecordId(null);
     setSavedRecordNumber(null);
     setSaveMessage("");
@@ -816,18 +738,15 @@ function resetSaveState() {
     resetSaveState();
 
     setPoints((currentPoints) => {
-      const lastPoint = currentPoints[currentPoints.length - 1];
-      const nextNominalValue = "";
-
       return [
         ...currentPoints,
         {
           id: crypto.randomUUID(),
-          nominalTorque: "",
-          reading1: "",
-          reading2: "",
-          reading3: "",
-                notes: "",
+          theoreticalMassKg: "",
+          appliedMass1Kg: "",
+          appliedMass2Kg: "",
+          appliedMass3Kg: "",
+          notes: "",
         },
       ];
     });
@@ -888,22 +807,26 @@ function resetSaveState() {
       throw new Error("Inserisci il nome della scala.");
     }
 
+    if (armLength.trim() === "" || armLengthM <= 0) {
+      throw new Error("Inserisci una lunghezza del braccio maggiore di zero.");
+    }
+
     if (points.length === 0) {
       throw new Error("Inserisci almeno un punto di coppia.");
     }
 
     const invalidPoint = points.find((point) => {
       return (
-        point.nominalTorque.trim() === "" ||
-        point.reading1.trim() === "" ||
-        point.reading2.trim() === "" ||
-        point.reading3.trim() === ""
+        point.theoreticalMassKg.trim() === "" ||
+        point.appliedMass1Kg.trim() === "" ||
+        point.appliedMass2Kg.trim() === "" ||
+        point.appliedMass3Kg.trim() === ""
       );
     });
 
     if (invalidPoint) {
       throw new Error(
-        "Compila coppia nominale e le tre letture per tutti i punti."
+        "Compila massa teorica di riferimento e le tre masse applicate per tutti i punti."
       );
     }
   }
@@ -954,7 +877,7 @@ function resetSaveState() {
       const primaryReference = selectedReferenceInstruments[0];
       const primaryReferenceSnapshot = referenceSnapshots[0];
 
-      const procedureSnapshot = buildProcedureSnapshot();
+      const procedureSnapshot = buildProcedureSnapshot(armLengthM);
 
       const { data: calibrationType } = await supabase
         .from("calibration_types")
@@ -990,7 +913,7 @@ function resetSaveState() {
               : null,
           status: "draft",
           report_status: "draft",
-          final_result: null,
+          final_result: overallResult,
           notes: notes.trim() || null,
           customer_instrument_id: isInternalVerification
             ? null
@@ -1098,19 +1021,25 @@ function resetSaveState() {
           scale_id: insertedScale.id,
           section: scaleName.trim(),
           point_order: pointIndex + 1,
-          nominal_value: point.nominalTorque,
-          applied_value: point.nominalTorque,
-          cycle_1: point.reading1,
-          cycle_2: point.reading2,
-          cycle_3: point.reading3,
-          max_value: point.max,
-          min_value: point.min,
-          average_value: point.average,
-          mean_error: point.error,
-          accuracy_error_percent: point.errorPercent,
-          repeatability_error_percent: point.repeatabilityPercent,
-          result: null,
-          notes: editablePoint.notes.trim() || null,
+          nominal_value: point.nominalTorqueNm,
+          applied_value: point.nominalTorqueNm,
+          cycle_1: point.reading1Nm,
+          cycle_2: point.reading2Nm,
+          cycle_3: point.reading3Nm,
+          max_value: point.maxNm,
+          min_value: point.minNm,
+          average_value: point.averageNm,
+          mean_error: point.meanErrorNm,
+          accuracy_error_percent: point.accuracyErrorPercent,
+          repeatability_error_percent: point.repeatabilityErrorPercent,
+          result: point.result,
+          notes: serializeTorqueMeasurementMetadata({
+            theoreticalMassKg: point.theoreticalMassKg,
+            appliedMass1Kg: point.appliedMass1Kg,
+            appliedMass2Kg: point.appliedMass2Kg,
+            appliedMass3Kg: point.appliedMass3Kg,
+            userNotes: editablePoint.notes.trim() || null,
+          }),
         };
       });
 
@@ -1633,12 +1562,31 @@ function resetSaveState() {
             />
           </label>
 
+          <div className="rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm">
+            <span className="font-medium text-slate-700">g (m/s²)</span>
+            <p className="mt-1 font-semibold text-slate-950">{STANDARD_GRAVITY_M_S2}</p>
+          </div>
+
+          <label className="space-y-1">
+            <span className="text-sm font-medium text-slate-700">L braccio (m) *</span>
+            <input
+              value={armLength}
+              onChange={(event) => {
+                setArmLength(normalizeEuropeanDecimalInput(event.target.value));
+                resetSaveState();
+              }}
+              inputMode="decimal"
+              placeholder="1,00"
+              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
+            />
+          </label>
+
           <div className="lg:col-span-2">
             <ReferenceInstrumentMultiSelect
               instruments={availableReferenceInstruments}
               selectedIds={selectedReferenceInstrumentIds}
               onToggle={toggleReferenceInstrument}
-              label="Strumenti campione usati *"
+              label="Masse / strumenti campione usati *"
             />
           </div>
         </div>
@@ -1732,139 +1680,65 @@ function resetSaveState() {
                 Misure dinamometriche
               </h2>
               <p className="text-sm text-slate-500">
-                Inserisci direttamente i punti di coppia e le tre letture
-                ripetute. I calcoli vengono aggiornati in tempo reale.
+                Inserisci le masse teoriche e le masse applicate nei tre cicli. La coppia e gli errori vengono calcolati automaticamente.
               </p>
             </div>
           </div>
         </div>
 
+        <div className="mb-4 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-700">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div><span className="font-semibold">Formula:</span> coppia = massa × g × L braccio.</div>
+            <div><span className="font-semibold">Criterio:</span> |Errore accuratezza| ≤ {TORQUE_ACCURACY_LIMIT_PERCENT}%</div>
+            <div className="font-semibold">Esito complessivo: {overallResult || "-"}</div>
+          </div>
+        </div>
+
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[1160px] text-sm">
+          <table className="w-full min-w-[1900px] text-sm">
             <thead className="bg-slate-50 text-left text-xs tracking-wide text-slate-500">
               <tr>
-                <th className="px-4 py-3">Punto</th>
-                <th className="px-4 py-3">Punto di applicazione{torqueUnitLabel}</th>
-                <th className="bg-amber-100 px-4 py-3 text-amber-900">
-                  Ciclo 1{torqueUnitLabel}
-                </th>
-                <th className="bg-amber-100 px-4 py-3 text-amber-900">
-                  Ciclo 2{torqueUnitLabel}
-                </th>
-                <th className="bg-amber-100 px-4 py-3 text-amber-900">
-                  Ciclo 3{torqueUnitLabel}
-                </th>
-                <th className="px-4 py-3">Max{torqueUnitLabel}</th>
-                <th className="px-4 py-3">Min{torqueUnitLabel}</th>
-                <th className="px-4 py-3">Media{torqueUnitLabel}</th>
-                <th className="px-4 py-3">Errore medio{torqueUnitLabel}</th>
-                <th className="px-4 py-3">Errore acc. %</th>
-                <th className="px-4 py-3">Ripetibilità %</th>
-                <th className="px-4 py-3"></th>
+                <th className="px-3 py-3">Punto</th>
+                <th className="px-3 py-3">Punto verifica (N·m)</th>
+                <th className="bg-slate-100 px-3 py-3">Massa teorica rif. (kg)</th>
+                <th className="bg-amber-100 px-3 py-3 text-amber-900">Massa applicata I (kg)</th>
+                <th className="px-3 py-3">Lettura I (N·m)</th>
+                <th className="bg-amber-100 px-3 py-3 text-amber-900">Massa applicata II (kg)</th>
+                <th className="px-3 py-3">Lettura II (N·m)</th>
+                <th className="bg-amber-100 px-3 py-3 text-amber-900">Massa applicata III (kg)</th>
+                <th className="px-3 py-3">Lettura III (N·m)</th>
+                <th className="px-3 py-3">Max (N·m)</th>
+                <th className="px-3 py-3">Min (N·m)</th>
+                <th className="px-3 py-3">Media (N·m)</th>
+                <th className="px-3 py-3">Scostamento (N·m)</th>
+                <th className="px-3 py-3">Errore accuratezza %</th>
+                <th className="px-3 py-3">Errore ripetibilità %</th>
+                <th className="px-3 py-3">Esito</th>
+                <th className="px-3 py-3"></th>
               </tr>
             </thead>
-
             <tbody className="divide-y divide-slate-100">
               {calculatedPoints.map((point, pointIndex) => {
                 const editablePoint = points[pointIndex];
-
                 return (
                   <tr key={point.id} className="hover:bg-slate-50">
-                    <td className="px-4 py-3 font-medium text-slate-700">
-                      {pointIndex + 1}
-                    </td>
-
-                    <td className="px-4 py-3">
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={editablePoint?.nominalTorque ?? ""}
-                        onChange={(event) =>
-                          updatePoint(
-                            point.id,
-                            "nominalTorque",
-                            event.target.value
-                          )
-                        }
-                        className="w-28 rounded-lg border border-slate-300 px-2 py-1"
-                      />
-                    </td>
-
-                    <td className="bg-white px-4 py-3">
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={editablePoint?.reading1 ?? ""}
-                        data-cycle-field="reading1"
-                        onKeyDown={(event) => handleCycleTab(event, "reading1")}
-                        onChange={(event) =>
-                          updatePoint(point.id, "reading1", event.target.value)
-                        }
-                        className="w-24 rounded-lg border border-amber-300 bg-white px-2 py-1 font-semibold text-amber-950 focus:border-amber-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-200"
-                      />
-                    </td>
-
-                    <td className="bg-slate-50 px-4 py-3">
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={editablePoint?.reading2 ?? ""}
-                        data-cycle-field="reading2"
-                        onKeyDown={(event) => handleCycleTab(event, "reading2")}
-                        onChange={(event) =>
-                          updatePoint(point.id, "reading2", event.target.value)
-                        }
-                        className="w-24 rounded-lg border border-amber-300 bg-slate-50 px-2 py-1 font-semibold text-amber-950 focus:border-amber-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-200"
-                      />
-                    </td>
-
-                    <td className="bg-white px-4 py-3">
-                      <input
-                        type="text"
-                        inputMode="decimal"
-                        value={editablePoint?.reading3 ?? ""}
-                        data-cycle-field="reading3"
-                        onKeyDown={(event) => handleCycleTab(event, "reading3")}
-                        onChange={(event) =>
-                          updatePoint(point.id, "reading3", event.target.value)
-                        }
-                        className="w-24 rounded-lg border border-amber-300 bg-white px-2 py-1 font-semibold text-amber-950 focus:border-amber-500 focus:bg-white focus:outline-none focus:ring-2 focus:ring-amber-200"
-                      />
-                    </td>
-
-                    <td className="px-4 py-3">
-                      {formatItalianNumber(point.max)}
-                    </td>
-
-                    <td className="px-4 py-3">
-                      {formatItalianNumber(point.min)}
-                    </td>
-
-                    <td className="px-4 py-3 font-medium text-slate-900">
-                      {formatItalianNumber(point.average)}
-                    </td>
-
-                    <td className="px-4 py-3">
-                      {formatItalianNumber(point.error)}
-                    </td>
-
-                    <td className="px-4 py-3">
-                      {formatItalianNumber(point.errorPercent)}
-                    </td>
-
-                    <td className="px-4 py-3">
-                      {formatItalianNumber(point.repeatabilityPercent)}
-                    </td>
-
-                    <td className="px-4 py-3">
-                      <button
-                        type="button"
-                        onClick={() => removePoint(point.id)}
-                        className="rounded-lg px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50"
-                      >
-                        Elimina
-                      </button>
-                    </td>
+                    <td className="px-3 py-3 font-medium">{pointIndex + 1}</td>
+                    <td className="px-3 py-3 font-semibold">{formatItalianNumber(point.nominalTorqueNm, 3)}</td>
+                    <td className="bg-slate-50 px-3 py-3"><input type="text" inputMode="decimal" value={editablePoint?.theoreticalMassKg ?? ""} onChange={(event) => updatePoint(point.id, "theoreticalMassKg", event.target.value)} className="w-24 rounded-lg border border-slate-300 px-2 py-1" /></td>
+                    <td className="bg-amber-50 px-3 py-3"><input type="text" inputMode="decimal" value={editablePoint?.appliedMass1Kg ?? ""} onChange={(event) => updatePoint(point.id, "appliedMass1Kg", event.target.value)} className="w-24 rounded-lg border border-amber-300 bg-white px-2 py-1 font-semibold" /></td>
+                    <td className="px-3 py-3">{formatItalianNumber(point.reading1Nm, 3)}</td>
+                    <td className="bg-amber-50 px-3 py-3"><input type="text" inputMode="decimal" value={editablePoint?.appliedMass2Kg ?? ""} onChange={(event) => updatePoint(point.id, "appliedMass2Kg", event.target.value)} className="w-24 rounded-lg border border-amber-300 bg-white px-2 py-1 font-semibold" /></td>
+                    <td className="px-3 py-3">{formatItalianNumber(point.reading2Nm, 3)}</td>
+                    <td className="bg-amber-50 px-3 py-3"><input type="text" inputMode="decimal" value={editablePoint?.appliedMass3Kg ?? ""} onChange={(event) => updatePoint(point.id, "appliedMass3Kg", event.target.value)} className="w-24 rounded-lg border border-amber-300 bg-white px-2 py-1 font-semibold" /></td>
+                    <td className="px-3 py-3">{formatItalianNumber(point.reading3Nm, 3)}</td>
+                    <td className="px-3 py-3">{formatItalianNumber(point.maxNm, 3)}</td>
+                    <td className="px-3 py-3">{formatItalianNumber(point.minNm, 3)}</td>
+                    <td className="px-3 py-3 font-semibold">{formatItalianNumber(point.averageNm, 3)}</td>
+                    <td className="px-3 py-3">{formatItalianNumber(point.meanErrorNm, 3)}</td>
+                    <td className="px-3 py-3">{formatItalianNumber(point.accuracyErrorPercent, 3)}</td>
+                    <td className="px-3 py-3">{formatItalianNumber(point.repeatabilityErrorPercent, 3)}</td>
+                    <td className="px-3 py-3"><span className={point.result === "CONFORME" ? "rounded-full bg-emerald-100 px-2 py-1 text-xs font-semibold text-emerald-800" : "rounded-full bg-red-100 px-2 py-1 text-xs font-semibold text-red-800"}>{point.result || "-"}</span></td>
+                    <td className="px-3 py-3"><button type="button" onClick={() => removePoint(point.id)} className="rounded-lg px-3 py-1 text-xs font-semibold text-red-600 hover:bg-red-50">Elimina</button></td>
                   </tr>
                 );
               })}
@@ -1873,29 +1747,11 @@ function resetSaveState() {
         </div>
 
         <div className="border-t border-slate-200 bg-slate-50 px-5 py-4">
-          <div className="flex justify-end">
-            <button
-              type="button"
-              onClick={addPoint}
-              className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700"
-            >
-              Aggiungi punto
-            </button>
-          </div>
+          <div className="flex justify-end"><button type="button" onClick={addPoint} className="rounded-xl bg-slate-900 px-4 py-2 text-sm font-semibold text-white hover:bg-slate-700">Aggiungi punto</button></div>
         </div>
 
         <div className="border-t border-slate-200 p-5">
-          <SimpleAccuracyChart
-            title="Grafico errore accuratezza %"
-            lineColor="#d97706"
-            points={calculatedPoints.map((point, index) => ({
-              label:
-                point.nominalTorque !== 0
-                  ? formatItalianNumber(point.nominalTorque, 2)
-                  : "Punto " + String(index + 1),
-              value: point.errorPercent,
-            }))}
-          />
+          <SimpleAccuracyChart title="Grafico errore accuratezza %" lineColor="#d97706" points={calculatedPoints.map((point, index) => ({ label: point.nominalTorqueNm !== 0 ? formatItalianNumber(point.nominalTorqueNm, 2) : "Punto " + String(index + 1), value: point.accuracyErrorPercent ?? 0 }))} />
         </div>
       </section>
 
@@ -1958,10 +1814,10 @@ function resetSaveState() {
       )}
 
       <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
-        <strong>Nota tecnica:</strong> le formule dinamometriche sono allineate
-        al criterio già usato: errore medio = forza applicata - media cicli;
-        errore accuratezza % = errore / forza applicata × 100; ripetibilità % =
-        (max - min) / media cicli × 100.
+        <strong>Nota tecnica:</strong> calcolo secondo PTS13: punto di verifica = massa teorica × g × L;
+        lettura di ciascun ciclo = massa applicata × g × L; scostamento = media - punto di verifica;
+        errore accuratezza % = scostamento / punto di verifica × 100; ripetibilità % =
+        (max - min) / media × 100. Conformità: |errore accuratezza| ≤ 3%.
       </div>
     </div>
   );

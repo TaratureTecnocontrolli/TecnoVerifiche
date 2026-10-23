@@ -6,6 +6,13 @@ import InternalReportSignaturesForm, { InternalReportSignaturePreview } from "@/
 import InternalReportNumberForm from "@/components/InternalReportNumberForm";
 import TemperatureErrorChart, { type TemperatureErrorMeasurement } from "@/components/TemperatureErrorChart";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
+import {
+  calculateTorqueMetricsFromReadings,
+  massKgFromTorque,
+  parseTorqueMeasurementMetadata,
+  readTorqueProcedureSettings,
+  TORQUE_ACCURACY_LIMIT_PERCENT,
+} from "@/lib/torque-calculations";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -192,6 +199,10 @@ function modeLabel(record: CalibrationRecord) {
 
 function isJack(record: CalibrationRecord) {
   return record.verification_module === "JACK";
+}
+
+function isTorque(record: CalibrationRecord) {
+  return record.verification_module === "TORQUE" || record.mode === "dinamometria";
 }
 
 function isPressure(record: CalibrationRecord) {
@@ -590,6 +601,76 @@ function JackMeasurementsTable({
   );
 }
 
+function TorqueMeasurementsTable({
+  record,
+  measurements,
+}: {
+  record: CalibrationRecord;
+  measurements: CalibrationMeasurement[];
+}) {
+  const settings = readTorqueProcedureSettings(record.procedure_snapshot);
+
+  return (
+    <table className="w-full border-collapse bg-white/35 text-center text-[5.8px]">
+      <thead>
+        <tr className="bg-slate-700/65 text-slate-950">
+          <th className="border border-slate-600 px-0.5 py-[1px]">Punto verifica (N·m)</th>
+          <th className="border border-slate-600 px-0.5 py-[1px]">Massa teorica (kg)</th>
+          <th className="border border-slate-600 px-0.5 py-[1px]">Massa I (kg)</th>
+          <th className="border border-slate-600 px-0.5 py-[1px]">Lettura I (N·m)</th>
+          <th className="border border-slate-600 px-0.5 py-[1px]">Massa II (kg)</th>
+          <th className="border border-slate-600 px-0.5 py-[1px]">Lettura II (N·m)</th>
+          <th className="border border-slate-600 px-0.5 py-[1px]">Massa III (kg)</th>
+          <th className="border border-slate-600 px-0.5 py-[1px]">Lettura III (N·m)</th>
+          <th className="border border-slate-600 px-0.5 py-[1px]">Max</th>
+          <th className="border border-slate-600 px-0.5 py-[1px]">Min</th>
+          <th className="border border-slate-600 px-0.5 py-[1px]">Media</th>
+          <th className="border border-slate-600 px-0.5 py-[1px]">Scost.</th>
+          <th className="border border-slate-600 px-0.5 py-[1px]">Acc. %</th>
+          <th className="border border-slate-600 px-0.5 py-[1px]">Ripet. %</th>
+        </tr>
+      </thead>
+      <tbody>
+        {measurements.map((measurement, index) => {
+          const metadata = parseTorqueMeasurementMetadata(measurement.notes);
+          const nominalTorque = measurement.nominal_value ?? measurement.applied_value ?? 0;
+          const reading1 = measurement.cycle_1 ?? 0;
+          const reading2 = measurement.cycle_2 ?? 0;
+          const reading3 = measurement.cycle_3 ?? 0;
+          const metrics = calculateTorqueMetricsFromReadings(
+            nominalTorque,
+            reading1,
+            reading2,
+            reading3
+          );
+          const theoreticalMass = metadata?.theoreticalMassKg ?? massKgFromTorque(nominalTorque, settings.armLengthM, settings.gravityM_s2);
+          const mass1 = metadata?.appliedMass1Kg ?? massKgFromTorque(reading1, settings.armLengthM, settings.gravityM_s2);
+          const mass2 = metadata?.appliedMass2Kg ?? massKgFromTorque(reading2, settings.armLengthM, settings.gravityM_s2);
+          const mass3 = metadata?.appliedMass3Kg ?? massKgFromTorque(reading3, settings.armLengthM, settings.gravityM_s2);
+          return (
+            <tr key={measurement.id} className={index % 2 === 0 ? "bg-white/65" : "bg-slate-100/55"}>
+              <td className="border border-slate-300 px-0.5 py-[1px]">{formatNumber(nominalTorque)}</td>
+              <td className="border border-slate-300 px-0.5 py-[1px]">{formatNumber(theoreticalMass, 3)}</td>
+              <td className="border border-slate-300 px-0.5 py-[1px]">{formatNumber(mass1, 3)}</td>
+              <td className="border border-slate-300 px-0.5 py-[1px]">{formatNumber(reading1)}</td>
+              <td className="border border-slate-300 px-0.5 py-[1px]">{formatNumber(mass2, 3)}</td>
+              <td className="border border-slate-300 px-0.5 py-[1px]">{formatNumber(reading2)}</td>
+              <td className="border border-slate-300 px-0.5 py-[1px]">{formatNumber(mass3, 3)}</td>
+              <td className="border border-slate-300 px-0.5 py-[1px]">{formatNumber(reading3)}</td>
+              <td className="border border-slate-300 px-0.5 py-[1px]">{formatNumber(metrics.maxNm)}</td>
+              <td className="border border-slate-300 px-0.5 py-[1px]">{formatNumber(metrics.minNm)}</td>
+              <td className="border border-slate-300 px-0.5 py-[1px] font-bold">{formatNumber(metrics.averageNm)}</td>
+              <td className="border border-slate-300 px-0.5 py-[1px]">{formatNumber(metrics.meanErrorNm)}</td>
+              <td className="border border-slate-300 px-0.5 py-[1px]">{formatNumber(metrics.accuracyErrorPercent)}</td>
+              <td className="border border-slate-300 px-0.5 py-[1px]">{formatNumber(metrics.repeatabilityErrorPercent)}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
 function GenericMeasurementsTable({
   record,
   scale,
@@ -812,6 +893,23 @@ function ScaleCompactBlock({
   const jackAverageCoefficient = isJack(record)
     ? averageJackConversionCoefficient(measurements)
     : null;
+  const torqueSettings = isTorque(record)
+    ? readTorqueProcedureSettings(record.procedure_snapshot)
+    : null;
+  const torqueResult = isTorque(record)
+    ? (() => {
+        const results = measurements.map((measurement) =>
+          calculateTorqueMetricsFromReadings(
+            measurement.nominal_value ?? measurement.applied_value ?? 0,
+            measurement.cycle_1 ?? 0,
+            measurement.cycle_2 ?? 0,
+            measurement.cycle_3 ?? 0
+          ).result
+        );
+        if (results.length === 0 || results.some((result) => result === null)) return "-";
+        return results.every((result) => result === "CONFORME") ? "CONFORME" : "NON CONFORME";
+      })()
+    : null;
 
   return (
     <div className="mt-2 break-inside-avoid">
@@ -845,6 +943,18 @@ function ScaleCompactBlock({
               <DataCell label="Unità conversione" value="kN/bar" />
             </tr>
           )}
+          {isTorque(record) && torqueSettings && (
+            <>
+              <tr>
+                <DataCell label="g" value={formatNumber(torqueSettings.gravityM_s2, 5) + " m/s²"} />
+                <DataCell label="L braccio" value={formatNumber(torqueSettings.armLengthM, 3) + " m"} />
+              </tr>
+              <tr>
+                <DataCell label="Criterio conformità" value={"|Errore accuratezza| ≤ " + TORQUE_ACCURACY_LIMIT_PERCENT + "%"} />
+                <DataCell label="Esito" value={torqueResult} />
+              </tr>
+            </>
+          )}
         </tbody>
       </table>
 
@@ -857,6 +967,8 @@ function ScaleCompactBlock({
           </div>
         ) : isJack(record) ? (
           <JackMeasurementsTable measurements={measurements} />
+        ) : isTorque(record) ? (
+          <TorqueMeasurementsTable record={record} measurements={measurements} />
         ) : isSclerometric(record) ? (
           <SclerometricTable measurements={measurements} />
         ) : isTemperatureInstrumentCalibration(record) ? (

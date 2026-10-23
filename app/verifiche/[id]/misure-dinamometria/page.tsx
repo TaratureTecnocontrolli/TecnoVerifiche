@@ -26,6 +26,7 @@ type CalibrationRecord = {
   verified_instrument_type: string | null;
   output_type: string | null;
   report_status: string | null;
+  procedure_snapshot: Record<string, unknown> | null;
 };
 
 export default async function EditTorqueMeasurementsPage({ params }: PageProps) {
@@ -33,7 +34,7 @@ export default async function EditTorqueMeasurementsPage({ params }: PageProps) 
 
   const { data: recordData, error: recordError } = await supabase
     .from("calibration_records")
-    .select("id, record_number, verification_date, mode, verification_module, verification_scope, verified_instrument_type, output_type, report_status")
+    .select("id, record_number, verification_date, mode, verification_module, verification_scope, verified_instrument_type, output_type, report_status, procedure_snapshot")
     .eq("id", id)
     .single();
 
@@ -100,8 +101,8 @@ export default async function EditTorqueMeasurementsPage({ params }: PageProps) 
             </h1>
 
             <p className="mt-2 max-w-3xl text-slate-600">
-              Inserisci i punti di coppia, le tre letture ripetute e controlla
-              errore, errore percentuale e ripetibilità.
+              Inserisci masse teoriche e masse applicate nei tre cicli; coppia,
+              scostamento, accuratezza e ripetibilità vengono calcolati automaticamente.
             </p>
           </div>
 
@@ -142,6 +143,7 @@ export default async function EditTorqueMeasurementsPage({ params }: PageProps) 
           recordNumber={record.record_number}
           reportStatus={record.report_status}
           initialVerificationDate={record.verification_date}
+          procedureSnapshot={record.procedure_snapshot}
           initialScales={scalesData ?? []}
           initialMeasurements={measurementsData ?? []}
           referenceInstruments={referenceInstrumentsData ?? []}

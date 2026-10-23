@@ -9,6 +9,13 @@ import ReportStatusActions from "@/components/ReportStatusActions";
 import AutoPaginatedReport from "@/components/AutoPaginatedReport";
 import { hasValidChartMeasurements, type MeasurementLike } from "@/lib/chart-utils";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
+import {
+  calculateTorqueMetricsFromReadings,
+  massKgFromTorque,
+  parseTorqueMeasurementMetadata,
+  readTorqueProcedureSettings,
+  TORQUE_ACCURACY_LIMIT_PERCENT,
+} from "@/lib/torque-calculations";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -447,6 +454,13 @@ function isJack(record: GenericRecord) {
   return String(record.verification_module ?? "").toUpperCase() === "JACK";
 }
 
+function isTorque(record: GenericRecord) {
+  return (
+    String(record.verification_module ?? "").toUpperCase() === "TORQUE" ||
+    String(record.mode ?? "").toLowerCase() === "dinamometria"
+  );
+}
+
 function isForceCompressionTrazione(record: GenericRecord) {
   const module = String(record.verification_module ?? "").toUpperCase();
   const mode = String(record.mode ?? "").toLowerCase();
@@ -836,6 +850,8 @@ function CoverPage({
   totalPages: number;
 }) {
   const customerNumber =
+    customerMaster.customer_number ??
+    customerMaster.customer_code ??
     details.customer_number ??
     customerSnapshot.customer_number ??
     customerSnapshot.customer_code ??
@@ -1082,10 +1098,19 @@ function ExecutionTextPage({
   totalPages: number;
 }) {
   const isForceReport = isForceCompressionTrazione(record);
+  const isTorqueReportForText =
+    record.verification_module === "TORQUE" || record.mode === "dinamometria";
 
   const executionMethodParagraphs = isForceReport
     ? forceExecutionMethodText()
-    : splitText(details.execution_method);
+    : isTorqueReportForText
+      ? [
+          "Per ciascun punto viene definita la massa teorica di riferimento e il punto di verifica è calcolato come Massa teorica × g × L braccio.",
+          "Per ognuno dei tre cicli viene registrata la massa applicata; la relativa coppia è calcolata come Massa applicata × g × L braccio.",
+          "Sono quindi determinati massimo, minimo, media, scostamento, errore di accuratezza percentuale ed errore di ripetibilità percentuale.",
+          "La verifica è conforme quando |Errore accuratezza| ≤ 3% per tutti i punti.",
+        ]
+      : splitText(details.execution_method);
 
   const isPressure =
     record.verification_module === "PRESSURE" || record.mode === "pressione";
@@ -1133,10 +1158,12 @@ function ExecutionTextPage({
 
   if (isTorque) {
     formulaText = [
-      "La verifica viene eseguita applicando i punti di coppia previsti e rilevando tre letture consecutive dello strumento in prova.",
-      "Errore medio = Coppia applicata - Media letture.",
-      "Errore accuratezza % = [(Coppia applicata - Media letture) / Coppia applicata] × 100.",
-      "Errore ripetibilità % = [(Lettura massima - Lettura minima) / Media letture] × 100.",
+      "Punto di verifica = Massa teorica di riferimento × g × L braccio.",
+      "Lettura di ciascun ciclo = Massa applicata × g × L braccio.",
+      "Scostamento = Media letture - Punto di verifica.",
+      "Errore accuratezza % = Scostamento / Punto di verifica × 100.",
+      "Errore ripetibilità % = (Lettura massima - Lettura minima) / Media letture × 100.",
+      "Criterio di conformità: |Errore accuratezza| ≤ 3% per tutti i punti di verifica.",
     ];
   }
 
@@ -1606,10 +1633,12 @@ function FormulaPage({
 
   if (isTorque) {
     formulaText = [
-      "La verifica viene eseguita applicando i punti di coppia previsti e rilevando tre letture consecutive dello strumento in prova.",
-      "Errore medio = Coppia applicata - Media letture.",
-      "Errore accuratezza % = [(Coppia applicata - Media letture) / Coppia applicata] × 100.",
-      "Errore ripetibilità % = [(Lettura massima - Lettura minima) / Media letture] × 100.",
+      "Punto di verifica = Massa teorica di riferimento × g × L braccio.",
+      "Lettura di ciascun ciclo = Massa applicata × g × L braccio.",
+      "Scostamento = Media letture - Punto di verifica.",
+      "Errore accuratezza % = Scostamento / Punto di verifica × 100.",
+      "Errore ripetibilità % = (Lettura massima - Lettura minima) / Media letture × 100.",
+      "Criterio di conformità: |Errore accuratezza| ≤ 3% per tutti i punti di verifica.",
     ];
   }
 
@@ -1884,6 +1913,73 @@ function JackMeasurementsTable({
             <td className="border border-slate-400 px-1 py-1">kN/bar</td>
           </tr>
         )}
+      </tbody>
+    </table>
+  );
+}
+
+function TorqueMeasurementsTable({
+  record,
+  measurements,
+}: {
+  record: GenericRecord;
+  measurements: GenericRecord[];
+}) {
+  const settings = readTorqueProcedureSettings(record.procedure_snapshot);
+
+  return (
+    <table className="w-full border-collapse bg-white/35 text-center text-[7px]">
+      <thead>
+        <tr className="bg-slate-700/65 text-slate-950">
+          <th className="border border-slate-600 px-0.5 py-0.5">Punto verifica (N·m)</th>
+          <th className="border border-slate-600 px-0.5 py-0.5">Massa teorica (kg)</th>
+          <th className="border border-slate-600 px-0.5 py-0.5">Massa I (kg)</th>
+          <th className="border border-slate-600 px-0.5 py-0.5">Lettura I (N·m)</th>
+          <th className="border border-slate-600 px-0.5 py-0.5">Massa II (kg)</th>
+          <th className="border border-slate-600 px-0.5 py-0.5">Lettura II (N·m)</th>
+          <th className="border border-slate-600 px-0.5 py-0.5">Massa III (kg)</th>
+          <th className="border border-slate-600 px-0.5 py-0.5">Lettura III (N·m)</th>
+          <th className="border border-slate-600 px-0.5 py-0.5">Max</th>
+          <th className="border border-slate-600 px-0.5 py-0.5">Min</th>
+          <th className="border border-slate-600 px-0.5 py-0.5">Media</th>
+          <th className="border border-slate-600 px-0.5 py-0.5">Scost.</th>
+          <th className="border border-slate-600 px-0.5 py-0.5">Acc. %</th>
+          <th className="border border-slate-600 px-0.5 py-0.5">Ripet. %</th>
+        </tr>
+      </thead>
+      <tbody>
+        {measurements.map((measurement, index) => {
+          const metadata = parseTorqueMeasurementMetadata(measurement.notes);
+          const nominalTorque = Number(measurement.nominal_value ?? measurement.applied_value ?? 0);
+          const reading1 = Number(measurement.cycle_1 ?? 0);
+          const reading2 = Number(measurement.cycle_2 ?? 0);
+          const reading3 = Number(measurement.cycle_3 ?? 0);
+          const metrics = calculateTorqueMetricsFromReadings(
+            nominalTorque, reading1, reading2, reading3
+          );
+          const theoreticalMass = metadata?.theoreticalMassKg ?? massKgFromTorque(nominalTorque, settings.armLengthM, settings.gravityM_s2);
+          const mass1 = metadata?.appliedMass1Kg ?? massKgFromTorque(reading1, settings.armLengthM, settings.gravityM_s2);
+          const mass2 = metadata?.appliedMass2Kg ?? massKgFromTorque(reading2, settings.armLengthM, settings.gravityM_s2);
+          const mass3 = metadata?.appliedMass3Kg ?? massKgFromTorque(reading3, settings.armLengthM, settings.gravityM_s2);
+          return (
+            <tr key={measurement.id} className={index % 2 === 0 ? "bg-white/65" : "bg-slate-100/55"}>
+              <td className="border border-slate-300 px-0.5 py-0.5">{formatNumber(nominalTorque)}</td>
+              <td className="border border-slate-300 px-0.5 py-0.5">{formatNumber(theoreticalMass)}</td>
+              <td className="border border-slate-300 px-0.5 py-0.5">{formatNumber(mass1)}</td>
+              <td className="border border-slate-300 px-0.5 py-0.5">{formatNumber(reading1)}</td>
+              <td className="border border-slate-300 px-0.5 py-0.5">{formatNumber(mass2)}</td>
+              <td className="border border-slate-300 px-0.5 py-0.5">{formatNumber(reading2)}</td>
+              <td className="border border-slate-300 px-0.5 py-0.5">{formatNumber(mass3)}</td>
+              <td className="border border-slate-300 px-0.5 py-0.5">{formatNumber(reading3)}</td>
+              <td className="border border-slate-300 px-0.5 py-0.5">{formatNumber(metrics.maxNm)}</td>
+              <td className="border border-slate-300 px-0.5 py-0.5">{formatNumber(metrics.minNm)}</td>
+              <td className="border border-slate-300 px-0.5 py-0.5 font-bold">{formatNumber(metrics.averageNm)}</td>
+              <td className="border border-slate-300 px-0.5 py-0.5">{formatNumber(metrics.meanErrorNm)}</td>
+              <td className="border border-slate-300 px-0.5 py-0.5">{formatNumber(metrics.accuracyErrorPercent)}</td>
+              <td className="border border-slate-300 px-0.5 py-0.5">{formatNumber(metrics.repeatabilityErrorPercent)}</td>
+            </tr>
+          );
+        })}
       </tbody>
     </table>
   );
@@ -2336,6 +2432,24 @@ function TechnicalScaleSection({
   const isTemperatureInstrument =
     isTemperature && isTemperatureInstrumentCalibration(record);
   const isJackReport = isJack(record);
+  const isTorqueReport = isTorque(record);
+  const torqueSettings = isTorqueReport
+    ? readTorqueProcedureSettings(record.procedure_snapshot)
+    : null;
+  const torqueResult = isTorqueReport
+    ? (() => {
+        const results = scaleMeasurements.map((measurement) =>
+          calculateTorqueMetricsFromReadings(
+            Number(measurement.nominal_value ?? measurement.applied_value ?? 0),
+            Number(measurement.cycle_1 ?? 0),
+            Number(measurement.cycle_2 ?? 0),
+            Number(measurement.cycle_3 ?? 0)
+          ).result
+        );
+        if (results.length === 0 || results.some((result) => result === null)) return "-";
+        return results.every((result) => result === "CONFORME") ? "CONFORME" : "NON CONFORME";
+      })()
+    : null;
   const measurementUnit = getMeasurementUnit({
     record,
     customerSnapshot,
@@ -2406,6 +2520,17 @@ function TechnicalScaleSection({
                 value={formatNumberWithUnit(maxRepeatability, "%")}
               />
             </tr>
+          ) : isTorqueReport && torqueSettings ? (
+            <>
+              <tr>
+                <DataCell label="g" value={String(torqueSettings.gravityM_s2).replace(".", ",") + " m/s²"} />
+                <DataCell label="L braccio" value={formatNumber(torqueSettings.armLengthM, 3) + " m"} />
+              </tr>
+              <tr>
+                <DataCell label="Criterio conformità" value={"|Errore accuratezza| ≤ " + TORQUE_ACCURACY_LIMIT_PERCENT + "%"} />
+                <DataCell label="Esito" value={torqueResult} />
+              </tr>
+            </>
           ) : isTemperatureInstrument ? (
             <tr>
               <DataCell
@@ -2448,6 +2573,8 @@ function TechnicalScaleSection({
 
       {isJackReport ? (
         <JackMeasurementsTable measurements={measurements} />
+      ) : isTorqueReport ? (
+        <TorqueMeasurementsTable record={record} measurements={measurements} />
       ) : isTemperatureInstrument ? (
         <TemperatureInstrumentMeasurementsTable measurements={measurements} />
       ) : (
@@ -2946,6 +3073,18 @@ const { data: recordData, error: recordError } = await supabase
     : { data: null };
 
   const customerMaster = asObject(customerMasterData);
+
+  const resolvedCustomerNumber =
+    textValue(customerMaster.customer_number, "") ||
+    textValue(customerMaster.customer_code, "") ||
+    textValue(details.customer_number, "") ||
+    textValue(customerSnapshot.customer_number, "") ||
+    textValue(customerSnapshot.customer_code, "");
+
+  const reportCustomerSnapshot = resolvedCustomerNumber
+    ? { ...customerSnapshot, customer_number: resolvedCustomerNumber }
+    : customerSnapshot;
+
   const referenceSnapshot = asObject(record.reference_instrument_snapshot);
   const mainMeasurementUnit = getMeasurementUnit({
     record,
@@ -2974,6 +3113,7 @@ const { data: recordData, error: recordError } = await supabase
 
   const isPressure =
     record.verification_module === "PRESSURE" || record.mode === "pressione";
+  const isTorqueReport = isTorque(record);
   const isTemperature =
     record.verification_module === "TEMPERATURE" || record.mode === "temperatura";
   const temperatureInstrumentCalibration =
@@ -3023,10 +3163,17 @@ const { data: recordData, error: recordError } = await supabase
             : Number(measurement.applied_value),
         accuracy_error_percent: isJackReport
           ? null
-          : measurement.accuracy_error_percent === null ||
-              measurement.accuracy_error_percent === undefined
-            ? null
-            : Number(measurement.accuracy_error_percent),
+          : isTorqueReport
+            ? calculateTorqueMetricsFromReadings(
+                Number(measurement.nominal_value ?? measurement.applied_value ?? 0),
+                Number(measurement.cycle_1 ?? 0),
+                Number(measurement.cycle_2 ?? 0),
+                Number(measurement.cycle_3 ?? 0)
+              ).accuracyErrorPercent
+            : measurement.accuracy_error_percent === null ||
+                measurement.accuracy_error_percent === undefined
+              ? null
+              : Number(measurement.accuracy_error_percent),
         section: measurement.section ?? null,
       }));
 
@@ -3345,7 +3492,7 @@ const { data: recordData, error: recordError } = await supabase
         <CoverPage
           record={record}
           details={details}
-          customerSnapshot={customerSnapshot}
+          customerSnapshot={reportCustomerSnapshot}
           customerMaster={customerMaster}
           reportNumber={reportNumber}
           reportDate={reportDate}
@@ -3373,7 +3520,7 @@ const { data: recordData, error: recordError } = await supabase
                 record={record}
                 details={details}
                 reportPhotos={reportPhotos}
-                customerSnapshot={customerSnapshot}
+                customerSnapshot={reportCustomerSnapshot}
                 measurementUnit={mainMeasurementUnit}
                 reportNumber={reportNumber}
                 reportDate={reportDate}
@@ -3451,7 +3598,7 @@ const { data: recordData, error: recordError } = await supabase
                 record={record}
                 details={details}
                 sheet={descriptor.sheet}
-                customerSnapshot={customerSnapshot}
+                customerSnapshot={reportCustomerSnapshot}
                 reportNumber={reportNumber}
                 reportDate={reportDate}
                 pageNumber={pageNumber}
