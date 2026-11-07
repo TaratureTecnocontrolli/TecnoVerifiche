@@ -72,37 +72,6 @@ come backend (database + storage dei certificati/firme).
 | Prove sclerometriche | Attivo |
 | Pull-off | Attivo |
 
-## Flotta aziendale, attività di cantiere e calendario
-
-Modulo per la gestione dei mezzi aziendali e la pianificazione delle attività
-di cantiere / interventi tecnici, con assegnazione dei mezzi.
-
-- **Flotta** (`/flotta`): anagrafica mezzi (targa, tipologia, alimentazione,
-  km, autista abituale, colore nel calendario), stato (disponibile / in
-  manutenzione / fuori servizio), scadenze di assicurazione, revisione, bollo
-  e tagliando (per data e per km) con evidenza di quelle entro 30 giorni o
-  superate, registro interventi e costi per mezzo.
-- **Attività** (`/attivita`): elenco filtrabile delle attività con cliente,
-  sede/cantiere, periodo, priorità, stato, tecnici (con capo squadra) e mezzi
-  assegnati (con autista).
-- **Calendario** (`/calendario`): vista mensile, planning settimanale per
-  mezzo e per tecnico, creazione rapida cliccando su un giorno o sulla cella
-  di un mezzo.
-
-Durante l'assegnazione il sistema blocca le doppie prenotazioni di un mezzo,
-i mezzi fuori servizio e quelli con assicurazione/revisione/bollo già scaduti
-alla data dell'attività, e segnala come avviso i mezzi in manutenzione, le
-scadenze che cadono durante l'attività e i tecnici già impegnati.
-
-I tecnici sono quelli della tabella esistente `calibration_technicians`
-(pagina "Tecnici e firme"); clienti e sedi sono quelli dell'anagrafica clienti.
-
-**Setup database:** eseguire una volta nell'SQL Editor di Supabase lo script
-`supabase/migrations/20261107_flotta_cantieri.sql`, che crea le tabelle
-`fleet_vehicles`, `fleet_vehicle_logs`, `field_activities`,
-`field_activity_technicians`, `field_activity_vehicles` con le relative
-policy RLS per gli utenti autenticati.
-
 ## Deploy
 
 Qualsiasi hosting compatibile con Next.js (es. [Vercel](https://vercel.com))

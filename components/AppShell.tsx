@@ -17,14 +17,6 @@ const NAV_GROUPS = [
     ],
   },
   {
-    title: "Flotta e cantieri",
-    items: [
-      { href: "/calendario", label: "Calendario" },
-      { href: "/attivita", label: "Attività" },
-      { href: "/flotta", label: "Flotta" },
-    ],
-  },
-  {
     title: "Anagrafiche",
     items: [
       { href: "/clienti", label: "Clienti" },
