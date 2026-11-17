@@ -1,7 +1,7 @@
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import TemperatureVerificationStarter from "@/components/TemperatureVerificationStarter";
-import { supabase } from "@/lib/supabase";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
 
 type Customer = {
   id: string;
@@ -48,6 +48,8 @@ type ReferenceInstrument = {
 };
 
 export default async function NewTemperatureVerificationPage() {
+  const supabase = await createServerSupabaseClient();
+
   const { data: customersData, error: customersError } = await supabase
     .from("customers")
     .select("*")

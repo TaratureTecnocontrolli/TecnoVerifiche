@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import CalibrationReportDetailsForm from "@/components/CalibrationReportDetailsForm";
-import { supabase } from "@/lib/supabase";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { getVerificationModuleFromMode } from "@/lib/verification-types";
 
 type PageProps = {
@@ -126,6 +126,8 @@ function reportStatusClass(status: string | null | undefined) {
 }
 
 export default async function CalibrationReportDetailsPage({ params }: PageProps) {
+  const supabase = await createServerSupabaseClient();
+
   const { id } = await params;
 
   const { data: recordData, error: recordError } = await supabase

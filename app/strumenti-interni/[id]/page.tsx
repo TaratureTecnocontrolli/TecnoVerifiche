@@ -1,7 +1,7 @@
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import EditInternalInstrumentForm from "@/components/EditInternalInstrumentForm";
-import { supabase } from "@/lib/supabase";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
 
 type PageProps = {
   params: Promise<{
@@ -68,6 +68,8 @@ function DataBox({
 }
 
 export default async function InternalInstrumentDetailPage({ params }: PageProps) {
+  const supabase = await createServerSupabaseClient();
+
   const { id } = await params;
 
   const { data, error } = await supabase

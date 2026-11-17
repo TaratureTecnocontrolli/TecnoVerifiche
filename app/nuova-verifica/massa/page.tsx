@@ -1,7 +1,7 @@
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import MassVerificationStarter from "@/components/MassVerificationStarter";
-import { supabase } from "@/lib/supabase";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
 
 type PageProps = {
   searchParams?: Promise<{
@@ -95,6 +95,8 @@ function scopeDescription(scope: VerificationScope) {
 export default async function NewMassVerificationPage({
   searchParams,
 }: PageProps) {
+  const supabase = await createServerSupabaseClient();
+
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const verificationScope = resolveScope(resolvedSearchParams.scope);
 

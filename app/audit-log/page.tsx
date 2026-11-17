@@ -1,6 +1,6 @@
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
-import { supabase } from "@/lib/supabase";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
 
 type AuditLog = {
   id: string;
@@ -57,6 +57,8 @@ function valueToText(value: unknown) {
 }
 
 export default async function AuditLogPage() {
+  const supabase = await createServerSupabaseClient();
+
   const { data, error } = await supabase
     .from("audit_logs")
     .select(

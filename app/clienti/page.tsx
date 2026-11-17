@@ -1,6 +1,6 @@
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
-import { supabase } from "@/lib/supabase";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
 
 type Customer = {
   id: string;
@@ -32,6 +32,8 @@ function formatItalianDate(date: string | null) {
 }
 
 export default async function CustomersPage() {
+  const supabase = await createServerSupabaseClient();
+
   const { data, error } = await supabase
     .from("customers")
     .select(

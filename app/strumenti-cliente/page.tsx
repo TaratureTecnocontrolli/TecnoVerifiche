@@ -1,7 +1,7 @@
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import DeleteCustomerInstrumentButton from "@/components/DeleteCustomerInstrumentButton";
-import { supabase } from "@/lib/supabase";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
 
 type CustomerInstrument = {
   id: string;
@@ -28,6 +28,8 @@ function formatItalianDate(date: string | null) {
 }
 
 export default async function CustomerInstrumentsPage() {
+  const supabase = await createServerSupabaseClient();
+
   const { data, error } = await supabase
     .from("customer_instruments")
     .select(

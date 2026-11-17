@@ -1,7 +1,7 @@
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import EditReferenceInstrumentForm from "@/components/EditReferenceInstrumentForm";
-import { supabase } from "@/lib/supabase";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
 
 type PageProps = {
   params: Promise<{
@@ -117,6 +117,8 @@ function DataBox({
 export default async function ReferenceInstrumentDetailPage({
   params,
 }: PageProps) {
+  const supabase = await createServerSupabaseClient();
+
   const { id } = await params;
 
   const { data, error } = await supabase

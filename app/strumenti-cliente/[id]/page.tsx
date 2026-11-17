@@ -1,7 +1,7 @@
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import EditCustomerInstrumentForm from "@/components/EditCustomerInstrumentForm";
-import { supabase } from "@/lib/supabase";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
 
 type PageProps = {
   params: Promise<{
@@ -31,6 +31,8 @@ type CustomerInstrument = {
 export default async function CustomerInstrumentDetailPage({
   params,
 }: PageProps) {
+  const supabase = await createServerSupabaseClient();
+
   const { id } = await params;
 
   const { data: instrumentData, error: instrumentError } = await supabase

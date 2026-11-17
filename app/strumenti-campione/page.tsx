@@ -1,7 +1,7 @@
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
 import DeleteReferenceInstrumentButton from "@/components/DeleteReferenceInstrumentButton";
-import { supabase } from "@/lib/supabase";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
 
 type ReferenceInstrument = {
   id: string;
@@ -251,6 +251,8 @@ function CertificateCell({
 }
 
 export default async function ReferenceInstrumentsPage() {
+  const supabase = await createServerSupabaseClient();
+
   const { data, error } = await supabase
     .from("reference_instruments")
     .select(

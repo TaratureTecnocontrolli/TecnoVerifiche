@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import EditFlowMeasurementsForm from "@/components/EditFlowMeasurementsForm";
-import { supabase } from "@/lib/supabase";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
 
 type PageProps = {
   params: Promise<{
@@ -22,6 +22,8 @@ type CalibrationRecord = {
 };
 
 export default async function EditFlowMeasurementsPage({ params }: PageProps) {
+  const supabase = await createServerSupabaseClient();
+
   const { id } = await params;
 
   const { data: recordData, error: recordError } = await supabase

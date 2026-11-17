@@ -1,6 +1,6 @@
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
-import { supabase } from "@/lib/supabase";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
 
 type InternalInstrument = {
   id: string;
@@ -45,6 +45,8 @@ function statusClass(status: string) {
 }
 
 export default async function InternalInstrumentsPage() {
+  const supabase = await createServerSupabaseClient();
+
   const { data, error } = await supabase
     .from("internal_instruments")
     .select(
