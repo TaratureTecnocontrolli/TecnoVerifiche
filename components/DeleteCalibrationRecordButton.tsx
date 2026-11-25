@@ -40,34 +40,14 @@ export default function DeleteCalibrationRecordButton({
     setIsDeleting(true);
 
     try {
-      await supabase
-        .from("calibration_report_signatures")
-        .delete()
-        .eq("calibration_record_id", recordId);
-
-      await supabase
-        .from("calibration_report_details")
-        .delete()
-        .eq("calibration_record_id", recordId);
-
-      await supabase
-        .from("calibration_measurements")
-        .delete()
-        .eq("calibration_record_id", recordId);
-
-      await supabase
-        .from("calibration_record_scales")
-        .delete()
-        .eq("calibration_record_id", recordId);
-
-      const { error } = await supabase
+      const { data, error } = await supabase
         .from("calibration_records")
         .delete()
-        .eq("id", recordId);
-
-      if (error) {
-        throw new Error(error.message);
-      }
+        .eq("id", recordId)
+        .select("id")
+        .maybeSingle();
+      if (error) throw new Error(error.message);
+      if (!data) throw new Error("Eliminazione non consentita: verifica emessa, firmata o non autorizzata.");
 
       router.refresh();
     } catch (error) {

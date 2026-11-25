@@ -1,5 +1,6 @@
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
+import RoleGate from "@/components/RoleGate";
 import CustomersSearchTable, {
   type CustomerListItem,
 } from "@/components/CustomersSearchTable";
@@ -60,12 +61,14 @@ export default async function CustomersPage() {
             </p>
           </div>
 
+<RoleGate allow={["master"]}>
           <Link
             href="/clienti/nuovo"
             className="rounded-xl bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-700"
           >
             Nuovo cliente
           </Link>
+          </RoleGate>
         </div>
 
         {error && (

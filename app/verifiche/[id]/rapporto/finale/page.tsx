@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import MeasurementErrorChart from "@/components/MeasurementErrorChart";
 import TemperatureErrorChart, { type TemperatureErrorMeasurement } from "@/components/TemperatureErrorChart";
@@ -9,6 +9,8 @@ import ReportStatusActions from "@/components/ReportStatusActions";
 import AutoPaginatedReport from "@/components/AutoPaginatedReport";
 import { hasValidChartMeasurements, type MeasurementLike } from "@/lib/chart-utils";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { resolveDocumentNumber } from "@/lib/document-number";
+import { isScopeAllowed } from "@/lib/app-mode";
 import {
   calculateTorqueMetricsFromReadings,
   massKgFromTorque,
@@ -3006,6 +3008,17 @@ const { data: recordData, error: recordError } = await supabase
   }
 
   const record = recordData as GenericRecord;
+  const isInternalVerification =
+    record.verification_scope === "VI" ||
+    record.output_type === "rapportino" ||
+    record.output_type === "rapportino_interno" ||
+    record.verified_instrument_type === "internal" ||
+    record.verified_instrument_type === "interno";
+
+  if (!isScopeAllowed(isInternalVerification ? "VI" : "VT")) {
+    notFound();
+  }
+  if (record.verification_scope === "VI") redirect("/verifiche/" + id + "/rapportino-interno");
 
   const { data: detailsData } = await supabase
     .from("calibration_report_details")
@@ -3092,10 +3105,11 @@ const { data: recordData, error: recordError } = await supabase
     referenceSnapshots: [referenceSnapshot],
   });
 
-  const reportNumber =
-    textValue(details.main_report_number, "") ||
-    textValue(record.record_number, "") ||
-    "SENZA NUMERO";
+  const reportNumber = resolveDocumentNumber(
+    details.main_report_number,
+    record.record_number,
+    "BOZZA"
+  );
 
   const reportDate = details.report_date ?? new Date().toISOString().slice(0, 10);
 

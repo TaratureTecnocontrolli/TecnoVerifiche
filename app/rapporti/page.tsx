@@ -3,7 +3,10 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
+import RemoveTestReportButton from "@/components/RemoveTestReportButton";
 import { supabase } from "@/lib/supabase";
+import { isViOnlyMode } from "@/lib/app-mode";
+import { resolveDocumentNumber } from "@/lib/document-number";
 
 type GenericRecord = Record<string, any>;
 
@@ -131,10 +134,10 @@ function reportStatusClass(status: string | null | undefined) {
 }
 
 function getDocumentNumber(row: ReportRow) {
-  return (
-    row.details?.main_report_number ||
-    row.record.record_number ||
-    "SENZA NUMERO"
+  return resolveDocumentNumber(
+    row.details?.main_report_number,
+    row.record.record_number,
+    "BOZZA"
   );
 }
 
@@ -295,10 +298,16 @@ export default function ReportsArchivePage() {
     };
   }, []);
 
+  const visibleRows = useMemo(() => {
+    return isViOnlyMode
+      ? rows.filter((row) => getVerificationScope(row) === "VI")
+      : rows;
+  }, [rows]);
+
   const filteredRows = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
 
-    return rows
+    return visibleRows
       .filter((row) => matchesSearch(row, normalizedQuery))
       .filter((row) => {
         if (scopeFilter === "tutti") return true;
@@ -308,15 +317,15 @@ export default function ReportsArchivePage() {
         if (statusFilter === "tutti") return true;
         return (row.record.report_status || "draft") === statusFilter;
       });
-  }, [query, rows, scopeFilter, statusFilter]);
+  }, [query, scopeFilter, statusFilter, visibleRows]);
 
-  const total = rows.length;
-  const issuedCount = rows.filter((row) => row.record.report_status === "issued").length;
-  const draftCount = rows.filter(
+  const total = visibleRows.length;
+  const issuedCount = visibleRows.filter((row) => row.record.report_status === "issued").length;
+  const draftCount = visibleRows.filter(
     (row) => !row.record.report_status || row.record.report_status === "draft"
   ).length;
-  const readyCount = rows.filter((row) => row.record.report_status === "ready").length;
-  const reopenedCount = rows.filter((row) => row.record.report_status === "reopened").length;
+  const readyCount = visibleRows.filter((row) => row.record.report_status === "ready").length;
+  const reopenedCount = visibleRows.filter((row) => row.record.report_status === "reopened").length;
 
   return (
     <AppShell>
@@ -330,8 +339,9 @@ export default function ReportsArchivePage() {
               Archivio rapporti
             </h1>
             <p className="mt-2 max-w-3xl text-slate-600">
-              Vista unica di rapporti VT e rapportini VI, con stato documento e
-              accesso rapido ad anteprima e dati.
+              {isViOnlyMode
+                ? "Archivio dei rapportini VI, con stato documento e accesso rapido ad anteprima e firme."
+                : "Vista unica di rapporti VT e rapportini VI, con stato documento e accesso rapido ad anteprima e dati."}
             </p>
           </div>
 
@@ -358,23 +368,25 @@ export default function ReportsArchivePage() {
         </section>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="grid gap-3 lg:grid-cols-[1fr_170px_170px]">
+          <div className={"grid gap-3 " + (isViOnlyMode ? "lg:grid-cols-[1fr_170px]" : "lg:grid-cols-[1fr_170px_170px]")}>
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Cerca per numero, cliente, strumento, tecnico..."
+              placeholder="Cerca per numero, strumento, tecnico..."
               className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
             />
 
-            <select
-              value={scopeFilter}
-              onChange={(event) => setScopeFilter(event.target.value)}
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
-            >
-              <option value="tutti">VT + VI</option>
-              <option value="VT">Solo VT</option>
-              <option value="VI">Solo VI</option>
-            </select>
+            {!isViOnlyMode && (
+              <select
+                value={scopeFilter}
+                onChange={(event) => setScopeFilter(event.target.value)}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+              >
+                <option value="tutti">VT + VI</option>
+                <option value="VT">Solo VT</option>
+                <option value="VI">Solo VI</option>
+              </select>
+            )}
 
             <select
               value={statusFilter}
@@ -391,7 +403,7 @@ export default function ReportsArchivePage() {
         </section>
 
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="hidden xl:block">
+          <div className="hidden xl:block tc-sticky-table" tabIndex={0} role="region" aria-label="Archivio scorrevole">
             <table className="w-full table-fixed text-sm">
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
@@ -480,7 +492,7 @@ export default function ReportsArchivePage() {
                         </td>
 
                         <td className="px-3 py-3 align-top">
-                          <div className="flex justify-end gap-2">
+                          <div className="flex flex-wrap justify-end gap-2">
                             <Link
                               href={getEditHref(row)}
                               className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
@@ -499,6 +511,7 @@ export default function ReportsArchivePage() {
                             >
                               {isVI ? "Rapportino" : "Rapporto"}
                             </Link>
+                            {isVI && <RemoveTestReportButton previouslyIssued={row.record.report_status==="issued"||!!row.record.issued_at} id={row.record.id} label={getDocumentNumber(row)} onRemoved={(id)=>setRows(old=>old.filter(x=>x.record.id!==id))}/>}
                           </div>
                         </td>
                       </tr>
@@ -570,6 +583,7 @@ export default function ReportsArchivePage() {
                       >
                         {isVI ? "Rapportino" : "Rapporto"}
                       </Link>
+                      {isVI && <RemoveTestReportButton previouslyIssued={row.record.report_status==="issued"||!!row.record.issued_at} id={row.record.id} label={getDocumentNumber(row)} onRemoved={(id)=>setRows(old=>old.filter(x=>x.record.id!==id))}/>}
                     </div>
                   </article>
                 );

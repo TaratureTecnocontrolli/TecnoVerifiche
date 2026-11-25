@@ -1,11 +1,15 @@
 "use client";
 
+import LabSiteSelect from "@/components/LabSiteSelect";
+import {matchesSite} from "@/lib/lab-sites";
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import DeleteReferenceInstrumentButton from "@/components/DeleteReferenceInstrumentButton";
+import { useAppUser } from "@/lib/app-user";
 
 export type ReferenceInstrumentListItem = {
   id: string;
+  lab_site?: string|null;
   name: string;
   manufacturer: string | null;
   model: string | null;
@@ -198,19 +202,13 @@ export default function ReferenceInstrumentsArchiveSearchTable({
 }: {
   instruments: ReferenceInstrumentListItem[];
 }) {
+  const { profile } = useAppUser();
   const [search, setSearch] = useState("");
+  const [site,setSite]=useState("all");
 
   const normalizedSearch = normalizeSearchText(search);
 
-  const filteredInstruments = useMemo(() => {
-    if (!normalizedSearch) {
-      return instruments;
-    }
-
-    return instruments.filter((instrument) =>
-      searchableInstrumentText(instrument).includes(normalizedSearch)
-    );
-  }, [instruments, normalizedSearch]);
+  const filteredInstruments = useMemo(() => instruments.filter(instrument=>matchesSite(instrument.lab_site,site)&&(!normalizedSearch||searchableInstrumentText(instrument).includes(normalizedSearch))),[instruments,normalizedSearch,site]);
 
   return (
     <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
@@ -228,6 +226,7 @@ export default function ReferenceInstrumentsArchiveSearchTable({
             </p>
           </div>
 
+          <LabSiteSelect value={site} onChange={setSite} filter/>
           <label className="w-full max-w-md space-y-1">
             <span className="text-sm font-medium text-slate-700">Cerca</span>
             <input
@@ -249,7 +248,7 @@ export default function ReferenceInstrumentsArchiveSearchTable({
           Nessuno strumento campione trovato con la ricerca inserita.
         </div>
       ) : (
-        <div className="w-full overflow-hidden">
+        <div className="w-full overflow-hidden tc-sticky-table" tabIndex={0} role="region" aria-label="Tabella scorrevole">
           <table className="w-full table-fixed text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>
@@ -281,7 +280,7 @@ export default function ReferenceInstrumentsArchiveSearchTable({
                         className="font-semibold text-slate-900 hover:text-emerald-700 hover:underline"
                       >
                         {instrument.name}
-                      </Link>
+                      </Link><div className="text-xs text-slate-500">{instrument.lab_site||"Da assegnare"}</div>
                       <p className="text-xs text-slate-500">
                         {[instrument.manufacturer, instrument.model]
                           .filter(Boolean)
@@ -342,10 +341,12 @@ export default function ReferenceInstrumentsArchiveSearchTable({
                           Modifica
                         </Link>
 
+{profile.role === "master" ? (
                         <DeleteReferenceInstrumentButton
                           instrumentId={instrument.id}
                           instrumentName={instrument.name}
                         />
+                        ) : null}
                       </div>
                     </td>
                   </tr>

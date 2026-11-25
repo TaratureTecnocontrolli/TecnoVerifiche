@@ -1,5 +1,7 @@
 "use client";
 
+import ViTestLocationSelect, { isViTestLocation } from "@/components/ViTestLocationSelect";
+
 import Link from "next/link";
 import { type KeyboardEvent, useEffect, useMemo, useState } from "react";
 import {
@@ -7,6 +9,7 @@ import {
   type ForcePointInput,
 } from "@/lib/calculations/force";
 import { supabase } from "@/lib/supabase";
+import { finishMeasurementCreation } from "@/lib/use-record-edit-permission";
 import { canonicalMeasurementUnit } from "@/lib/measurement-units";
 import {
   getCtForceReportDefaults,
@@ -14,6 +17,7 @@ import {
 } from "@/lib/report-defaults";
 import ForceErrorChart from "./ForceErrorChart";
 import ReferenceInstrumentMultiSelect from "./ReferenceInstrumentMultiSelect";
+import OperatorNameField from "./OperatorNameField";
 
 type VerificationScope = "VT" | "VI";
 
@@ -255,10 +259,6 @@ function todayItalianDateLabel() {
   return new Intl.DateTimeFormat("it-IT").format(new Date());
 }
 
-function todayInputDate() {
-  return new Date().toISOString().slice(0, 10);
-}
-
 function formatItalianDate(date: string | null) {
   if (!date) {
     return "-";
@@ -493,7 +493,6 @@ export default function ForceCalibrationTable({
   verificationScope = "VT",
 }: ForceCalibrationTableProps) {
   const isInternalVerification = verificationScope === "VI";
-  const [verificationDate, setVerificationDate] = useState(todayInputDate());
   const [mode, setMode] = useState<"compressione" | "trazione">("compressione");
   const [operatorName, setOperatorName] = useState("");
   const [ambientTemperature, setAmbientTemperature] = useState("");
@@ -1059,17 +1058,13 @@ function resetSaveState() {
     setSavedRecordNumber(null);
 
     try {
-      if (isInternalVerification && !verificationDate) {
-        throw new Error("Inserisci la data della verifica.");
-      }
-
       if (isInternalVerification) {
         if (!selectedInternalInstrument) {
           throw new Error("Seleziona lo strumento interno da verificare.");
         }
 
-        if (!verificationLocation.trim()) {
-          throw new Error("Inserisci il luogo della verifica interna.");
+        if (!isViTestLocation(verificationLocation)) {
+          throw new Error("Seleziona il laboratorio in cui è stata eseguita la verifica.");
         }
       } else {
         if (!selectedCustomer) {
@@ -1202,7 +1197,7 @@ function resetSaveState() {
           mode,
           verification_module: "CT_FORCE",
           report_status: "draft",
-          verification_date: verificationDate,
+          verification_date: new Date().toISOString().slice(0, 10),
           operator_name: operatorName || null,
           location: isInternalVerification
             ? verificationLocation.trim()
@@ -1233,6 +1228,7 @@ function resetSaveState() {
         );
       }
 
+      const verificationDate = new Date().toISOString().slice(0, 10);
 
       const reportCustomerName = isInternalVerification
         ? "Tecnocontrolli S.r.l."
@@ -1437,6 +1433,7 @@ function resetSaveState() {
         );
       }
 
+      await finishMeasurementCreation(record.id);
       setSavedRecordId(record.id);
       setSavedRecordNumber(recordNumber);
       setSaveMessage(
@@ -1472,23 +1469,6 @@ function resetSaveState() {
         </h2>
 
         <div className="mt-5 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {isInternalVerification && (
-            <label className="space-y-1">
-              <span className="text-sm font-medium text-slate-700">
-                Data verifica *
-              </span>
-              <input
-                type="date"
-                value={verificationDate}
-                onChange={(event) => {
-                  setVerificationDate(event.target.value);
-                  resetSaveState();
-                }}
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-              />
-            </label>
-          )}
-
           <label className="space-y-1">
             <span className="text-sm font-medium text-slate-700">
               Tipo verifica
@@ -1506,18 +1486,13 @@ function resetSaveState() {
             </select>
           </label>
 
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">Tecnico</span>
-            <input
-              value={operatorName}
-              onChange={(event) => {
-                setOperatorName(event.target.value);
-                resetSaveState();
-              }}
-              placeholder="Nome tecnico"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
-          </label>
+          <OperatorNameField
+            value={operatorName}
+            onChange={(value) => {
+              setOperatorName(value);
+              resetSaveState();
+            }}
+          />
 
           <label className="space-y-1">
             <span className="text-sm font-medium text-slate-700">
@@ -1608,20 +1583,13 @@ function resetSaveState() {
               </select>
             </label>
 
-            <label className="space-y-1">
-              <span className="text-sm font-medium text-slate-700">
-                Luogo verifica *
-              </span>
-              <input
-                value={verificationLocation}
-                onChange={(event) => {
-                  setVerificationLocation(event.target.value);
-                  resetSaveState();
-                }}
-                placeholder="Es. Laboratorio Bologna / sede cliente / campo"
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-              />
-            </label>
+            <ViTestLocationSelect
+              value={verificationLocation}
+              onChange={(value) => {
+                setVerificationLocation(value);
+                resetSaveState();
+              }}
+            />
           </div>
 
           {internalInstruments.length === 0 && !isLoadingData && (
@@ -2375,11 +2343,7 @@ function resetSaveState() {
         </div>
       )}
 
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
-        <strong>Nota tecnica:</strong> questa è la prima versione del modulo CT.
-        Prima dell’uso reale dovremo validare le formule rispetto ai vostri Excel,
-        alle procedure interne e ai riferimenti normativi applicabili.
-      </div>
+      
     </div>
   );
 }

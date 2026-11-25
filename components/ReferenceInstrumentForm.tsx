@@ -1,5 +1,6 @@
 "use client";
 
+import LabSiteSelect from "@/components/LabSiteSelect";
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
@@ -190,6 +191,7 @@ async function uploadCertificateFile(file: File) {
 }
 
 export default function ReferenceInstrumentForm() {
+  const [labSite,setLabSite]=useState("");
   const router = useRouter();
 
   const [form, setForm] = useState<ReferenceInstrumentFormState>(initialState);
@@ -308,6 +310,7 @@ export default function ReferenceInstrumentForm() {
       const { data: insertedInstrument, error } = await supabase
         .from("reference_instruments")
         .insert({
+          lab_site: labSite || null,
           name: form.name.trim(),
           manufacturer: form.manufacturer.trim() || null,
           model: form.model.trim() || null,
@@ -384,6 +387,7 @@ export default function ReferenceInstrumentForm() {
         <h2 className="text-lg font-semibold text-slate-900">
           Dati strumento campione
         </h2>
+        <div className="mt-3 max-w-xs"><LabSiteSelect value={labSite} onChange={setLabSite} disabled={isSaving}/></div>
 
         <div className="mt-5 grid gap-4 md:grid-cols-2 xl:grid-cols-3">
           <label className="space-y-1">

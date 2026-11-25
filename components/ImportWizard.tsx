@@ -1,6 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import {normalizeLabSite} from "@/lib/lab-sites";
+import {readAllRows} from "@/lib/read-all-rows";
 import * as XLSX from "xlsx";
 import { supabase } from "@/lib/supabase";
 
@@ -42,11 +44,14 @@ type ImportMappedRow = {
   notes: string;
 };
 
+type MetrologyImport = {site:string|null; values:Record<string,string|number>; errors:string[]};
+
 type ParsedRow = {
+  metrology?:MetrologyImport;
   rowNumber: number;
   raw: Record<string, unknown>;
   mapped: ImportMappedRow;
-  status: "valid" | "warning" | "error" | "imported" | "skipped";
+  status: "valid" | "warning" | "error" | "imported" | "updated" | "unchanged" | "conflict";
   messages: string[];
 };
 
@@ -54,19 +59,41 @@ type ExistingCustomer = {
   id: string;
   customer_number: string | null;
   business_name: string;
+  address?: string | null;
+  postal_code?: string | null;
+  city?: string | null;
+  province?: string | null;
+  contact_person?: string | null;
+  email?: string | null;
+  phone?: string | null;
+  notes?: string | null;
 };
 
 type ExistingInstrument = {
+  lab_site?:string|null;
   id: string;
   customer_id?: string | null;
   name: string | null;
+  manufacturer?: string | null;
+  model?: string | null;
   internal_code: string | null;
   serial_number: string | null;
+  measurement_quantity?: string | null;
+  unit?: string | null;
+  measurement_range?: string | null;
+  certificate_number?: string | null;
+  certificate_date?: string | null;
+  certificate_expiry?: string | null;
+  status?: string | null;
+  department?: string | null;
+  location?: string | null;
+  notes?: string | null;
 };
 
 type ImportResult = {
   inserted: number;
-  skipped: number;
+  updated: number;
+  unchanged: number;
   errors: number;
 };
 
@@ -82,7 +109,7 @@ const IMPORT_CONFIGS: Record<ImportKind, ImportConfig> = {
   customers: {
     title: "Importazione massiva clienti",
     description:
-      "Importa clienti da file Excel o CSV. I duplicati vengono saltati, non aggiornati.",
+      "Importa clienti da file Excel o CSV. Le anagrafiche esistenti vengono riconosciute e completate senza sovrascrivere i dati già valorizzati.",
     tableName: "customers",
     requiredColumns: ["Ragione Sociale"],
     templateColumns: [
@@ -137,6 +164,19 @@ const IMPORT_CONFIGS: Record<ImportKind, ImportConfig> = {
       "Scadenza Certificato",
       "Stato",
       "Note",
+      "Sede",
+      "Codice OnTrack",
+      "AVCP",
+      "LAB",
+      "Criteri di accettabilità",
+      "Istruzione operativa",
+      "Periodicità VI (mesi)",
+      "Periodicità LAT (mesi)",
+      "Periodicità RdT (mesi)",
+      "Prima scadenza VI",
+      "Prima scadenza LAT",
+      "Prima scadenza RdT",
+      "Note metrologiche",
     ],
   },
   internal_instruments: {
@@ -158,6 +198,18 @@ const IMPORT_CONFIGS: Record<ImportKind, ImportConfig> = {
       "Ubicazione",
       "Stato",
       "Note",
+      "Sede",
+      "AVCP",
+      "LAB",
+      "Criteri di accettabilità",
+      "Istruzione operativa",
+      "Periodicità VI (mesi)",
+      "Periodicità LAT (mesi)",
+      "Periodicità RdT (mesi)",
+      "Prima scadenza VI",
+      "Prima scadenza LAT",
+      "Prima scadenza RdT",
+      "Note metrologiche",
     ],
   },
 };
@@ -263,7 +315,7 @@ const HEADER_ALIASES: Record<keyof ImportMappedRow, string[]> = {
   ],
   status: ["stato", "status"],
   department: ["reparto", "settore", "department"],
-  location: ["ubicazione", "sede", "location"],
+  location: ["ubicazione", "location"],
   notes: ["note", "notes", "annotazioni"],
 };
 
@@ -318,7 +370,7 @@ function normalizeDate(value: unknown) {
   }
 
   if (value instanceof Date && !Number.isNaN(value.getTime())) {
-    return value.toISOString().slice(0, 10);
+    return `${value.getFullYear()}-${String(value.getMonth()+1).padStart(2,"0")}-${String(value.getDate()).padStart(2,"0")}`;
   }
 
   if (typeof value === "number") {
@@ -436,6 +488,25 @@ function mapRow(kind: ImportKind, row: Record<string, unknown>): ImportMappedRow
   return mapped;
 }
 
+const metrologyTextFields = {"Codice OnTrack":"ontrack_code","AVCP":"avcp","LAB":"lab_authorization","Criteri di accettabilità":"acceptance_criteria","Istruzione operativa":"operating_instruction","Note metrologiche":"notes"} as const;
+function parseMetrology(raw:Record<string,unknown>):MetrologyImport {
+ const field=(name:string)=>Object.entries(raw).find(([k])=>normalizeKey(k)===normalizeKey(name))?.[1];
+ const siteRaw=normalizeText(field("Sede"));const site=normalizeLabSite(siteRaw);const errors:string[]=[];const values:Record<string,string|number>={};
+ if(siteRaw&&!site)errors.push("Sede non valida: "+siteRaw);
+ for(const [label,key] of Object.entries(metrologyTextFields)){const v=normalizeText(field(label));if(v)values[key]=v;}
+ for(const [label,key] of [["VI","vi"],["LAT","lat"],["RdT","rdt"]]){
+  const period=normalizeText(field(`Periodicità ${label} (mesi)`));if(period){const n=Number(period);if(!/^\d+$/.test(period)||!Number.isInteger(n)||n<1||n>120)errors.push(`Periodicità ${label}: usare 1–120 mesi interi.`);else values[key+"_months"]=n;}
+  const rawDate=field(`Prima scadenza ${label}`);if(normalizeText(rawDate)){const d=normalizeDate(rawDate);const ms=Date.parse(d+"T00:00:00Z");if(!/^\d{4}-\d{2}-\d{2}$/.test(d)||!Number.isFinite(ms)||new Date(ms).toISOString().slice(0,10)!==d)errors.push(`Prima scadenza ${label}: data non valida.`);else values[key+"_first_due"]=d;}
+ }
+ return {site,values,errors};
+}
+async function importMetrology(kind:ImportKind,id:string,row:ParsedRow){
+ const m=row.metrology;if(!m||(!m.site&&!Object.keys(m.values).length))return false;
+ const {data,error}=await supabase.rpc("tv15_import_metrology",{p_kind:kind==="internal_instruments"?"interni":"campioni",p_id:id,p_site:m.site,p_fields:m.values});
+ if(error||typeof data?.changed!=="boolean")throw new Error("Anagrafica eventualmente già salvata; configurazione non confermata: "+(error?.message||"risposta non valida")+". Correggere e reimportare.");
+ if(Array.isArray(data.protected)&&data.protected.length)row.messages.push("Configurazioni esistenti conservate: "+data.protected.join(", "));
+ return data.changed as boolean;
+}
 function buildCsvContent(columns: string[]) {
   const example = columns.map((column) => {
     if (column === "Ragione Sociale") return "Cliente Esempio S.r.l.";
@@ -446,8 +517,8 @@ function buildCsvContent(columns: string[]) {
     if (column === "Grandezza") return "Forza";
     if (column === "Unità") return "kN";
     if (column === "Stato") return "active";
-    if (column.includes("Data")) return "2026-01-01";
-    if (column.includes("Scadenza")) return "2027-01-01";
+    if (column === "Data Certificato") return "2026-01-01";
+    if (column === "Scadenza Certificato") return "2027-01-01";
     return "";
   });
 
@@ -480,6 +551,7 @@ async function readFile(file: File) {
   const workbook = XLSX.read(buffer, {
     type: "array",
     cellDates: true,
+    raw: true,
   });
 
   const firstSheetName = workbook.SheetNames[0];
@@ -498,6 +570,77 @@ function buildExistingInstrumentKeys(item: ExistingInstrument) {
     item.internal_code ? "code:" + normalizeKey(item.internal_code) : "",
     item.serial_number ? "serial:" + normalizeKey(item.serial_number) : "",
   ].filter(Boolean);
+}
+
+function isBlank(value: unknown) {
+  return value === null || value === undefined || String(value).trim() === "";
+}
+
+function buildFillMissingUpdate(
+  existing: Record<string, unknown>,
+  incoming: Record<string, string | null | undefined>
+) {
+  const update: Record<string, string | null> = {};
+  const addedFields: string[] = [];
+  const protectedFields: string[] = [];
+
+  Object.entries(incoming).forEach(([field, rawValue]) => {
+    const value = typeof rawValue === "string" ? rawValue.trim() : rawValue;
+    if (isBlank(value)) return;
+
+    if (isBlank(existing[field])) {
+      update[field] = String(value);
+      addedFields.push(field);
+      return;
+    }
+
+    if (normalizeKey(existing[field]) !== normalizeKey(value)) {
+      protectedFields.push(field);
+    }
+  });
+
+  return { update, addedFields, protectedFields };
+}
+
+function uniqueById<T extends { id: string }>(items: T[]) {
+  return Array.from(new Map(items.map((item) => [item.id, item])).values());
+}
+
+function instrumentMatchCandidates(
+  existing: ExistingInstrument[],
+  mapped: ImportMappedRow,
+  customerId?: string
+) {
+  const pool = customerId
+    ? existing.filter((item) => item.customer_id === customerId)
+    : existing;
+  const codeKey = normalizeKey(mapped.internal_code);
+  const serialKey = normalizeKey(mapped.serial_number);
+
+  const strongMatches = uniqueById(
+    pool.filter((item) =>
+      Boolean(
+        (codeKey && normalizeKey(item.internal_code) === codeKey) ||
+          (serialKey && normalizeKey(item.serial_number) === serialKey)
+      )
+    )
+  );
+
+  if (strongMatches.length > 0) return strongMatches;
+
+  const nameKey = normalizeKey(mapped.name);
+  const manufacturerKey = normalizeKey(mapped.manufacturer);
+  const modelKey = normalizeKey(mapped.model);
+  if (!nameKey) return [];
+
+  return uniqueById(
+    pool.filter((item) => {
+      if (normalizeKey(item.name) !== nameKey) return false;
+      if (manufacturerKey && normalizeKey(item.manufacturer) !== manufacturerKey) return false;
+      if (modelKey && normalizeKey(item.model) !== modelKey) return false;
+      return Boolean(manufacturerKey || modelKey);
+    })
+  );
 }
 
 export default function ImportWizard({ kind }: ImportWizardProps) {
@@ -564,12 +707,24 @@ export default function ImportWizard({ kind }: ImportWizardProps) {
           !mapped.serial_number
         ) {
           messages.push(
-            "Consigliato indicare Codice Interno o Matricola per evitare duplicati."
+            "Codice Interno o Matricola obbligatori per importare senza duplicati."
           );
-          if (status !== "error") status = "warning";
+          status = "error";
         }
 
+        const metrology=(kind==="internal_instruments"||kind==="reference_instruments")?parseMetrology(raw):undefined;
+        // Per gli strumenti interni, il codice OnTrack coincide con il codice interno.
+        // Accetta anche i vecchi modelli, ma segnala eventuali valori discordanti.
+        if(kind==="internal_instruments"&&metrology){
+          const legacyCode=metrology.values.ontrack_code;
+          if(legacyCode&&(!mapped.internal_code||String(legacyCode).trim()!==mapped.internal_code.trim())){
+            metrology.errors.push("Codice OnTrack discordante dal Codice Interno: compilare soltanto Codice Interno.");
+          }
+          if(mapped.internal_code)metrology.values.ontrack_code=mapped.internal_code;
+        }
+        if(metrology?.errors.length){messages.push(...metrology.errors);status="error";}
         return {
+          metrology,
           rowNumber: index + 2,
           raw,
           mapped,
@@ -592,24 +747,17 @@ export default function ImportWizard({ kind }: ImportWizardProps) {
 
   async function importCustomers(nextRows: ParsedRow[]) {
     let inserted = 0;
-    let skipped = 0;
+    let updated = 0;
+    let unchanged = 0;
     let errors = 0;
 
     const { data: existingData, error } = await supabase
       .from("customers")
-      .select("id, customer_number, business_name");
+      .select("id, customer_number, business_name, address, postal_code, city, province, contact_person, email, phone, notes");
 
     if (error) throw new Error(error.message);
 
     const existing = (existingData ?? []) as ExistingCustomer[];
-    const existingByNumber = new Set(
-      existing
-        .map((customer) => normalizeKey(customer.customer_number))
-        .filter(Boolean)
-    );
-    const existingByName = new Set(
-      existing.map((customer) => normalizeKey(customer.business_name))
-    );
 
     for (const row of nextRows) {
       if (row.status === "error") {
@@ -619,15 +767,72 @@ export default function ImportWizard({ kind }: ImportWizardProps) {
 
       const numberKey = normalizeKey(row.mapped.customer_number);
       const nameKey = normalizeKey(row.mapped.business_name);
+      const candidates = uniqueById(
+        existing.filter((customer) =>
+          Boolean(
+            (numberKey && normalizeKey(customer.customer_number) === numberKey) ||
+              (nameKey && normalizeKey(customer.business_name) === nameKey)
+          )
+        )
+      );
 
-      if ((numberKey && existingByNumber.has(numberKey)) || existingByName.has(nameKey)) {
-        row.status = "skipped";
-        row.messages = ["Duplicato già presente. Riga saltata."];
-        skipped += 1;
+      if (candidates.length > 1) {
+        row.status = "conflict";
+        row.messages = ["Conflitto: Codice Cliente/Ragione Sociale corrispondono a più anagrafiche. Nessuna modifica eseguita."];
+        errors += 1;
         continue;
       }
 
-      const { error: insertError } = await supabase.from("customers").insert({
+      if (candidates.length === 1) {
+        const current = candidates[0];
+        const merge = buildFillMissingUpdate(current as unknown as Record<string, unknown>, {
+          customer_number: row.mapped.customer_number || null,
+          business_name: row.mapped.business_name || null,
+          address: row.mapped.address || null,
+          postal_code: row.mapped.postal_code || null,
+          city: row.mapped.city || null,
+          province: row.mapped.province || null,
+          contact_person: row.mapped.contact_person || null,
+          email: row.mapped.email || null,
+          phone: row.mapped.phone || null,
+          notes: row.mapped.notes || null,
+        });
+
+        if (Object.keys(merge.update).length === 0) {
+          row.status = "unchanged";
+          row.messages = [
+            merge.protectedFields.length > 0
+              ? "Anagrafica già presente. I valori esistenti diversi dal CSV non sono stati sovrascritti."
+              : "Anagrafica già completa: nessuna modifica necessaria.",
+          ];
+          unchanged += 1;
+          continue;
+        }
+
+        const { error: updateError } = await supabase
+          .from("customers")
+          .update(merge.update)
+          .eq("id", current.id);
+
+        if (updateError) {
+          row.status = "error";
+          row.messages = [updateError.message];
+          errors += 1;
+        } else {
+          Object.assign(current, merge.update);
+          row.status = "updated";
+          row.messages = [
+            `Anagrafica esistente completata: ${merge.addedFields.join(", ")}.`,
+            ...(merge.protectedFields.length > 0
+              ? [`Campi già valorizzati e non sovrascritti: ${merge.protectedFields.join(", ")}.`]
+              : []),
+          ];
+          updated += 1;
+        }
+        continue;
+      }
+
+      const payload = {
         customer_number: row.mapped.customer_number || null,
         business_name: row.mapped.business_name,
         vat_number: null,
@@ -641,60 +846,46 @@ export default function ImportWizard({ kind }: ImportWizardProps) {
         contact_person: row.mapped.contact_person || null,
         notes: row.mapped.notes || null,
         is_active: true,
-      });
+      };
+      const { data: insertedRow, error: insertError } = await supabase
+        .from("customers")
+        .insert(payload)
+        .select("id")
+        .single();
 
-      if (insertError) {
+      if (insertError || !insertedRow) {
         row.status = "error";
-        row.messages = [insertError.message];
+        row.messages = [insertError?.message || "Errore inserimento."];
         errors += 1;
       } else {
+        existing.push({ id: insertedRow.id, ...payload } as ExistingCustomer);
         row.status = "imported";
-        row.messages = ["Importato."];
+        row.messages = ["Nuova anagrafica inserita."];
         inserted += 1;
-        if (numberKey) existingByNumber.add(numberKey);
-        existingByName.add(nameKey);
       }
     }
 
-    return { inserted, skipped, errors };
+    return { inserted, updated, unchanged, errors };
   }
 
   async function importCustomerInstruments(nextRows: ParsedRow[]) {
     let inserted = 0;
-    let skipped = 0;
+    let updated = 0;
+    let unchanged = 0;
     let errors = 0;
 
     const { data: customersData, error: customersError } = await supabase
       .from("customers")
       .select("id, customer_number, business_name")
       .eq("is_active", true);
-
     if (customersError) throw new Error(customersError.message);
-
     const customers = (customersData ?? []) as ExistingCustomer[];
 
     const { data: existingData, error: existingError } = await supabase
       .from("customer_instruments")
-      .select("id, customer_id, name, serial_number, internal_code");
-
+      .select("id, customer_id, name, manufacturer, model, serial_number, internal_code, measurement_quantity, unit, measurement_range, notes");
     if (existingError) throw new Error(existingError.message);
-
-    const existingKeys = new Set<string>();
-
-    ((existingData ?? []) as ExistingInstrument[]).forEach((item) => {
-      if (item.customer_id && item.serial_number) {
-        existingKeys.add(item.customer_id + "|serial:" + normalizeKey(item.serial_number));
-      }
-      if (item.customer_id && item.name && item.serial_number) {
-        existingKeys.add(
-          item.customer_id +
-            "|name:" +
-            normalizeKey(item.name) +
-            "|serial:" +
-            normalizeKey(item.serial_number)
-        );
-      }
-    });
+    const existing = (existingData ?? []) as ExistingInstrument[];
 
     for (const row of nextRows) {
       if (row.status === "error") {
@@ -702,112 +893,37 @@ export default function ImportWizard({ kind }: ImportWizardProps) {
         continue;
       }
 
-      const customer =
-        customers.find(
-          (item) =>
-            normalizeKey(item.customer_number) ===
-            normalizeKey(row.mapped.customer_number)
-        ) ??
-        customers.find(
-          (item) =>
-            normalizeKey(item.business_name) ===
-            normalizeKey(row.mapped.customer_name)
-        );
+      const customerCandidates = uniqueById(
+        customers.filter((item) =>
+          Boolean(
+            (row.mapped.customer_number && normalizeKey(item.customer_number) === normalizeKey(row.mapped.customer_number)) ||
+              (row.mapped.customer_name && normalizeKey(item.business_name) === normalizeKey(row.mapped.customer_name))
+          )
+        )
+      );
 
-      if (!customer) {
-        row.status = "error";
-        row.messages = ["Cliente non trovato. Controlla Codice Cliente o Cliente."];
+      if (customerCandidates.length !== 1) {
+        row.status = customerCandidates.length > 1 ? "conflict" : "error";
+        row.messages = [customerCandidates.length > 1
+          ? "Conflitto cliente: il CSV identifica più anagrafiche."
+          : "Cliente non trovato. Controlla Codice Cliente o Cliente."];
         errors += 1;
         continue;
       }
 
-      const duplicateKey = customer.id + "|serial:" + normalizeKey(row.mapped.serial_number);
-
-      if (row.mapped.serial_number && existingKeys.has(duplicateKey)) {
-        row.status = "skipped";
-        row.messages = ["Strumento cliente duplicato. Riga saltata."];
-        skipped += 1;
-        continue;
-      }
-
-      const { error: insertError } = await supabase
-        .from("customer_instruments")
-        .insert({
-          customer_id: customer.id,
-          site_id: null,
-          customer_name: customer.business_name,
-          site: null,
-          name: row.mapped.name,
-          manufacturer: row.mapped.manufacturer || null,
-          model: row.mapped.model || null,
-          serial_number: row.mapped.serial_number || null,
-          internal_code: null,
-          measurement_quantity: row.mapped.measurement_quantity || null,
-          unit: row.mapped.unit || null,
-          measurement_range: row.mapped.measurement_range || null,
-          resolution: null,
-          acceptance_class: null,
-          notes: row.mapped.notes || null,
-        });
-
-      if (insertError) {
-        row.status = "error";
-        row.messages = [insertError.message];
-        errors += 1;
-      } else {
-        row.status = "imported";
-        row.messages = ["Importato."];
-        inserted += 1;
-        if (row.mapped.serial_number) existingKeys.add(duplicateKey);
-      }
-    }
-
-    return { inserted, skipped, errors };
-  }
-
-  async function importReferenceInstruments(nextRows: ParsedRow[]) {
-    let inserted = 0;
-    let skipped = 0;
-    let errors = 0;
-
-    const { data: existingData, error: existingError } = await supabase
-      .from("reference_instruments")
-      .select("id, name, serial_number, internal_code");
-
-    if (existingError) throw new Error(existingError.message);
-
-    const existingKeys = new Set<string>();
-    ((existingData ?? []) as ExistingInstrument[]).forEach((item) => {
-      buildExistingInstrumentKeys(item).forEach((key) => existingKeys.add(key));
-    });
-
-    for (const row of nextRows) {
-      if (row.status === "error") {
+      const customer = customerCandidates[0];
+      const candidates = instrumentMatchCandidates(existing, row.mapped, customer.id);
+      if (candidates.length > 1) {
+        row.status = "conflict";
+        row.messages = ["Conflitto strumento: più strumenti del cliente corrispondono ai dati CSV. Nessuna modifica eseguita."];
         errors += 1;
         continue;
       }
 
-      const keys = [
-        row.mapped.internal_code ? "code:" + normalizeKey(row.mapped.internal_code) : "",
-        row.mapped.serial_number ? "serial:" + normalizeKey(row.mapped.serial_number) : "",
-      ].filter(Boolean);
-
-      if (keys.some((key) => existingKeys.has(key))) {
-        row.status = "skipped";
-        row.messages = ["Strumento campione duplicato. Riga saltata."];
-        skipped += 1;
-        continue;
-      }
-
-      const statusToSave =
-        row.mapped.status === "dismissed" || row.mapped.status === "out_of_service"
-          ? row.mapped.status
-          : "valid";
-
-      const { data: insertedInstrument, error: insertError } = await supabase
-        .from("reference_instruments")
-        .insert({
-          name: row.mapped.name,
+      if (candidates.length === 1) {
+        const current = candidates[0];
+        const merge = buildFillMissingUpdate(current as unknown as Record<string, unknown>, {
+          name: row.mapped.name || null,
           manufacturer: row.mapped.manufacturer || null,
           model: row.mapped.model || null,
           serial_number: row.mapped.serial_number || null,
@@ -815,28 +931,177 @@ export default function ImportWizard({ kind }: ImportWizardProps) {
           measurement_quantity: row.mapped.measurement_quantity || null,
           unit: row.mapped.unit || null,
           measurement_range: row.mapped.measurement_range || null,
-          resolution: null,
+          notes: row.mapped.notes || null,
+        });
+        if (Object.keys(merge.update).length === 0) {
+          row.status = "unchanged";
+          row.messages = [merge.protectedFields.length > 0
+            ? "Strumento già presente. I dati esistenti diversi non sono stati sovrascritti."
+            : "Strumento già completo: nessuna modifica necessaria.", ...row.messages];
+          unchanged += 1;
+          continue;
+        }
+        const { error: updateError } = await supabase
+          .from("customer_instruments")
+          .update(merge.update)
+          .eq("id", current.id);
+        if (updateError) {
+          row.status = "error";
+          row.messages = [updateError.message];
+          errors += 1;
+        } else {
+          Object.assign(current, merge.update);
+          row.status = "updated";
+          row.messages = [`Strumento esistente completato: ${merge.addedFields.join(", ")}.`];
+          updated += 1;
+        }
+        continue;
+      }
+
+      const payload = {
+        customer_id: customer.id,
+        site_id: null,
+        customer_name: customer.business_name,
+        site: null,
+        name: row.mapped.name,
+        manufacturer: row.mapped.manufacturer || null,
+        model: row.mapped.model || null,
+        serial_number: row.mapped.serial_number || null,
+        internal_code: row.mapped.internal_code || null,
+        measurement_quantity: row.mapped.measurement_quantity || null,
+        unit: row.mapped.unit || null,
+        measurement_range: row.mapped.measurement_range || null,
+        resolution: null,
+        acceptance_class: null,
+        notes: row.mapped.notes || null,
+      };
+      const { data: insertedRow, error: insertError } = await supabase
+        .from("customer_instruments")
+        .insert(payload)
+        .select("id")
+        .single();
+      if (insertError || !insertedRow) {
+        row.status = "error";
+        row.messages = [insertError?.message || "Errore inserimento."];
+        errors += 1;
+      } else {
+        existing.push({ id: insertedRow.id, ...payload } as ExistingInstrument);
+        row.status = "imported";
+        row.messages = ["Nuovo strumento inserito."];
+        inserted += 1;
+      }
+    }
+
+    return { inserted, updated, unchanged, errors };
+  }
+
+  async function importReferenceInstruments(nextRows: ParsedRow[]) {
+    let inserted = 0;
+    let updated = 0;
+    let unchanged = 0;
+    let errors = 0;
+
+    const { data: existingData, error: existingError } = await readAllRows((from,to)=>supabase
+      .from("reference_instruments")
+      .select("lab_site, id, name, manufacturer, model, serial_number, internal_code, measurement_quantity, unit, measurement_range, certificate_number, certificate_date, certificate_expiry, status, notes").order("id").range(from,to));
+    if (existingError) throw new Error(existingError.message);
+    const existing = (existingData ?? []) as ExistingInstrument[];
+
+    for (const row of nextRows) {
+      if (row.status !== "valid" && row.status !== "warning") {
+        errors += 1;
+        continue;
+      }
+      if(!row.mapped.internal_code&&!row.mapped.serial_number){row.status="conflict";row.messages=["Indicare codice interno o matricola: senza identificativo non è possibile importare in modo ripetibile."];errors++;continue;}
+      const candidates = existing.filter(i=>Boolean((row.mapped.internal_code&&normalizeKey(i.internal_code)===normalizeKey(row.mapped.internal_code))||(row.mapped.serial_number&&normalizeKey(i.serial_number)===normalizeKey(row.mapped.serial_number))));
+      if (candidates.length > 1) {
+        row.status = "conflict";
+        row.messages = ["Conflitto: Codice Interno/Matricola identificano più strumenti campione."];
+        errors += 1;
+        continue;
+      }
+      const statusToSave = row.mapped.status === "dismissed" || row.mapped.status === "out_of_service"
+        ? row.mapped.status
+        : "valid";
+
+      if (candidates.length === 1) {
+        const current = candidates[0];
+        if((row.metrology?.site&&current.lab_site&&row.metrology.site!==current.lab_site)||(row.mapped.internal_code&&current.internal_code&&normalizeKey(row.mapped.internal_code)!==normalizeKey(current.internal_code))||(row.mapped.serial_number&&current.serial_number&&normalizeKey(row.mapped.serial_number)!==normalizeKey(current.serial_number))){row.status="conflict";row.messages=["Sede o identificativi discordanti: nessun dato modificato. Verificare l’anagrafica."];errors++;continue;}
+        
+        const merge = buildFillMissingUpdate(current as unknown as Record<string, unknown>, {
+          name: row.mapped.name || null,
+          manufacturer: row.mapped.manufacturer || null,
+          model: row.mapped.model || null,
+          serial_number: row.mapped.serial_number || null,
+          internal_code: row.mapped.internal_code || null,
+          measurement_quantity: row.mapped.measurement_quantity || null,
+          unit: row.mapped.unit || null,
+          measurement_range: row.mapped.measurement_range || null,
           certificate_number: row.mapped.certificate_number || null,
           certificate_date: row.mapped.certificate_date || null,
           certificate_expiry: row.mapped.certificate_expiry || null,
-          certificate_file_url: null,
-          certificate_file_name: null,
           status: statusToSave,
           notes: row.mapped.notes || null,
-        })
+        });
+        try {
+        const metaChanged=await importMetrology(kind,current.id,row); if(row.metrology?.site)current.lab_site=row.metrology.site;
+        if (Object.keys(merge.update).length === 0) {
+          if(metaChanged){row.status="updated";row.messages.push("Configurazione metrologica completata.");updated++;continue;}
+          row.status = "unchanged";
+          row.messages = [merge.protectedFields.length > 0
+            ? "Strumento già presente. I dati esistenti diversi non sono stati sovrascritti."
+            : "Strumento già completo: nessuna modifica necessaria.", ...row.messages];
+          unchanged += 1;
+          continue;
+        }
+        const { error: updateError } = await supabase
+          .from("reference_instruments")
+          .update(merge.update)
+          .eq("id", current.id);
+        if (updateError) {
+          row.status = "error";
+          row.messages = [updateError.message];
+          errors += 1;
+        } else {
+          Object.assign(current, merge.update);
+          row.status = "updated";
+          row.messages = [`Strumento campione esistente completato: ${merge.addedFields.join(", ")}.`, ...row.messages];
+          updated += 1;
+        }
+        } catch(e){row.status="error";row.messages.push(e instanceof Error?e.message:"Errore configurazione");errors++;}
+        continue;
+      }
+
+      const payload = {
+        lab_site: row.metrology?.site??null,
+        name: row.mapped.name,
+        manufacturer: row.mapped.manufacturer || null,
+        model: row.mapped.model || null,
+        serial_number: row.mapped.serial_number || null,
+        internal_code: row.mapped.internal_code || null,
+        measurement_quantity: row.mapped.measurement_quantity || null,
+        unit: row.mapped.unit || null,
+        measurement_range: row.mapped.measurement_range || null,
+        resolution: null,
+        certificate_number: row.mapped.certificate_number || null,
+        certificate_date: row.mapped.certificate_date || null,
+        certificate_expiry: row.mapped.certificate_expiry || null,
+        certificate_file_url: null,
+        certificate_file_name: null,
+        status: statusToSave,
+        notes: row.mapped.notes || null,
+      };
+      const { data: insertedInstrument, error: insertError } = await supabase
+        .from("reference_instruments")
+        .insert(payload)
         .select("id")
         .single();
-
       if (insertError || !insertedInstrument) {
         row.status = "error";
         row.messages = [insertError?.message || "Errore inserimento."];
         errors += 1;
       } else {
-        if (
-          row.mapped.certificate_number ||
-          row.mapped.certificate_date ||
-          row.mapped.certificate_expiry
-        ) {
+        if (row.mapped.certificate_number || row.mapped.certificate_date || row.mapped.certificate_expiry) {
           await supabase.from("reference_instrument_certificates").insert({
             reference_instrument_id: insertedInstrument.id,
             certificate_number: row.mapped.certificate_number || null,
@@ -848,87 +1113,303 @@ export default function ImportWizard({ kind }: ImportWizardProps) {
             notes: "Certificato importato da caricamento massivo, senza file allegato.",
           });
         }
-
+        existing.push({ id: insertedInstrument.id, ...payload } as ExistingInstrument);
         row.status = "imported";
-        row.messages = ["Importato."];
-        inserted += 1;
-        keys.forEach((key) => existingKeys.add(key));
+        row.messages = ["Nuovo strumento campione inserito."];
+        try {await importMetrology(kind,insertedInstrument.id,row);inserted += 1;}catch(e){row.status="error";row.messages.push(e instanceof Error?e.message:"Errore configurazione");errors++;}
       }
     }
 
-    return { inserted, skipped, errors };
+    return { inserted, updated, unchanged, errors };
   }
 
   async function importInternalInstruments(nextRows: ParsedRow[]) {
     let inserted = 0;
-    let skipped = 0;
+    let updated = 0;
+    let unchanged = 0;
     let errors = 0;
 
-    const { data: existingData, error: existingError } = await supabase
+    const { data: existingData, error: existingError } = await readAllRows((from,to)=>supabase
       .from("internal_instruments")
-      .select("id, name, serial_number, internal_code");
-
+      .select("lab_site, id, name, manufacturer, model, serial_number, internal_code, measurement_quantity, unit, measurement_range, location, department, status, notes").order("id").range(from,to));
     if (existingError) throw new Error(existingError.message);
+    const existing = (existingData ?? []) as ExistingInstrument[];
 
-    const existingKeys = new Set<string>();
-    ((existingData ?? []) as ExistingInstrument[]).forEach((item) => {
-      buildExistingInstrumentKeys(item).forEach((key) => existingKeys.add(key));
-    });
+    type ExistingInternalMeasurement = {
+      id: string;
+      internal_instrument_id: string;
+      measurement_quantity: string | null;
+      unit: string | null;
+      measurement_range: string | null;
+      resolution: string | null;
+      notes: string | null;
+      is_primary: boolean;
+      sort_order: number;
+    };
+
+    const { data: existingMeasurementsData, error: existingMeasurementsError } =
+      await readAllRows((from,to)=>supabase
+        .from("internal_instrument_measurements")
+        .select(
+          "id, internal_instrument_id, measurement_quantity, unit, measurement_range, resolution, notes, is_primary, sort_order"
+        )
+        .order("sort_order", { ascending: true }).order("id").range(from,to));
+
+    if (existingMeasurementsError) {
+      throw new Error(
+        "Impossibile leggere le grandezze degli strumenti interni. Esegui prima la migrazione Fase B. " +
+          existingMeasurementsError.message
+      );
+    }
+
+    const instrumentMeasurements = (existingMeasurementsData ?? []) as ExistingInternalMeasurement[];
+
+    function measurementsForInstrument(instrumentId: string) {
+      return instrumentMeasurements
+        .filter((measurement) => measurement.internal_instrument_id === instrumentId)
+        .sort((a, b) => {
+          if (a.is_primary !== b.is_primary) return a.is_primary ? -1 : 1;
+          return a.sort_order - b.sort_order;
+        });
+    }
+
+    async function syncImportedPrimaryMeasurement(
+      current: ExistingInstrument,
+      mapped: ImportMappedRow
+    ) {
+      const incomingMeasurement = {
+        measurement_quantity: mapped.measurement_quantity || null,
+        unit: mapped.unit || null,
+        measurement_range: mapped.measurement_range || null,
+      };
+
+      const hasIncomingMeasurement = Object.values(incomingMeasurement).some(
+        (value) => !isBlank(value)
+      );
+      const currentMeasurements = measurementsForInstrument(current.id);
+      const primaryMeasurement = currentMeasurements[0] ?? null;
+
+      if (primaryMeasurement) {
+        if (!hasIncomingMeasurement) {
+          return { changed: false, addedFields: [] as string[], protectedFields: [] as string[] };
+        }
+
+        const merge = buildFillMissingUpdate(
+          primaryMeasurement as unknown as Record<string, unknown>,
+          incomingMeasurement
+        );
+
+        if (Object.keys(merge.update).length > 0) {
+          const { error } = await supabase
+            .from("internal_instrument_measurements")
+            .update(merge.update)
+            .eq("id", primaryMeasurement.id);
+
+          if (error) throw new Error(error.message);
+          Object.assign(primaryMeasurement, merge.update);
+        }
+
+        return {
+          changed: Object.keys(merge.update).length > 0,
+          addedFields: merge.addedFields,
+          protectedFields: merge.protectedFields,
+        };
+      }
+
+      const quantity = mapped.measurement_quantity || current.measurement_quantity || "";
+      const unit = mapped.unit || current.unit || null;
+      const measurementRange = mapped.measurement_range || current.measurement_range || null;
+
+      if (!quantity.trim()) {
+        return { changed: false, addedFields: [] as string[], protectedFields: [] as string[] };
+      }
+
+      const payload = [
+        {
+          measurement_quantity: quantity.trim(),
+          unit: unit || null,
+          measurement_range: measurementRange || null,
+          resolution: null,
+          notes: null,
+          is_primary: true,
+        },
+      ];
+
+      const { error } = await supabase.rpc("replace_internal_instrument_measurements", {
+        p_internal_instrument_id: current.id,
+        p_measurements: payload,
+      });
+      if (error) throw new Error(error.message);
+
+      const { data: createdMeasurement, error: reloadError } = await supabase
+        .from("internal_instrument_measurements")
+        .select(
+          "id, internal_instrument_id, measurement_quantity, unit, measurement_range, resolution, notes, is_primary, sort_order"
+        )
+        .eq("internal_instrument_id", current.id)
+        .order("sort_order", { ascending: true })
+        .limit(1)
+        .maybeSingle();
+      if (reloadError) throw new Error(reloadError.message);
+      if (createdMeasurement) {
+        instrumentMeasurements.push(createdMeasurement as ExistingInternalMeasurement);
+      }
+
+      return {
+        changed: true,
+        addedFields: ["grandezza principale"],
+        protectedFields: [] as string[],
+      };
+    }
 
     for (const row of nextRows) {
-      if (row.status === "error") {
+      if (row.status !== "valid" && row.status !== "warning") {
         errors += 1;
         continue;
       }
-
-      const keys = [
-        row.mapped.internal_code ? "code:" + normalizeKey(row.mapped.internal_code) : "",
-        row.mapped.serial_number ? "serial:" + normalizeKey(row.mapped.serial_number) : "",
-      ].filter(Boolean);
-
-      if (keys.some((key) => existingKeys.has(key))) {
-        row.status = "skipped";
-        row.messages = ["Strumento interno duplicato. Riga saltata."];
-        skipped += 1;
+      if(!row.mapped.internal_code&&!row.mapped.serial_number){row.status="conflict";row.messages=["Indicare codice interno o matricola: senza identificativo non è possibile importare in modo ripetibile."];errors++;continue;}
+      const candidates = existing.filter(i=>Boolean((row.mapped.internal_code&&normalizeKey(i.internal_code)===normalizeKey(row.mapped.internal_code))||(row.mapped.serial_number&&normalizeKey(i.serial_number)===normalizeKey(row.mapped.serial_number))));
+      if (candidates.length > 1) {
+        row.status = "conflict";
+        row.messages = ["Conflitto: Codice Interno/Matricola identificano più strumenti interni."];
+        errors += 1;
         continue;
       }
+      const statusToSave = row.mapped.status === "dismissed" || row.mapped.status === "out_of_service"
+        ? row.mapped.status
+        : "active";
 
-      const statusToSave =
-        row.mapped.status === "dismissed" || row.mapped.status === "out_of_service"
-          ? row.mapped.status
-          : "active";
-
-      const { error: insertError } = await supabase
-        .from("internal_instruments")
-        .insert({
-          name: row.mapped.name,
+      if (candidates.length === 1) {
+        const current = candidates[0];
+        if((row.metrology?.site&&current.lab_site&&row.metrology.site!==current.lab_site)||(row.mapped.internal_code&&current.internal_code&&normalizeKey(row.mapped.internal_code)!==normalizeKey(current.internal_code))||(row.mapped.serial_number&&current.serial_number&&normalizeKey(row.mapped.serial_number)!==normalizeKey(current.serial_number))){row.status="conflict";row.messages=["Sede o identificativi discordanti: nessun dato modificato. Verificare l’anagrafica."];errors++;continue;}
+        
+        const merge = buildFillMissingUpdate(current as unknown as Record<string, unknown>, {
+          name: row.mapped.name || null,
           manufacturer: row.mapped.manufacturer || null,
           model: row.mapped.model || null,
           serial_number: row.mapped.serial_number || null,
           internal_code: row.mapped.internal_code || null,
-          measurement_quantity: row.mapped.measurement_quantity || null,
-          unit: row.mapped.unit || null,
-          measurement_range: row.mapped.measurement_range || null,
           location: row.mapped.location || null,
           department: row.mapped.department || null,
           status: statusToSave,
           notes: row.mapped.notes || null,
-          is_active: statusToSave !== "dismissed",
         });
 
-      if (insertError) {
+        try {
+          let parentChanged = false;
+          if (Object.keys(merge.update).length > 0) {
+            const { error: updateError } = await supabase
+              .from("internal_instruments")
+              .update(merge.update)
+              .eq("id", current.id);
+            if (updateError) throw new Error(updateError.message);
+            Object.assign(current, merge.update);
+            parentChanged = true;
+          }
+
+          const measurementMerge = await syncImportedPrimaryMeasurement(current, row.mapped);
+          const metaChanged=await importMetrology(kind,current.id,row); if(row.metrology?.site)current.lab_site=row.metrology.site;
+          const changed = parentChanged || measurementMerge.changed || metaChanged;
+          const addedFields = [...merge.addedFields, ...measurementMerge.addedFields,...(metaChanged?["configurazione metrologica"]:[])];
+          const protectedFields = [
+            ...merge.protectedFields,
+            ...measurementMerge.protectedFields,
+          ];
+
+          if (changed) {
+            row.status = "updated";
+            row.messages = [
+              `Strumento interno esistente completato: ${addedFields.join(", ")}.`,
+              ...row.messages,
+              ...(protectedFields.length > 0
+                ? ["Dati già valorizzati e diversi non sovrascritti: " + protectedFields.join(", ") + "."]
+                : []),
+            ];
+            updated += 1;
+          } else {
+            row.status = "unchanged";
+            row.messages = [
+              protectedFields.length > 0
+                ? "Strumento già presente. I dati esistenti diversi non sono stati sovrascritti."
+                : "Strumento già completo: nessuna modifica necessaria.",
+              ...row.messages,
+            ];
+            unchanged += 1;
+          }
+        } catch (error) {
+          row.status = "error";
+          row.messages = [
+            error instanceof Error ? error.message : "Errore aggiornamento strumento interno.",
+          ];
+          errors += 1;
+        }
+        continue;
+      }
+
+      const payload = {
+        lab_site: row.metrology?.site??null,
+        name: row.mapped.name,
+        manufacturer: row.mapped.manufacturer || null,
+        model: row.mapped.model || null,
+        serial_number: row.mapped.serial_number || null,
+        internal_code: row.mapped.internal_code || null,
+        measurement_quantity: row.mapped.measurement_quantity || null,
+        unit: row.mapped.unit || null,
+        measurement_range: row.mapped.measurement_range || null,
+        location: row.mapped.location || null,
+        department: row.mapped.department || null,
+        status: statusToSave,
+        notes: row.mapped.notes || null,
+        is_active: statusToSave !== "dismissed",
+      };
+      const { data: insertedRow, error: insertError } = await supabase
+        .from("internal_instruments")
+        .insert(payload)
+        .select("id")
+        .single();
+      if (insertError || !insertedRow) {
         row.status = "error";
-        row.messages = [insertError.message];
+        row.messages = [insertError?.message || "Errore inserimento."];
         errors += 1;
       } else {
-        row.status = "imported";
-        row.messages = ["Importato."];
-        inserted += 1;
-        keys.forEach((key) => existingKeys.add(key));
+        try {
+          if (row.mapped.measurement_quantity) {
+            const { error: measurementError } = await supabase.rpc(
+              "replace_internal_instrument_measurements",
+              {
+                p_internal_instrument_id: insertedRow.id,
+                p_measurements: [
+                  {
+                    measurement_quantity: row.mapped.measurement_quantity,
+                    unit: row.mapped.unit || null,
+                    measurement_range: row.mapped.measurement_range || null,
+                    resolution: null,
+                    notes: null,
+                    is_primary: true,
+                  },
+                ],
+              }
+            );
+            if (measurementError) throw new Error(measurementError.message);
+          }
+
+          existing.push({ id: insertedRow.id, ...payload } as ExistingInstrument);
+          row.status = "imported";
+          row.messages = ["Nuovo strumento interno inserito."];
+          try {await importMetrology(kind,insertedRow.id,row);inserted += 1;}catch(e){row.status="error";row.messages.push(e instanceof Error?e.message:"Errore configurazione");errors++;}
+        } catch (error) {
+          await supabase.from("internal_instruments").delete().eq("id", insertedRow.id);
+          row.status = "error";
+          row.messages = [
+            "Inserimento annullato: " +
+              (error instanceof Error ? error.message : "errore nella grandezza dello strumento."),
+          ];
+          errors += 1;
+        }
       }
     }
 
-    return { inserted, skipped, errors };
+    return { inserted, updated, unchanged, errors };
   }
 
   async function importRows() {
@@ -937,7 +1418,7 @@ export default function ImportWizard({ kind }: ImportWizardProps) {
     setParseError("");
 
     try {
-      const nextRows = [...rows];
+      const nextRows = rows.map(row=>({...row,messages:[...row.messages]}));
 
       let importResult: ImportResult;
 
@@ -991,10 +1472,11 @@ export default function ImportWizard({ kind }: ImportWizardProps) {
         </div>
 
         <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-          <p className="font-semibold">Regola importazione</p>
+          <p className="font-semibold">Regola importazione sicura</p>
           <p className="mt-1">
-            Il sistema inserisce solo le righe nuove. I duplicati vengono
-            saltati, non aggiornati, così evitiamo sovrascritture involontarie.
+            Il sistema riconosce gli strumenti interni e campione tramite codice interno o matricola. Una sede o un identificativo discordante produce un conflitto. Per gli altri archivi si applicano le chiavi anagrafiche già previste.
+            Se trova un record esistente, completa soltanto i campi vuoti: i dati già valorizzati non vengono sovrascritti.
+            I casi ambigui vengono marcati come conflitto e non vengono modificati.
           </p>
         </div>
 
@@ -1057,23 +1539,27 @@ export default function ImportWizard({ kind }: ImportWizardProps) {
           </div>
 
           {result && (
-            <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <div className="mt-4 grid gap-3 md:grid-cols-4">
               <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900">
                 <p className="text-xl font-bold">{result.inserted}</p>
-                <p>Inseriti</p>
+                <p>Nuovi</p>
               </div>
-              <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
-                <p className="text-xl font-bold">{result.skipped}</p>
-                <p>Saltati</p>
+              <div className="rounded-xl border border-blue-200 bg-blue-50 p-4 text-sm text-blue-900">
+                <p className="text-xl font-bold">{result.updated}</p>
+                <p>Aggiornati</p>
+              </div>
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-800">
+                <p className="text-xl font-bold">{result.unchanged}</p>
+                <p>Invariati</p>
               </div>
               <div className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">
                 <p className="text-xl font-bold">{result.errors}</p>
-                <p>Errori</p>
+                <p>Errori / conflitti</p>
               </div>
             </div>
           )}
 
-          <div className="mt-5 overflow-x-auto rounded-xl border border-slate-200">
+          <div className="mt-5 tc-sticky-table overflow-x-auto rounded-xl border border-slate-200" tabIndex={0}>
             <table className="min-w-full border-collapse text-left text-xs">
               <thead className="bg-slate-100 text-slate-700">
                 <tr>
@@ -1103,10 +1589,12 @@ export default function ImportWizard({ kind }: ImportWizardProps) {
                             : row.status === "warning"
                               ? "bg-amber-100 text-amber-900"
                               : row.status === "imported"
-                                ? "bg-blue-100 text-blue-800"
-                                : row.status === "skipped"
-                                  ? "bg-slate-200 text-slate-700"
-                                  : "bg-red-100 text-red-800")
+                                ? "bg-emerald-100 text-emerald-800"
+                                : row.status === "updated"
+                                  ? "bg-blue-100 text-blue-800"
+                                  : row.status === "unchanged"
+                                    ? "bg-slate-200 text-slate-700"
+                                    : "bg-red-100 text-red-800")
                         }
                       >
                         {row.status}
@@ -1134,6 +1622,7 @@ export default function ImportWizard({ kind }: ImportWizardProps) {
                           <br />
                           Codice: {row.mapped.internal_code || "-"} · Matricola:{" "}
                           {row.mapped.serial_number || "-"}
+                          {row.metrology&&<div className="mt-1 text-slate-600">Sede: {row.metrology.site||"Non indicata"} · VI {row.metrology.values.vi_months??"—"} mesi · LAT {row.metrology.values.lat_months??"—"} mesi · RdT {row.metrology.values.rdt_months??"—"} mesi{Object.entries(row.metrology.values).filter(([k])=>k.endsWith("_first_due")).map(([k,v])=><div key={k}>{k.startsWith("vi_")?"VI":k.startsWith("lat_")?"LAT":"RdT"}: {String(v).split("-").reverse().join("/")}</div>)}</div>}
                         </>
                       )}
                     </td>

@@ -1,9 +1,11 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import "./suite.css";
 
 export const metadata: Metadata = {
-  title: "TecnoVerifiche",
-  description: "Gestionale interno per verifiche di tarature",
+  title: "Tecnocontrolli · Gestionale Metrologico",
+  description:
+    "Sistema integrato per la gestione delle Tarature interne, delle Verifiche Interne e delle Tarature LAT.",
 };
 
 export default function RootLayout({

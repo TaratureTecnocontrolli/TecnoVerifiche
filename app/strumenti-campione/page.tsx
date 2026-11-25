@@ -1,10 +1,11 @@
+import {readAllRows} from "@/lib/read-all-rows";
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
+import RoleGate from "@/components/RoleGate";
 import ReferenceInstrumentsArchiveSearchTable, {
   type ReferenceInstrumentListItem,
 } from "@/components/ReferenceInstrumentsArchiveSearchTable";
-import DeleteReferenceInstrumentButton from "@/components/DeleteReferenceInstrumentButton";
-import { supabase } from "@/lib/supabase";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -242,10 +243,12 @@ function CertificateCell({
 }
 
 export default async function ReferenceInstrumentsPage() {
-  const { data, error } = await supabase
+  const supabase = await createServerSupabaseClient();
+  const { data, error } = await readAllRows((from,to)=>supabase
     .from("reference_instruments")
     .select(
       `
+      lab_site,
       id,
       name,
       manufacturer,
@@ -265,7 +268,7 @@ export default async function ReferenceInstrumentsPage() {
       created_at
     `
     )
-    .order("created_at", { ascending: false });
+    .order("created_at", { ascending: false }).order("id").range(from,to));
 
   const instruments = (data ?? []) as ReferenceInstrument[];
   const sortedByPriority = [...instruments].sort(sortByPriority);
@@ -326,12 +329,14 @@ export default async function ReferenceInstrumentsPage() {
             </p>
           </div>
 
+<RoleGate allow={["master", "technician"]}>
           <Link
             href="/strumenti-campione/nuovo"
             className="rounded-xl bg-slate-900 px-5 py-2 text-sm font-semibold text-white hover:bg-slate-700"
           >
             Nuovo strumento campione
           </Link>
+          </RoleGate>
         </div>
 
         {error && (

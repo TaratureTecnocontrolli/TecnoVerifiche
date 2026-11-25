@@ -1,7 +1,7 @@
 import AppShell from "@/components/AppShell";
 import NewVerificationHeader from "@/components/NewVerificationHeader";
 import TorqueVerificationStarter from "@/components/TorqueVerificationStarter";
-import { supabase } from "@/lib/supabase";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -94,32 +94,33 @@ function scopeLabel(scope: VerificationScope) {
 
 function scopeDescription(scope: VerificationScope) {
   if (scope === "VI") {
-    return "Flusso per verifica interna di chiavi dinamometriche mediante masse campione e braccio di leva, con rapportino tecnico finale.";
+    return "Flusso per verifica interna di strumenti aziendali, con inserimento immediato dei punti di coppia e rapportino tecnico finale.";
   }
 
-  return "Flusso per verifica/taratura di chiavi dinamometriche mediante masse campione e braccio di leva, con rapporto finale.";
+  return "Flusso per verifica/taratura di strumenti cliente, con inserimento immediato dei punti di coppia e rapporto finale.";
 }
 
 export default async function NewTorqueVerificationPage({
   searchParams,
 }: PageProps) {
+  const supabase = await createServerSupabaseClient();
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const verificationScope = resolveScope(resolvedSearchParams.scope);
 
-  const { data: customersData, error: customersError } = await supabase
+  const { data: customersData, error: customersError } = (verificationScope === "VT" ? await supabase
     .from("customers")
     .select("*")
     .eq("is_active", true)
-    .order("business_name", { ascending: true });
+    .order("business_name", { ascending: true }) : { data: null, error: null });
 
   const { data: customerInstrumentsData, error: customerInstrumentsError } =
-    await supabase
+    (verificationScope === "VT" ? await supabase
       .from("customer_instruments")
       .select("*")
-      .order("name", { ascending: true });
+      .order("name", { ascending: true }) : { data: null, error: null });
 
   const { data: internalInstrumentsData, error: internalInstrumentsError } =
-    await supabase
+    (verificationScope === "VI" ? await supabase
       .from("internal_instruments")
       .select(
         `
@@ -140,7 +141,7 @@ export default async function NewTorqueVerificationPage({
       `
       )
       .eq("is_active", true)
-      .order("name", { ascending: true });
+      .order("name", { ascending: true }) : { data: null, error: null });
 
   const { data: referenceInstrumentsData, error: referenceInstrumentsError } =
     await supabase

@@ -1,9 +1,12 @@
 "use client";
 
+import ViTestLocationSelect, { isViTestLocation } from "@/components/ViTestLocationSelect";
+
 import Link from "next/link";
 import SimpleAccuracyChart from "@/components/SimpleAccuracyChart";
 import { useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { finishMeasurementCreation } from "@/lib/use-record-edit-permission";
 import CustomerVerificationSection, {
   buildVerificationSiteDescription,
   type VerificationCustomerSite,
@@ -17,6 +20,8 @@ import ReferenceInstrumentMultiSelect, {
   getEffectiveReferenceInstrumentStatus,
   isReferenceInstrumentBlocked,
 } from "@/components/ReferenceInstrumentMultiSelect";
+import OperatorNameField from "@/components/OperatorNameField";
+import { attachInternalInstrumentMeasurements } from "@/lib/internal-instrument-snapshot";
 
 type VerificationScope = "VT" | "VI";
 
@@ -473,7 +478,8 @@ export default function DimensionalVerificationStarter({
   const [selectedReferenceInstrumentIds, setSelectedReferenceInstrumentIds] =
     useState<string[]>([]);
   const [verificationDate, setVerificationDate] = useState(todayInputDate());
-  const location = isInternalVerification ? "" : buildVerificationSiteDescription(selectedSite);
+  const [viTestLocation, setViTestLocation] = useState("");
+  const location = isInternalVerification ? viTestLocation : buildVerificationSiteDescription(selectedSite);
   const [operatorName, setOperatorName] = useState("");
   const [ambientTemperature, setAmbientTemperature] = useState("");
   const [ambientHumidity, setAmbientHumidity] = useState("");
@@ -694,6 +700,9 @@ export default function DimensionalVerificationStarter({
 
   function validate() {
     if (isInternalVerification) {
+      if (!isViTestLocation(viTestLocation)) {
+        throw new Error("Seleziona il laboratorio in cui è stata eseguita la verifica.");
+      }
       if (!selectedInternalInstrument) {
         throw new Error("Seleziona lo strumento interno da verificare.");
       }
@@ -785,8 +794,10 @@ export default function DimensionalVerificationStarter({
           throw new Error("Seleziona lo strumento interno da verificare.");
         }
 
-        instrumentSnapshot = buildInternalInstrumentSnapshot(
-          selectedInternalInstrument
+        instrumentSnapshot = await attachInternalInstrumentMeasurements(
+          supabase,
+          buildInternalInstrumentSnapshot(selectedInternalInstrument),
+          selectedInternalInstrument.id
         );
         instrumentName = selectedInternalInstrument.name;
         customerName = "Verifica interna";
@@ -831,15 +842,10 @@ export default function DimensionalVerificationStarter({
         .eq("code", "DIMENSIONAL")
         .maybeSingle();
 
-      // Il numero record viene generato al submit; manteniamo la logica esistente.
-      const recordNumber =
-        // eslint-disable-next-line react-hooks/purity
-        "DIM-" + String(new Date().getFullYear()) + "-" + String(Date.now());
-
       const { data: insertedRecord, error: insertError } = await supabase
         .from("calibration_records")
         .insert({
-          record_number: recordNumber,
+          record_number: null,
           calibration_type_id: calibrationType?.id ?? null,
           mode: "dimensionale",
           verification_module: "DIMENSIONAL",
@@ -1035,14 +1041,13 @@ export default function DimensionalVerificationStarter({
         );
       }
 
+      await finishMeasurementCreation(insertedRecord.id);
       setSavedRecordId(insertedRecord.id);
-      setSavedRecordNumber(recordNumber);
+      setSavedRecordNumber(null);
       setSaveMessage(
-        "Verifica dimensionale salvata correttamente con numero " +
-          recordNumber +
-          ". Data " +
+        "Verifica dimensionale salvata correttamente come bozza. Data " +
           todayItalianDateLabel() +
-          "."
+          ". Il numero definitivo verrà associato allo stesso record."
       );
     } catch (error) {
       const message =
@@ -1322,6 +1327,16 @@ export default function DimensionalVerificationStarter({
             </label>
           )}
 
+          {isInternalVerification && (
+            <ViTestLocationSelect
+              value={viTestLocation}
+              onChange={(value) => {
+                setViTestLocation(value);
+                resetSaveState();
+              }}
+            />
+          )}
+
           <label className="space-y-1">
             <span className="text-sm font-medium text-slate-700">
               Tipo di controllo dimensionale *
@@ -1342,20 +1357,13 @@ export default function DimensionalVerificationStarter({
             </select>
           </label>
 
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">
-              Tecnico
-            </span>
-            <input
-              value={operatorName}
-              onChange={(event) => {
-                setOperatorName(event.target.value);
-                resetSaveState();
-              }}
-              placeholder="Nome tecnico"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
-          </label>
+          <OperatorNameField
+            value={operatorName}
+            onChange={(value) => {
+              setOperatorName(value);
+              resetSaveState();
+            }}
+          />
 
           <label className="space-y-1">
             <span className="text-sm font-medium text-slate-700">
@@ -1682,12 +1690,7 @@ export default function DimensionalVerificationStarter({
         </div>
       )}
 
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
-        <strong>Nota tecnica:</strong> formule dimensionali: media dei tre
-        cicli; errore medio = media cicli - punto di applicazione; errore % =
-        errore / punto di applicazione × 100; ripetibilità % = (max - min) /
-        media cicli × 100.
-      </div>
+      
     </div>
   );
 }

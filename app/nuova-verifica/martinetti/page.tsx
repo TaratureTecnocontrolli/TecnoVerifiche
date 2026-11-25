@@ -1,6 +1,7 @@
 import AppShell from "@/components/AppShell";
 import NewVerificationHeader from "@/components/NewVerificationHeader";
 import JackCalibrationTable from "@/components/JackCalibrationTable";
+import { resolveVerificationScope } from "@/lib/app-mode";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -14,7 +15,7 @@ type PageProps = {
 
 export default async function NewJackCalibrationPage({ searchParams }: PageProps) {
   const resolvedSearchParams = searchParams ? await searchParams : undefined;
-  const verificationScope = resolvedSearchParams?.scope === "VI" ? "VI" : "VT";
+  const verificationScope = resolveVerificationScope(resolvedSearchParams?.scope);
 
   return (
     <AppShell>

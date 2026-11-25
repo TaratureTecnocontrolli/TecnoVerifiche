@@ -1,5 +1,6 @@
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
+import { isViOnlyMode } from "@/lib/app-mode";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -344,10 +345,12 @@ export default function NewVerificationPage() {
           </h1>
 
           <p className="mt-3 max-w-4xl text-slate-600">
-            Seleziona prima il processo operativo e poi il modulo tecnico da
-            avviare. Le VT sono verifiche di tarature con rapporto finale completo. Le VI sono verifiche interne con rapportino tecnico.
+            {isViOnlyMode
+              ? "Seleziona il modulo tecnico della Verifica Interna da avviare. In questo ambiente sono disponibili esclusivamente le VI e i relativi rapportini tecnici."
+              : "Seleziona prima il processo operativo e poi il modulo tecnico da avviare. Le VT sono verifiche di taratura con rapporto finale completo. Le VI sono verifiche interne con rapportino tecnico."}
           </p>
 
+          {!isViOnlyMode && (
           <div className="mt-6 grid gap-4 md:grid-cols-2">
             <a
               href="#vt"
@@ -379,9 +382,10 @@ export default function NewVerificationPage() {
               </p>
             </a>
           </div>
+          )}
         </section>
 
-        <ScopeSection scope="VT" modules={activeModules} />
+        {!isViOnlyMode && <ScopeSection scope="VT" modules={activeModules} />}
         <ScopeSection scope="VI" modules={activeModules} />
 
         {developmentModules.length > 0 && (
@@ -395,7 +399,7 @@ export default function NewVerificationPage() {
 
             <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
               {developmentModules.map((module) => (
-                <ModuleCard key={module.title} module={module} scope="VT" />
+                <ModuleCard key={module.title} module={module} scope={isViOnlyMode ? "VI" : "VT"} />
               ))}
             </div>
           </section>

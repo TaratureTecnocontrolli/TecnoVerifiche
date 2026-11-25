@@ -248,7 +248,7 @@ export default function TechnicianSignaturesManager() {
         .from("technician-signatures")
         .upload(storagePath, file, {
           cacheControl: "3600",
-          upsert: true,
+          upsert: false,
         });
 
       if (uploadError) {
@@ -821,7 +821,7 @@ export default function TechnicianSignaturesManager() {
             </p>
           </div>
 
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto tc-sticky-table" tabIndex={0} role="region" aria-label="Tabella scorrevole">
             <table className="w-full min-w-[760px] text-sm">
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
@@ -921,7 +921,7 @@ export default function TechnicianSignaturesManager() {
               </p>
             </div>
 
-            <div className="overflow-x-auto">
+            <div className="overflow-x-auto tc-sticky-table" tabIndex={0} role="region" aria-label="Tabella scorrevole">
               <table className="w-full min-w-[680px] text-sm">
                 <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                   <tr>

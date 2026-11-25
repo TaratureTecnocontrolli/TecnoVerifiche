@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { useRecordEditPermission, beginMeasurementSave, finishMeasurementSave } from "@/lib/use-record-edit-permission";
 import ReferenceInstrumentMultiSelect from "@/components/ReferenceInstrumentMultiSelect";
 
 type ReferenceInstrument = {
@@ -433,7 +434,8 @@ export default function EditMassMeasurementsForm({
   const [saveMessage, setSaveMessage] = useState("");
   const [saveError, setSaveError] = useState("");
 
-  const isReadOnly = reportStatus === "issued";
+  const canEditRecord = useRecordEditPermission(recordId, reportStatus);
+  const isReadOnly = !canEditRecord;
   const detailsHref = isInternalVerification
     ? "/verifiche/" + recordId + "/rapportino-interno"
     : "/verifiche/" + recordId + "/rapporto";
@@ -758,14 +760,16 @@ export default function EditMassMeasurementsForm({
 
     if (isReadOnly) {
       setSaveError(
-        "Il rapporto è emesso: per modificare le misure devi prima riaprirlo per correzione dall’anteprima finale."
+        "Misure in sola lettura: verifica i permessi, lo stato del rapportino e le conferme delle firme."
       );
       return;
     }
 
     setIsSaving(true);
+    let saveToken: string | null = null;
 
     try {
+      saveToken = await beginMeasurementSave(recordId);
       if (isInternalVerification && !verificationDate) {
         throw new Error("Inserisci la data della verifica.");
       }
@@ -848,16 +852,22 @@ export default function EditMassMeasurementsForm({
 
 
 
-      await supabase
+      const { error: resetReportStatusError } = await supabase
         .from("calibration_records")
         .update({ report_status: "draft" })
         .eq("id", recordId)
         .neq("report_status", "issued");
+      if (resetReportStatusError) throw new Error(resetReportStatusError.message);
 
+      await finishMeasurementSave(recordId, saveToken, true);
+      saveToken = null;
       setSaveMessage(
         "Misure massa (ripetibilità, eccentricità, linearità) aggiornate correttamente."
       );
     } catch (error) {
+      if (saveToken) {
+        try { await finishMeasurementSave(recordId, saveToken, false); } catch { /* MASTER can recover an interrupted save. */ }
+      }
       const message =
         error instanceof Error
           ? error.message
@@ -994,10 +1004,9 @@ export default function EditMassMeasurementsForm({
 
       {isReadOnly && (
         <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950 shadow-sm">
-          <p className="font-bold">Rapporto emesso: misure in sola lettura</p>
+          <p className="font-bold">Misure in sola lettura</p>
           <p className="mt-1">
-            Per correggere i dati tecnici devi prima riaprire il rapporto dalla
-            pagina di anteprima finale.
+            Verifica la tua autorizzazione sulle misure. Per le VI già firmate, le conferme devono essere revocate prima della correzione; se emesse occorre la riapertura MASTER.
           </p>
         </section>
       )}

@@ -1,8 +1,11 @@
 "use client";
 
+import ViTestLocationSelect, { isViTestLocation } from "@/components/ViTestLocationSelect";
+
 import Link from "next/link";
 import { type KeyboardEvent, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { finishMeasurementCreation } from "@/lib/use-record-edit-permission";
 import CustomerVerificationSection, {
   buildVerificationSiteDescription,
   type VerificationCustomerSite,
@@ -17,6 +20,8 @@ import ReferenceInstrumentMultiSelect, {
   isReferenceInstrumentBlocked,
 } from "@/components/ReferenceInstrumentMultiSelect";
 import SimpleAccuracyChart from "@/components/SimpleAccuracyChart";
+import OperatorNameField from "@/components/OperatorNameField";
+import { attachInternalInstrumentMeasurements } from "@/lib/internal-instrument-snapshot";
 
 type VerificationScope = "VT" | "VI";
 type CycleKey = "cycle1" | "cycle2" | "cycle3";
@@ -531,7 +536,8 @@ export default function SclerometricVerificationStarter({
   const [selectedInternalInstrumentId, setSelectedInternalInstrumentId] = useState("");
   const [selectedReferenceInstrumentIds, setSelectedReferenceInstrumentIds] = useState<string[]>([]);
   const [verificationDate, setVerificationDate] = useState(todayInputDate());
-  const location = isInternalVerification ? "" : buildVerificationSiteDescription(selectedSite);
+  const [viTestLocation, setViTestLocation] = useState("");
+  const location = isInternalVerification ? viTestLocation : buildVerificationSiteDescription(selectedSite);
   const [operatorName, setOperatorName] = useState("");
   const [ambientTemperature, setAmbientTemperature] = useState("");
   const [ambientHumidity, setAmbientHumidity] = useState("");
@@ -657,6 +663,9 @@ export default function SclerometricVerificationStarter({
 
   function validate() {
     if (isInternalVerification) {
+      if (!isViTestLocation(viTestLocation)) {
+        throw new Error("Seleziona il laboratorio in cui è stata eseguita la verifica.");
+      }
       if (!selectedInternalInstrument) throw new Error("Seleziona lo strumento interno da verificare.");
       if (selectedInternalInstrument.status !== "active") throw new Error("Lo strumento interno selezionato non è attivo. Seleziona uno strumento attivo.");
     } else {
@@ -718,7 +727,11 @@ export default function SclerometricVerificationStarter({
 
       if (isInternalVerification) {
         if (!selectedInternalInstrument) throw new Error("Seleziona lo strumento interno da verificare.");
-        instrumentSnapshot = buildInternalInstrumentSnapshot(selectedInternalInstrument);
+        instrumentSnapshot = await attachInternalInstrumentMeasurements(
+          supabase,
+          buildInternalInstrumentSnapshot(selectedInternalInstrument),
+          selectedInternalInstrument.id
+        );
         instrumentName = selectedInternalInstrument.name;
         customerName = "Verifica interna";
         instrumentManufacturer = selectedInternalInstrument.manufacturer;
@@ -899,6 +912,7 @@ export default function SclerometricVerificationStarter({
 
       if (measurementError) throw new Error(measurementError.message || "Verifica creata, ma errore nel salvataggio delle letture.");
 
+      await finishMeasurementCreation(insertedRecord.id);
       setSavedRecordId(insertedRecord.id);
       setSaveMessage("Verifica sclerometrica salvata correttamente. Salvate 10 battute valide per ciascuno dei 3 cicli. Data " + todayItalianDateLabel() + ".");
     } catch (error) {
@@ -932,11 +946,24 @@ export default function SclerometricVerificationStarter({
             </label>
           )}
 
+          {isInternalVerification && (
+            <ViTestLocationSelect
+              value={viTestLocation}
+              onChange={(value) => {
+                setViTestLocation(value);
+                resetSaveState();
+              }}
+            />
+          )}
 
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">Tecnico</span>
-            <input value={operatorName} onChange={(event) => { setOperatorName(event.target.value); resetSaveState(); }} placeholder="Nome tecnico" className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm" />
-          </label>
+
+          <OperatorNameField
+            value={operatorName}
+            onChange={(value) => {
+              setOperatorName(value);
+              resetSaveState();
+            }}
+          />
 
           <label className="space-y-1">
             <span className="text-sm font-medium text-slate-700">Temperatura ambiente °C</span>
@@ -1249,9 +1276,7 @@ export default function SclerometricVerificationStarter({
 
       {saveError && <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-900">{saveError}</div>}
 
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
-        <strong>Nota tecnica:</strong> rimangono 3 cicli. Ogni ciclo contiene 12 battute; per ogni ciclo il sistema elimina automaticamente la battuta più alta e la più bassa e salva 10 battute valide. Per ogni riga finale: errore medio = media(L1, L2, L3) - 80; errore medio % = errore medio / 80 × 100. Incudine nominale 80, LC ±3, campo 77/83.
-      </div>
+      
     </div>
   );
 }

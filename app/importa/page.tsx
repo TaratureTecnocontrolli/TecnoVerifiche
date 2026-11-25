@@ -1,5 +1,6 @@
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
+import { isViOnlyMode } from "@/lib/app-mode";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -43,7 +44,9 @@ export default function ImportaPage() {
         </section>
 
         <section className="grid gap-5 md:grid-cols-2">
-          {IMPORT_LINKS.map((item) => (
+          {IMPORT_LINKS
+            .filter((item) => !isViOnlyMode || !["/importa/clienti", "/importa/strumenti-cliente"].includes(item.href))
+            .map((item) => (
             <Link
               key={item.href}
               href={item.href}

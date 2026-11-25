@@ -1,6 +1,7 @@
 import AppShell from "@/components/AppShell";
 import NewVerificationHeader from "@/components/NewVerificationHeader";
 import PressureCalibrationTable from "@/components/PressureCalibrationTable";
+import { resolveVerificationScope } from "@/lib/app-mode";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -16,15 +17,12 @@ type PageProps = {
 
 type VerificationScope = "VT" | "VI";
 
-function normalizeScope(scope: string | undefined): VerificationScope {
-  return scope === "VI" ? "VI" : "VT";
-}
 
 export default async function NewPressureVerificationPage({
   searchParams,
 }: PageProps) {
   const resolvedSearchParams = searchParams ? await searchParams : {};
-  const verificationScope = normalizeScope(resolvedSearchParams.scope);
+  const verificationScope = resolveVerificationScope(resolvedSearchParams.scope);
   const isInternalVerification = verificationScope === "VI";
 
   return (

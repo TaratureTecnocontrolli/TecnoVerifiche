@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { isTechnicalProvisionalRecordNumber } from "@/lib/document-number";
 
 type InternalReportNumberFormProps = {
   recordId: string;
@@ -52,7 +53,21 @@ export default function InternalReportNumberForm({
         }
       }
 
-      setMessage("Numero VI salvato correttamente.");
+      if (
+        normalizedReportNumber &&
+        isTechnicalProvisionalRecordNumber(fallbackRecordNumber)
+      ) {
+        const { error: clearRecordNumberError } = await supabase
+          .from("calibration_records")
+          .update({ record_number: null })
+          .eq("id", recordId);
+
+        if (clearRecordNumberError) {
+          throw new Error(clearRecordNumberError.message);
+        }
+      }
+
+      setMessage("Numero VI salvato correttamente sul record esistente.");
       window.location.reload();
     } catch (error) {
       const message =
@@ -74,13 +89,13 @@ export default function InternalReportNumberForm({
             Numero rapportino VI
           </h2>
           <p className="mt-1 text-sm text-slate-600">
-            Inserisci manualmente il numero comunicato dall'ufficio. Se lasci il
-            campo vuoto, nel rapportino resta il numero tecnico provvisorio.
+            Inserisci manualmente il numero comunicato dall'ufficio. Il numero viene
+            associato alla verifica esistente: non viene creato un secondo documento.
           </p>
 
-          {fallbackRecordNumber && (
+          {fallbackRecordNumber && !isTechnicalProvisionalRecordNumber(fallbackRecordNumber) && (
             <p className="mt-2 text-xs font-semibold text-slate-500">
-              Numero tecnico provvisorio: {fallbackRecordNumber}
+              Riferimento esistente: {fallbackRecordNumber}
             </p>
           )}
         </div>

@@ -2,7 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import EditFlowMeasurementsForm from "@/components/EditFlowMeasurementsForm";
-import { supabase } from "@/lib/supabase";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { isScopeAllowed } from "@/lib/app-mode";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -30,6 +31,7 @@ type CalibrationRecord = {
 
 export default async function EditFlowMeasurementsPage({ params }: PageProps) {
   const { id } = await params;
+  const supabase = await createServerSupabaseClient();
 
   const { data: recordData, error: recordError } = await supabase
     .from("calibration_records")
@@ -48,6 +50,10 @@ export default async function EditFlowMeasurementsPage({ params }: PageProps) {
     record.output_type === "rapportino_interno" ||
     record.verified_instrument_type === "internal" ||
     record.verified_instrument_type === "interno";
+
+  if (!isScopeAllowed(isInternalVerification ? "VI" : "VT")) {
+    notFound();
+  }
 
   const detailsHref = isInternalVerification
     ? "/verifiche/" + id + "/rapportino-interno"

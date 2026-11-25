@@ -1,8 +1,11 @@
 "use client";
 
+import ViTestLocationSelect, { isViTestLocation } from "@/components/ViTestLocationSelect";
+
 import Link from "next/link";
 import { type KeyboardEvent, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { finishMeasurementCreation } from "@/lib/use-record-edit-permission";
 import CustomerVerificationSection, {
   buildVerificationSiteDescription,
   type VerificationCustomerSite,
@@ -16,6 +19,8 @@ import ReferenceInstrumentMultiSelect, {
   isReferenceInstrumentBlocked,
 } from "@/components/ReferenceInstrumentMultiSelect";
 import SimpleAccuracyChart from "@/components/SimpleAccuracyChart";
+import OperatorNameField from "@/components/OperatorNameField";
+import { attachInternalInstrumentMeasurements } from "@/lib/internal-instrument-snapshot";
 
 type VerificationScope = "VT" | "VI";
 
@@ -514,7 +519,8 @@ export default function MassVerificationStarter({
   const [selectedReferenceInstrumentIds, setSelectedReferenceInstrumentIds] =
     useState<string[]>([]);
   const [verificationDate, setVerificationDate] = useState(todayInputDate());
-  const location = isInternalVerification ? "" : buildVerificationSiteDescription(selectedSite);
+  const [viTestLocation, setViTestLocation] = useState("");
+  const location = isInternalVerification ? viTestLocation : buildVerificationSiteDescription(selectedSite);
   const [operatorName, setOperatorName] = useState("");
   const [ambientTemperature, setAmbientTemperature] = useState("");
   const [ambientHumidity, setAmbientHumidity] = useState("");
@@ -789,6 +795,9 @@ export default function MassVerificationStarter({
 
   function validate() {
     if (isInternalVerification) {
+      if (!isViTestLocation(viTestLocation)) {
+        throw new Error("Seleziona il laboratorio in cui è stata eseguita la verifica.");
+      }
       if (!selectedInternalInstrument) {
         throw new Error("Seleziona lo strumento interno da verificare.");
       }
@@ -879,8 +888,10 @@ export default function MassVerificationStarter({
           throw new Error("Seleziona lo strumento interno da verificare.");
         }
 
-        instrumentSnapshot = buildInternalInstrumentSnapshot(
-          selectedInternalInstrument
+        instrumentSnapshot = await attachInternalInstrumentMeasurements(
+          supabase,
+          buildInternalInstrumentSnapshot(selectedInternalInstrument),
+          selectedInternalInstrument.id
         );
         instrumentName = selectedInternalInstrument.name;
         customerName = "Verifica interna";
@@ -1124,6 +1135,7 @@ export default function MassVerificationStarter({
         );
       }
 
+      await finishMeasurementCreation(insertedRecord.id);
       setSavedRecordId(insertedRecord.id);
       setSaveMessage(
         "Verifica massa salvata correttamente. Data " +
@@ -1449,19 +1461,24 @@ export default function MassVerificationStarter({
             </label>
           )}
 
-
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">Tecnico</span>
-            <input
-              value={operatorName}
-              onChange={(event) => {
-                setOperatorName(event.target.value);
+          {isInternalVerification && (
+            <ViTestLocationSelect
+              value={viTestLocation}
+              onChange={(value) => {
+                setViTestLocation(value);
                 resetSaveState();
               }}
-              placeholder="Nome tecnico"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
             />
-          </label>
+          )}
+
+
+          <OperatorNameField
+            value={operatorName}
+            onChange={(value) => {
+              setOperatorName(value);
+              resetSaveState();
+            }}
+          />
 
           <label className="space-y-1">
             <span className="text-sm font-medium text-slate-700">
@@ -1755,13 +1772,7 @@ export default function MassVerificationStarter({
         </div>
       )}
 
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
-        <strong>Nota tecnica:</strong> ripetibilità ed eccentricità riportano il
-        grafico della ripetibilità percentuale; linearità riporta il grafico
-        dell’errore percentuale. Il peso campione viene assunto uguale al peso
-        nominale inserito, evitando una doppia compilazione. Le letture sono su
-        tre cicli.
-      </div>
+      
     </div>
   );
 }

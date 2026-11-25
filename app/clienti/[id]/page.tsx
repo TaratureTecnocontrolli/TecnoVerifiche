@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import AppShell from "@/components/AppShell";
+import RoleGate from "@/components/RoleGate";
 import EditCustomerForm from "@/components/EditCustomerForm";
 import { supabase } from "@/lib/supabase";
 
@@ -127,7 +128,9 @@ export default async function CustomerDetailPage({ params }: PageProps) {
           </div>
         </div>
 
-        <EditCustomerForm customer={customer} mainSite={mainSite} />
+<RoleGate allow={["master"]}>
+          <EditCustomerForm customer={customer} mainSite={mainSite} />
+        </RoleGate>
       </div>
     </AppShell>
   );

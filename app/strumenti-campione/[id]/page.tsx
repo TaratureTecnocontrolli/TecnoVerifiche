@@ -1,7 +1,10 @@
+import InstrumentDocumentArchive from "@/components/InstrumentDocumentArchive";
+import InstrumentSiteCard from "@/components/InstrumentSiteCard";
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
+import RoleGate from "@/components/RoleGate";
 import EditReferenceInstrumentForm from "@/components/EditReferenceInstrumentForm";
-import { supabase } from "@/lib/supabase";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -124,11 +127,13 @@ export default async function ReferenceInstrumentDetailPage({
   params,
 }: PageProps) {
   const { id } = await params;
+  const supabase = await createServerSupabaseClient();
 
   const { data, error } = await supabase
     .from("reference_instruments")
     .select(
       `
+      lab_site,
       id,
       name,
       manufacturer,
@@ -236,6 +241,7 @@ export default async function ReferenceInstrumentDetailPage({
           </div>
         </div>
 
+        <InstrumentSiteCard id={instrument.id} kind="campioni" initialSite={(data as {lab_site?:string|null}).lab_site??null} />
         <section className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
           <h2 className="text-lg font-semibold text-slate-900">
             Riepilogo strumento
@@ -256,7 +262,10 @@ export default async function ReferenceInstrumentDetailPage({
           </div>
         </section>
 
-        <EditReferenceInstrumentForm instrument={instrument} />
+<RoleGate allow={["master"]}>
+          <EditReferenceInstrumentForm instrument={instrument} />
+        </RoleGate>
+        <InstrumentDocumentArchive kind="campioni" id={instrument.id} />
       </div>
     </AppShell>
   );

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import AppShell from "@/components/AppShell";
+import RoleGate from "@/components/RoleGate";
 import EditCustomerInstrumentForm from "@/components/EditCustomerInstrumentForm";
 import { supabase } from "@/lib/supabase";
 
@@ -145,21 +146,23 @@ export default async function CustomerInstrumentDetailPage({
           </p>
         </div>
 
-        <EditCustomerInstrumentForm
-          instrument={instrument}
-          customers={(customersData ?? []) as {
-            id: string;
-            customer_number: string | null;
-            business_name: string;
-          }[]}
-          sites={(sitesData ?? []) as {
-            id: string;
-            customer_id: string;
-            name: string;
-            city: string | null;
-            province: string | null;
-          }[]}
-        />
+        <RoleGate allow={["master"]}>
+          <EditCustomerInstrumentForm
+            instrument={instrument}
+            customers={(customersData ?? []) as {
+              id: string;
+              customer_number: string | null;
+              business_name: string;
+            }[]}
+            sites={(sitesData ?? []) as {
+              id: string;
+              customer_id: string;
+              name: string;
+              city: string | null;
+              province: string | null;
+            }[]}
+          />
+        </RoleGate>
       </div>
     </AppShell>
   );

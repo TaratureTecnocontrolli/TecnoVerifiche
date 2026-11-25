@@ -122,7 +122,7 @@ export default function CustomersSearchTable({
           Nessun cliente trovato con la ricerca inserita.
         </div>
       ) : (
-        <div className="overflow-x-auto">
+        <div className="overflow-x-auto tc-sticky-table" tabIndex={0} role="region" aria-label="Tabella scorrevole">
           <table className="w-full min-w-[1120px] text-sm">
             <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
               <tr>

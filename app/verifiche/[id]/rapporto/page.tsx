@@ -1,9 +1,11 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import CalibrationReportDetailsForm from "@/components/CalibrationReportDetailsForm";
-import { supabase } from "@/lib/supabase";
+import IssuedReportSignaturesForm from "@/components/IssuedReportSignaturesForm";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
 import { getVerificationModuleFromMode } from "@/lib/verification-types";
+import { isScopeAllowed } from "@/lib/app-mode";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -22,6 +24,9 @@ type CalibrationRecord = {
   record_number: string | null;
   mode: string | null;
   verification_module: string | null;
+  verification_scope: string | null;
+  verified_instrument_type: string | null;
+  output_type: string | null;
   verification_date: string;
   operator_name: string | null;
   location: string | null;
@@ -133,6 +138,7 @@ function reportStatusClass(status: string | null | undefined) {
 
 export default async function CalibrationReportDetailsPage({ params }: PageProps) {
   const { id } = await params;
+  const supabase = await createServerSupabaseClient();
 
   const { data: recordData, error: recordError } = await supabase
     .from("calibration_records")
@@ -142,6 +148,9 @@ export default async function CalibrationReportDetailsPage({ params }: PageProps
       record_number,
       mode,
       verification_module,
+      verification_scope,
+      verified_instrument_type,
+      output_type,
       verification_date,
       operator_name,
       location,
@@ -161,6 +170,17 @@ export default async function CalibrationReportDetailsPage({ params }: PageProps
   }
 
   const record = recordData as CalibrationRecord;
+  const isInternalVerification =
+    record.verification_scope === "VI" ||
+    record.output_type === "rapportino" ||
+    record.output_type === "rapportino_interno" ||
+    record.verified_instrument_type === "internal" ||
+    record.verified_instrument_type === "interno";
+
+  if (!isScopeAllowed(isInternalVerification ? "VI" : "VT")) {
+    notFound();
+  }
+  if (record.verification_scope === "VI") redirect("/verifiche/" + id + "/rapportino-interno");
 
   const { data: reportData, error: reportError } = await supabase
     .from("calibration_report_details")
@@ -286,6 +306,8 @@ export default async function CalibrationReportDetailsPage({ params }: PageProps
             nell’anteprima finale.
           </div>
         )}
+
+        {isIssued && <IssuedReportSignaturesForm recordId={id} />}
 
         <CalibrationReportDetailsForm
           recordId={id}

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { isViOnlyMode } from "@/lib/app-mode";
 
 type VerificationScope = "VT" | "VI";
 
@@ -76,7 +77,7 @@ export default function NewVerificationHeader({
             </p>
           </div>
 
-          {showScopeSwitch && basePath && (
+          {showScopeSwitch && basePath && !isViOnlyMode && (
             <div className="flex flex-wrap gap-2">
               <Link
                 href={basePath + "?scope=VT"}

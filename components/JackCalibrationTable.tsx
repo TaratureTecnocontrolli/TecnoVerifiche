@@ -1,5 +1,7 @@
 "use client";
 
+import ViTestLocationSelect, { isViTestLocation } from "@/components/ViTestLocationSelect";
+
 import Link from "next/link";
 import { type KeyboardEvent, useEffect, useMemo, useState } from "react";
 import {
@@ -8,12 +10,15 @@ import {
   type MartinettoPointInput,
 } from "@/lib/martinetti-calculations";
 import { supabase } from "@/lib/supabase";
+import { finishMeasurementCreation } from "@/lib/use-record-edit-permission";
 import {
   getJackReportDefaults,
   combineReferenceInstrumentNames,
 } from "@/lib/report-defaults";
 import ReferenceInstrumentMultiSelect from "./ReferenceInstrumentMultiSelect";
 import JackConversionChart from "./JackConversionChart";
+import OperatorNameField from "@/components/OperatorNameField";
+import { attachInternalInstrumentMeasurements } from "@/lib/internal-instrument-snapshot";
 
 type VerificationScope = "VT" | "VI";
 
@@ -618,7 +623,9 @@ export default function JackCalibrationTable({
       setIsLoadingData(true);
       setLoadError("");
 
-      const { data: customersData, error: customersError } = await supabase
+      const { data: customersData, error: customersError } = isInternalVerification
+        ? { data: [], error: null }
+        : await supabase
         .from("customers")
         .select("id, customer_number, business_name")
         .eq("is_active", true)
@@ -630,7 +637,9 @@ export default function JackCalibrationTable({
         return;
       }
 
-      const { data: sitesData, error: sitesError } = await supabase
+      const { data: sitesData, error: sitesError } = isInternalVerification
+        ? { data: [], error: null }
+        : await supabase
         .from("customer_sites")
         .select("id, customer_id, name, address, city, province, postal_code")
         .eq("is_active", true)
@@ -643,7 +652,9 @@ export default function JackCalibrationTable({
       }
 
       const { data: customerInstrumentsData, error: customerInstrumentsError } =
-        await supabase
+        isInternalVerification
+          ? { data: [], error: null }
+          : await supabase
           .from("customer_instruments")
           .select(
             `
@@ -1088,8 +1099,8 @@ function resetSaveState() {
           throw new Error("Seleziona lo strumento interno da verificare.");
         }
 
-        if (!verificationLocation.trim()) {
-          throw new Error("Inserisci il luogo della verifica interna.");
+        if (!isViTestLocation(verificationLocation)) {
+          throw new Error("Seleziona il laboratorio in cui è stata eseguita la verifica.");
         }
       } else {
         if (!selectedCustomer) {
@@ -1124,7 +1135,11 @@ function resetSaveState() {
         .maybeSingle();
 
       const verifiedInstrumentSnapshot = isInternalVerification
-        ? buildInternalInstrumentSnapshot(selectedInternalInstrument as InternalInstrument)
+        ? await attachInternalInstrumentMeasurements(
+            supabase,
+            buildInternalInstrumentSnapshot(selectedInternalInstrument as InternalInstrument),
+            (selectedInternalInstrument as InternalInstrument).id
+          )
         : {
             customer_id: selectedCustomer?.id ?? null,
             customer_number: selectedCustomer?.customer_number ?? null,
@@ -1174,13 +1189,10 @@ function resetSaveState() {
         },
       };
 
-      const recordNumber =
-        "MAR-" + String(new Date().getFullYear()) + "-" + String(Date.now());
-
       const { data: record, error: recordError } = await supabase
         .from("calibration_records")
         .insert({
-          record_number: recordNumber,
+          record_number: null,
           calibration_type_id: calibrationType?.id ?? null,
           verification_scope: verificationScope,
           verified_instrument_type: isInternalVerification ? "internal" : "customer",
@@ -1425,14 +1437,13 @@ function resetSaveState() {
         );
       }
 
+      await finishMeasurementCreation(record.id);
       setSavedRecordId(record.id);
-      setSavedRecordNumber(recordNumber);
+      setSavedRecordNumber(null);
       setSaveMessage(
-        "Verifica martinetto salvata correttamente con numero " +
-          recordNumber +
-          ". Data " +
+        "Verifica martinetto salvata correttamente come bozza. Data " +
           todayItalianDateLabel() +
-          "."
+          ". Il numero definitivo verrà associato allo stesso record."
       );
     } catch (error) {
       const message =
@@ -1494,18 +1505,13 @@ function resetSaveState() {
             </select>
           </label>
 
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">Tecnico</span>
-            <input
-              value={operatorName}
-              onChange={(event) => {
-                setOperatorName(event.target.value);
-                resetSaveState();
-              }}
-              placeholder="Nome tecnico"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
-          </label>
+          <OperatorNameField
+            value={operatorName}
+            onChange={(value) => {
+              setOperatorName(value);
+              resetSaveState();
+            }}
+          />
 
           <label className="space-y-1">
             <span className="text-sm font-medium text-slate-700">
@@ -1596,20 +1602,13 @@ function resetSaveState() {
               </select>
             </label>
 
-            <label className="space-y-1">
-              <span className="text-sm font-medium text-slate-700">
-                Luogo verifica *
-              </span>
-              <input
-                value={verificationLocation}
-                onChange={(event) => {
-                  setVerificationLocation(event.target.value);
-                  resetSaveState();
-                }}
-                placeholder="Es. Laboratorio Bologna / sede cliente / campo"
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-              />
-            </label>
+            <ViTestLocationSelect
+              value={verificationLocation}
+              onChange={(value) => {
+                setVerificationLocation(value);
+                resetSaveState();
+              }}
+            />
           </div>
 
           {internalInstruments.length === 0 && !isLoadingData && (

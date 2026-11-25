@@ -1,0 +1,256 @@
+/* Suite Tecnocontrolli — compact application chrome */
+.tc-shell { min-height:100vh; background:#edf0f3; }
+.tc-banner { position:relative; isolation:isolate; min-height:118px; display:flex; align-items:center; padding:14px 26px; overflow:hidden; background:#fff; border-top:4px solid #c81018; border-bottom:1px solid #cbd2db; }
+
+
+.tc-brand-link { display:flex; align-items:center; gap:18px; min-width:0; max-width:min(100%, 820px); color:inherit; text-decoration:none; }
+.tc-brand-link img { flex-shrink:0; }
+.tc-brand-shield { width:clamp(64px, 8vw, 110px); height:auto; object-fit:contain; }
+.tc-brand-text { border-left:3px solid #c81018; padding-left:18px; min-width:0; display:flex; flex-direction:column; justify-content:center; }
+.tc-brand-company-logo { width:clamp(148px, 18vw, 250px); height:auto; object-fit:contain; margin-bottom:4px; }
+.tc-brand-module { font-size:clamp(18px,2vw,29px); font-weight:800; line-height:1.08; color:#000000; letter-spacing:-.025em; }
+.tc-brand-description { margin-top:6px; max-width:640px; font-size:12px; line-height:1.45; color:#435061; font-weight:500; }
+.tc-shell-body { display:grid; grid-template-columns:218px minmax(0,1fr); align-items:start; min-height:calc(100vh - 132px); }
+.tc-sidebar { position:sticky; top:0; display:flex; flex-direction:column; height:100vh; min-width:0; overflow:auto; background:linear-gradient(160deg,#303b47,#202934 75%); color:#fff; border-right:1px solid #16202c; }
+.tc-sidebar-top { display:flex; align-items:center; justify-content:space-between; padding:17px 16px; border-bottom:1px solid #ffffff18; font-size:10px; letter-spacing:.15em; font-weight:800; color:#d3dbe4; }
+.tc-sidebar-dot { width:7px;height:7px;border-radius:50%;background:#e62831; }
+.tc-sidebar-nav { flex:1; padding:6px 9px 15px; }
+.tc-nav-group { margin-bottom:12px; }
+.tc-nav-group>p { padding:9px 9px 5px; font-size:10px; font-weight:750; text-transform:uppercase; letter-spacing:.10em; color:#b6c0cc; }
+.tc-nav-link { display:flex; align-items:center; gap:10px; padding:10px 9px; border-radius:6px; font-size:13px; font-weight:550; line-height:1.3; color:#f3f5f8; text-decoration:none; transition:background .15s; }
+.tc-nav-link:hover { background:#ffffff12; }
+.tc-nav-link.tc-nav-active { color:white; background:linear-gradient(100deg,#c60d17,#e11d26); box-shadow:0 3px 10px #0002; }
+.tc-nav-link svg { width:17px;height:17px; }
+.tc-sidebar-account { border-top:1px solid #ffffff20; padding:14px 15px 21px; }
+.tc-account-name { font-size:13px;font-weight:700;overflow-wrap:anywhere; }
+.tc-account-role { font-size:11px;color:#c2cbd5;margin:4px 0 10px; }
+.tc-sidebar-account .rounded-full:not(button) { display:none; }
+.tc-sidebar-account button { width:100%;border-radius:6px; }
+.tc-shell-content { min-width:0; }
+.tc-main { width:100%; min-width:0; padding:20px 24px 32px; }
+.tc-mobile-nav { display:none; }
+.tc-dashboard { display:flex;flex-direction:column;gap:16px;max-width:1800px;margin:auto; }
+.tc-dashboard-title { display:flex;align-items:center;justify-content:space-between;gap:12px; }
+.tc-dashboard-title h1 { font-size:27px;line-height:1.2;font-weight:800;letter-spacing:-.035em;color:#17212d; }
+.tc-dashboard-title p:not(.tc-eyebrow) { margin-top:4px;font-size:13px;color:#526072; }
+.tc-eyebrow { color:#a90e17;font-size:10px;font-weight:800;letter-spacing:.12em;margin-bottom:3px; }
+.tc-kpi-grid { display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px; }
+.tc-kpi { position:relative;display:flex;gap:10px;align-items:center;padding:14px 12px 16px;border:1px solid #d5dbe3;border-radius:12px;background:linear-gradient(#fff,#fafbfc);box-shadow:0 2px 5px #1720330b;overflow:hidden;text-decoration:none;color:inherit; }
+.tc-kpi::after { content:"";position:absolute;bottom:0;right:0;width:32%;height:4px;background:#c81018;border-top-left-radius:100%; }
+.tc-kpi:hover { border-color:#c81018; }
+.tc-kpi-icon { display:grid;place-items:center;width:40px;height:40px;border-radius:10px;color:#fff;flex:none; }
+.tc-tone-slate { background:#344252; }.tc-tone-green { background:#168247; }.tc-tone-amber { background:#b96a0b; }.tc-tone-red { background:#c81018; }
+.tc-kpi-value { font-size:29px;font-weight:800;line-height:1.05;color:#18212b;font-variant-numeric:tabular-nums; }
+.tc-kpi-title { font-size:13px;line-height:1.35;font-weight:700;margin-top:4px;color:#263343; }
+.tc-kpi-description { font-size:11px;line-height:1.3;color:#596778;margin-top:2px; }
+.tc-kpi-arrow { color:#64748b;position:absolute;top:8px;right:7px; }.tc-kpi-arrow svg { width:12px;height:12px; }
+.tc-dashboard-grid { display:grid;grid-template-columns:1.05fr 1fr;gap:14px; }
+.tc-dashboard-panel { background:#fff;border:1px solid #d5dbe3;border-radius:12px;padding:16px;box-shadow:0 2px 5px #17203309;min-width:0;display:flex;flex-direction:column; }
+.tc-section-heading { display:flex;align-items:center;gap:9px;font-size:15px;font-weight:750;color:#202a36;margin-bottom:12px; }.tc-section-heading svg { color:#c81018; }
+.tc-chart { display:flex;gap:14px;align-items:flex-end;justify-content:space-around;min-height:170px;padding:5px 8px 9px; }
+.tc-chart-column { display:flex;flex-direction:column;align-items:center;flex:1;min-width:0;gap:8px; }
+.tc-chart-track { height:140px;width:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;border-bottom:1px solid #cdd5df; background:repeating-linear-gradient(to top,transparent 0,transparent 27px,#eef1f4 27px,#eef1f4 28px); }
+.tc-chart-track>span { font-size:16px;font-weight:800;margin-bottom:4px;color:#202a36; }
+.tc-chart-bar { width:min(66%,80px);border-radius:6px 6px 0 0; }.tc-chart-bar-0 { background:#cc1823; }.tc-chart-bar-1 { background:#df8b16; }.tc-chart-bar-2 { background:#e6bc42; }
+.tc-chart-label { font-size:12px;font-weight:650;color:#4e5d70;white-space:nowrap; }
+.tc-section-footer { display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-top:auto;padding-top:12px;border-top:1px solid #e8ebef; }
+.tc-section-footer a { display:flex;align-items:center;gap:5px;color:#a90e17;font-size:12px;font-weight:700;text-decoration:none; }.tc-section-footer a svg { width:15px;height:15px; }
+.tc-expiry-list { margin-bottom:10px; }.tc-expiry-list>a { display:flex;align-items:center;gap:9px;padding:9px 0;border-bottom:1px solid #edf0f3;color:inherit;text-decoration:none; }.tc-expiry-list>a:last-child { border:0; }.tc-expiry-list strong { display:block;font-size:13px;overflow-wrap:anywhere; }.tc-expiry-list small { display:block;color:#5f6d7d;font-size:11px;margin-top:2px; }
+.tc-expiry-icon { background:#fff3dd;color:#a65b04;padding:7px;border-radius:7px; }.tc-expiry-icon svg { width:16px;height:16px; }.tc-expiry-badge { font-size:11px;color:#915000;background:#fff3dd;border-radius:5px;padding:4px 6px;white-space:nowrap; }
+.tc-empty { min-height:150px;display:grid;place-items:center;text-align:center;font-size:13px;color:#596778;padding:16px; }
+.tc-quick-actions { display:flex;flex-wrap:wrap;gap:9px; }
+.tc-action { display:inline-flex;align-items:center;justify-content:center;gap:8px;border:1px solid #d2d9e2;border-radius:8px;background:white;color:#253142;padding:10px 13px;text-decoration:none;font-size:13px;font-weight:700;min-height:40px; }.tc-action svg { width:17px;height:17px; }.tc-action:hover { background:#f1f4f7; }.tc-action-primary { color:white;background:#c81018;border-color:#c81018; }.tc-action-primary:hover { background:#a90e17; }
+.tc-shell a:focus-visible,.tc-shell summary:focus-visible { outline:3px solid #ca1620;outline-offset:3px; }.tc-sidebar a:focus-visible { outline-color:#fff; }
+@media(min-width:1500px){.tc-main{padding:24px 30px}.tc-kpi{padding:18px}.tc-kpi-icon{width:48px;height:48px}.tc-banner{min-height:146px}}
+@media(max-width:1250px){.tc-kpi-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.tc-brand-description{max-width:440px}}
+@media(max-width:1023px){.tc-shell-body{display:block}.tc-sidebar{display:none}.tc-banner{padding:15px 18px;min-height:110px}.tc-brand-description{max-width:440px}.tc-main{padding:16px}.tc-mobile-nav{display:block;background:#26313e;color:white}.tc-mobile-nav summary{display:flex;align-items:center;gap:8px;cursor:pointer;padding:12px 16px;font-weight:700;font-size:14px;list-style:none}.tc-mobile-nav summary span{margin-left:auto;font-size:11px;color:#dce2e9}.tc-mobile-nav nav{padding:6px 12px}.tc-mobile-nav .tc-nav-group{margin-bottom:7px}.tc-mobile-nav .tc-nav-link{min-height:42px}}
+@media(max-width:640px){.tc-banner{padding:13px 12px}.tc-brand-link{gap:10px}.tc-brand-text{padding-left:10px}.tc-brand-company{font-size:23px}.tc-brand-module{font-size:17px}.tc-brand-description{font-size:10px;max-width:280px}.tc-main{padding:12px}.tc-dashboard-title h1{font-size:23px}.tc-dashboard-title>div>p:not(.tc-eyebrow){font-size:12px}.tc-dashboard-title .tc-action{white-space:nowrap;padding:8px}.tc-dashboard-grid{grid-template-columns:1fr}.tc-kpi-grid{gap:8px}.tc-kpi{padding:12px 8px;gap:7px;align-items:flex-start}.tc-kpi-icon{width:31px;height:31px;border-radius:7px}.tc-kpi-icon svg{width:17px;height:17px}.tc-kpi-value{font-size:24px}.tc-kpi-title{font-size:12px}.tc-kpi-description{font-size:10px}.tc-quick-actions>.tc-action{flex:1 1 135px}.tc-expiry-badge{white-space:normal}}
+@media print { .tc-shell,.tc-shell-body,.tc-shell-content,.tc-main{display:block!important;background:white!important;min-height:0!important;width:auto!important;max-width:none!important;padding:0!important;margin:0!important;overflow:visible!important;} .tc-banner,.tc-sidebar,.tc-mobile-nav{display:none!important;} }
+.tc-login{position:relative;isolation:isolate;min-height:100vh;display:flex;align-items:center;justify-content:flex-start;padding:clamp(20px,8vw,110px);background:#25313e;}.tc-login-card{width:min(440px,100%);border-radius:16px;background:#fff;border-top:5px solid #c81018;padding:32px;box-shadow:0 12px 50px #0004;}@media(max-width:640px){.tc-login{justify-content:center;padding:16px}.tc-login-card{padding:24px;}}
+
+/* Decorative photos are bounded CSS backgrounds, never absolute image elements. */
+.tc-banner {
+  background-color: #fff;
+  background-image: linear-gradient(90deg, #fff 0%, #fff 60%, rgba(255,255,255,.92) 50%, rgba(252, 4, 4, 0) 90%), url('/images/tecnocontrolli-lab.jpg');
+  background-position: center, right 4% bottom 98%;
+  background-repeat: no-repeat;
+  background-size: 100% 100%, auto 320%;
+}
+.tc-brand-link { position: relative; z-index: 1; }
+.tc-login {
+  background-color: #25313e;
+  background-image: linear-gradient(90deg, rgba(21,30,40,.85), rgba(21,30,40,.12)), url('/images/tecnocontrolli-lab.jpg');
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+}
+@media (max-width: 1023px) {
+  .tc-banner { min-height:104px; padding:12px 16px; background-image: linear-gradient(90deg,#fff 0%,rgba(255,255,255,.98) 60%,rgba(255,255,255,.55) 100%),url('/images/tecnocontrolli-lab.jpg'); background-position:center, right 10% bottom 40%; background-size: 100% 100%, auto 220%; }
+  .tc-brand-link { gap:12px; max-width:min(100%, 700px); }
+  .tc-brand-text { padding-left:12px; }
+  .tc-brand-company-logo { width:clamp(130px, 24vw, 210px); }
+}
+@media (max-width: 640px) {
+  .tc-banner { min-height:90px; padding:10px 12px; background-image: linear-gradient(90deg,#fff 0%,rgba(255,255,255,.92) 100%),url('/images/tecnocontrolli-lab.jpg'); }
+  .tc-brand-link { gap:10px; max-width:100%; }
+  .tc-brand-shield { width:58px; }
+  .tc-brand-text { border-left-width:2px; padding-left:10px; }
+  .tc-brand-company-logo { width:150px; margin-bottom:2px; }
+  .tc-brand-module { font-size:17px; }
+  .tc-brand-description { font-size:10px; line-height:1.25; margin-top:4px; }
+}
+@media print { .tc-banner { display:none!important; background:none!important; } }
+
+.tc-back-to-top {
+  position: fixed;
+  right: max(24px, env(safe-area-inset-right));
+  bottom: max(24px, env(safe-area-inset-bottom));
+  z-index: 35;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  padding: 0;
+  border: 1px solid #a90e17;
+  border-radius: 50%;
+  background: #c81018;
+  color: #fff;
+  box-shadow: 0 5px 16px #17203340;
+  cursor: pointer;
+}
+.tc-back-to-top:hover { background: #a90e17; }
+.tc-back-to-top:focus-visible { outline: 3px solid #d62832; outline-offset: 3px; }
+@media screen and (min-width: 1024px) {
+  .tc-shell {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .tc-banner { flex: 0 0 auto; min-height: 0; padding-block: 16px; }
+  .tc-shell-body {
+    flex: 1 1 0;
+    min-height: 0;
+    grid-template-rows: minmax(0, 1fr);
+    align-items: stretch;
+    overflow: hidden;
+  }
+  .tc-sidebar {
+    position: relative;
+    top: auto;
+    height: auto;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .tc-sidebar-top, .tc-sidebar-account { flex: 0 0 auto; }
+  .tc-sidebar-nav { flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+  .tc-shell-content { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+  .tc-main { flex: 1 1 0; min-height: 0; overflow: auto; overscroll-behavior-y: contain; scrollbar-gutter: stable; }
+  .tc-main:focus-visible { outline: 2px solid #8d98a7; outline-offset: -2px; }
+  .tc-shell-dashboard .tc-main { padding-bottom: 18px; }
+  .tc-dashboard-grid > .tc-dashboard-panel { min-height: 0; }
+  .tc-dashboard .tc-expiry-list { max-height: 190px; overflow-y: auto; overscroll-behavior-y: contain; }
+}
+@media screen and (min-width: 1024px) and (max-height: 850px) {
+  .tc-banner { min-height: 108px; padding-block: 10px; }
+  .tc-brand-shield { width: 82px; }
+  .tc-brand-company-logo { width: 205px; margin-bottom: 3px; }
+  .tc-brand-description { margin-top: 4px; }
+  .tc-shell-dashboard .tc-main { padding-block: 14px; }
+  .tc-dashboard { gap: 12px; }
+  .tc-dashboard-panel { padding: 12px; }
+  .tc-kpi { padding: 12px 10px; }
+  .tc-section-heading { margin-bottom: 9px; }
+  .tc-sidebar-top { padding-block: 12px; }
+  .tc-sidebar-account { padding-block: 10px; }
+  .tc-nav-group { margin-bottom: 7px; }
+  .tc-nav-link { padding-block: 8px; }
+}
+@media screen and (min-width: 1024px) and (max-height: 720px) {
+  .tc-banner { min-height: 96px; padding-block: 8px; }
+  .tc-brand-shield { width: 72px; }
+  .tc-brand-company-logo { width: 180px; margin-bottom: 2px; }
+  .tc-brand-module { font-size: 22px; }
+  .tc-dashboard .tc-expiry-list { max-height: 145px; }
+  .tc-dashboard { gap: 10px; }
+  .tc-dashboard .tc-action { min-height: 34px; padding-block: 7px; }
+}
+@media screen and (max-width: 1023px) {
+  .tc-back-to-top { right: max(14px, env(safe-area-inset-right)); bottom: max(16px, env(safe-area-inset-bottom)); }
+}
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+}
+@media print {
+  .tc-shell, .tc-shell-body, .tc-shell-content, .tc-main { height: auto!important; max-height: none!important; min-height: 0!important; overflow: visible!important; }
+  .tc-back-to-top { display: none!important; }
+}
+
+/* REV.13.5 – Registro attività: tabella a larghezza piena, nessuno scroll interno */
+.tc-audit{min-width:0;max-width:100%;display:grid;gap:16px;color:#26313e}
+.tc-audit-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:14px;padding:18px 20px}
+.tc-audit-heading h1{font-size:26px;font-weight:800;margin:3px 0}
+.tc-audit-heading p{font-size:13px;color:#526174}
+.tc-audit-actions{display:flex;flex-wrap:wrap;gap:8px}
+.tc-audit-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px}
+.tc-audit-summary>div{padding:12px 16px;border-radius:10px}
+.tc-audit-summary small{display:block;color:#526174;font-size:12px;font-weight:650}
+.tc-audit-summary strong{font-size:23px;color:#202a36}
+.tc-audit-list{min-width:0;border-radius:12px;padding:0;overflow:visible}
+.tc-audit-toolbar{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:14px 16px}
+.tc-audit-toolbar h2{font-size:18px;font-weight:800}
+.tc-audit-table{width:100%;table-layout:fixed;border-collapse:collapse;font-size:12px}
+.tc-audit-table th,.tc-audit-table td{padding:11px 10px;vertical-align:top;overflow-wrap:anywhere;text-align:left;border-bottom:1px solid #e4e8ed;white-space:normal}
+.tc-audit-table th{background:#f2f4f7;color:#44566c;font-size:11px;text-transform:uppercase;letter-spacing:.03em}
+.tc-audit-table tr:hover td{background:#f9fafb}
+.tc-audit-table small{display:block;font-size:10px;color:#526174;margin-top:3px}
+.tc-audit-table th:nth-child(1){width:15%}.tc-audit-table th:nth-child(2){width:23%}.tc-audit-table th:nth-child(3){width:23%}.tc-audit-table th:nth-child(4){width:17%}.tc-audit-table th:nth-child(5){width:22%}
+.tc-audit-pagination{display:flex;align-items:center;justify-content:flex-end;flex-wrap:wrap;gap:10px;padding:14px 16px;font-size:13px}
+.tc-audit button:disabled{opacity:.45;cursor:not-allowed}
+.tc-audit-empty{padding:20px;font-size:13px;color:#526174}
+.tc-audit-print-heading{display:none}
+@media screen{.tc-audit-offpage{display:none!important}}
+@media screen and (max-width:720px){.tc-audit-table,.tc-audit-table tbody,.tc-audit-table tr,.tc-audit-table td{display:block;width:100%}.tc-audit-table thead{display:none}.tc-audit-table tr{padding:8px;border-bottom:1px solid #d8dee7}.tc-audit-table td{display:grid;grid-template-columns:minmax(84px,30%) minmax(0,1fr);gap:8px;padding:5px 8px;border:0}.tc-audit-table td::before{content:attr(data-label);font-weight:700;color:#44566c}.tc-audit-table td>div{min-width:0}}
+@page tcAudit{size:A4 landscape;margin:12mm}
+@media print{.tc-audit{page:tcAudit;display:block!important;font-size:10px;color:#000}.tc-audit-screen,.tc-audit .print-hidden{display:none!important}.tc-audit-print-heading{display:block!important;margin-bottom:5mm}.tc-audit-list{border:0!important;box-shadow:none!important;overflow:visible!important}.tc-audit-table{font-size:9pt}.tc-audit-table th,.tc-audit-table td{padding:5px;border-color:#bbb}.tc-audit-table thead{display:table-header-group}.tc-audit-table tr{break-inside:avoid}.tc-audit-offpage{display:table-row!important}.tc-audit-table small{font-size:7pt}}
+
+/* REV14.1: sticky headers inside scrollable archives, never on official reports. */
+@media screen {
+ .tc-main .tc-sticky-table { overflow: auto; max-height: max(230px, calc(100dvh - 320px)); scrollbar-gutter: stable; overscroll-behavior-y: auto; }
+ .tc-main .tc-sticky-table table { border-collapse: separate; border-spacing: 0; }
+ .tc-main .tc-sticky-table thead th { position: sticky; top: 0; z-index: 5; background: #f4f6f8; box-shadow: inset 0 -1px 0 #d7dfe8; }
+ .tc-main .tc-sticky-table:focus-visible { outline: 2px solid #8d98a7; outline-offset: -2px; }
+ .tc-main .tc-audit-table thead th { position: sticky; top: 0; z-index: 5; background: #f2f4f7; box-shadow: inset 0 -1px 0 #d7dfe8; }
+}
+@media screen and (max-width: 1023px) { .tc-main .tc-sticky-table { max-height: 65dvh; } }
+@media print { .tc-main .tc-sticky-table { max-height: none!important; overflow: visible!important; } .tc-main .tc-sticky-table thead th,.tc-main .tc-audit-table thead th{position:static!important;box-shadow:none!important;} .tc-main .tc-sticky-table thead{display:table-header-group;} }
+
+
+/* REV.14.5 — Branding compatto: solo dimensioni dell'intestazione. */
+@media screen {
+  .tc-banner { min-height: 0; padding: 8px 24px; }
+  .tc-brand-link { gap: 14px; }
+  .tc-brand-shield { height: 78px; width: auto; max-width: 80px; object-fit: contain; }
+  .tc-brand-text { padding-left: 14px; }
+  .tc-brand-company-logo { width: 120px; height: auto; margin-bottom: 3px; }
+  .tc-brand-module { font-size: 23px; line-height: 1.1; }
+  .tc-brand-description { margin-top: 3px; font-size: 12px; line-height: 1.3; }
+}
+@media screen and (min-width: 1024px) and (max-height: 720px) {
+  .tc-banner { padding-block: 6px; }
+  .tc-brand-shield { height: 64px; max-width: 66px; }
+  .tc-brand-company-logo { width: 100px; }
+  .tc-brand-module { font-size: 20px; }
+  .tc-brand-description { font-size: 11px; }
+}
+@media screen and (max-width: 640px) {
+  .tc-banner { padding: 8px 12px; }
+  .tc-brand-link { gap: 9px; }
+  .tc-brand-shield { height: 62px; max-width: 58px; }
+  .tc-brand-text { padding-left: 10px; }
+  .tc-brand-company-logo { width: 100px; }
+  .tc-brand-module { font-size: 17px; }
+  .tc-brand-description { font-size: 10px; line-height: 1.25; }
+}

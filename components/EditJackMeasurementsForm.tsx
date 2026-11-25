@@ -8,6 +8,7 @@ import {
   type MartinettoCalculatedPoint,
 } from "@/lib/martinetti-calculations";
 import { supabase } from "@/lib/supabase";
+import { useRecordEditPermission, beginMeasurementSave, finishMeasurementSave } from "@/lib/use-record-edit-permission";
 import ReferenceInstrumentMultiSelect from "./ReferenceInstrumentMultiSelect";
 import JackConversionChart from "./JackConversionChart";
 
@@ -257,7 +258,8 @@ export default function EditJackMeasurementsForm({
   const [saveMessage, setSaveMessage] = useState("");
   const [saveError, setSaveError] = useState("");
 
-  const isReadOnly = reportStatus === "issued";
+  const canEditRecord = useRecordEditPermission(recordId, reportStatus);
+  const isReadOnly = !canEditRecord;
   const detailsHref = isInternalVerification
     ? "/verifiche/" + recordId + "/rapportino-interno"
     : "/verifiche/" + recordId + "/rapporto";
@@ -418,14 +420,16 @@ export default function EditJackMeasurementsForm({
 
     if (isReadOnly) {
       setSaveError(
-        "Il rapporto è emesso: per modificare le misure devi prima riaprirlo per correzione."
+        "Misure in sola lettura: verifica i permessi, lo stato del rapportino e le conferme delle firme."
       );
       return;
     }
 
     setIsSaving(true);
+    let saveToken: string | null = null;
 
     try {
+      saveToken = await beginMeasurementSave(recordId);
       if (isInternalVerification && !verificationDate) {
         throw new Error("Inserisci la data della verifica.");
       }
@@ -561,14 +565,20 @@ export default function EditJackMeasurementsForm({
         }
       }
 
-      await supabase
+      const { error: resetReportStatusError } = await supabase
         .from("calibration_records")
         .update({ report_status: "draft" })
         .eq("id", recordId)
         .neq("report_status", "issued");
+      if (resetReportStatusError) throw new Error(resetReportStatusError.message);
 
+      await finishMeasurementSave(recordId, saveToken, true);
+      saveToken = null;
       setSaveMessage("Misure martinetto aggiornate correttamente.");
     } catch (error) {
+      if (saveToken) {
+        try { await finishMeasurementSave(recordId, saveToken, false); } catch { /* MASTER can recover an interrupted save. */ }
+      }
       setSaveError(
         error instanceof Error
           ? error.message
@@ -607,7 +617,7 @@ export default function EditJackMeasurementsForm({
 
       {isReadOnly && (
         <section className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950 shadow-sm">
-          <p className="font-bold">Rapporto emesso: misure in sola lettura</p>
+          <p className="font-bold">Misure in sola lettura</p>
           <p className="mt-1">
             Per correggere i dati tecnici devi prima riaprire il rapporto per correzione.
           </p>

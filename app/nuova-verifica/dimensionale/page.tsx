@@ -1,7 +1,7 @@
 import AppShell from "@/components/AppShell";
 import NewVerificationHeader from "@/components/NewVerificationHeader";
 import DimensionalVerificationStarter from "@/components/DimensionalVerificationStarter";
-import { supabase } from "@/lib/supabase";
+import { createServerSupabaseClient } from "@/lib/supabase-server";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -103,23 +103,24 @@ function scopeDescription(scope: VerificationScope) {
 export default async function NewDimensionalVerificationPage({
   searchParams,
 }: PageProps) {
+  const supabase = await createServerSupabaseClient();
   const resolvedSearchParams = searchParams ? await searchParams : {};
   const verificationScope = resolveScope(resolvedSearchParams.scope);
 
-  const { data: customersData, error: customersError } = await supabase
+  const { data: customersData, error: customersError } = (verificationScope === "VT" ? await supabase
     .from("customers")
     .select("*")
     .eq("is_active", true)
-    .order("business_name", { ascending: true });
+    .order("business_name", { ascending: true }) : { data: null, error: null });
 
   const { data: customerInstrumentsData, error: customerInstrumentsError } =
-    await supabase
+    (verificationScope === "VT" ? await supabase
       .from("customer_instruments")
       .select("*")
-      .order("name", { ascending: true });
+      .order("name", { ascending: true }) : { data: null, error: null });
 
   const { data: internalInstrumentsData, error: internalInstrumentsError } =
-    await supabase
+    (verificationScope === "VI" ? await supabase
       .from("internal_instruments")
       .select(
         `
@@ -140,7 +141,7 @@ export default async function NewDimensionalVerificationPage({
       `
       )
       .eq("is_active", true)
-      .order("name", { ascending: true });
+      .order("name", { ascending: true }) : { data: null, error: null });
 
   const { data: referenceInstrumentsData, error: referenceInstrumentsError } =
     await supabase

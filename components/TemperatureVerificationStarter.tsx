@@ -1,8 +1,11 @@
 "use client";
 
+import ViTestLocationSelect, { isViTestLocation } from "@/components/ViTestLocationSelect";
+
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { supabase } from "@/lib/supabase";
+import { finishMeasurementCreation } from "@/lib/use-record-edit-permission";
 import CustomerVerificationSection, {
   buildVerificationSiteDescription,
   type VerificationCustomerSite,
@@ -16,6 +19,8 @@ import ReferenceInstrumentMultiSelect, {
   isReferenceInstrumentBlocked,
 } from "@/components/ReferenceInstrumentMultiSelect";
 import TemperatureErrorChart from "@/components/TemperatureErrorChart";
+import OperatorNameField from "@/components/OperatorNameField";
+import { attachInternalInstrumentMeasurements } from "@/lib/internal-instrument-snapshot";
 
 type VerificationScope = "VT" | "VI";
 type TemperatureVariant = "maturation_tank" | "instrument_calibration";
@@ -397,7 +402,8 @@ export default function TemperatureVerificationStarter({
   const [selectedReferenceInstrumentIds, setSelectedReferenceInstrumentIds] =
     useState<string[]>([]);
   const [verificationDate, setVerificationDate] = useState(todayInputDate());
-  const location = isInternalVerification ? "" : buildVerificationSiteDescription(selectedSite);
+  const [viTestLocation, setViTestLocation] = useState("");
+  const location = isInternalVerification ? viTestLocation : buildVerificationSiteDescription(selectedSite);
   const [operatorName, setOperatorName] = useState("");
   const [ambientTemperature, setAmbientTemperature] = useState("");
   const [ambientHumidity, setAmbientHumidity] = useState("");
@@ -622,6 +628,9 @@ export default function TemperatureVerificationStarter({
 
     try {
       if (isInternalVerification) {
+        if (!isViTestLocation(viTestLocation)) {
+          throw new Error("Seleziona il laboratorio in cui è stata eseguita la verifica.");
+        }
         if (!selectedInternalInstrument) {
           throw new Error("Seleziona lo strumento interno da verificare.");
         }
@@ -716,7 +725,11 @@ export default function TemperatureVerificationStarter({
           throw new Error("Seleziona lo strumento interno da verificare.");
         }
 
-        instrumentSnapshot = buildInternalInstrumentSnapshot(selectedInternalInstrument);
+        instrumentSnapshot = await attachInternalInstrumentMeasurements(
+          supabase,
+          buildInternalInstrumentSnapshot(selectedInternalInstrument),
+          selectedInternalInstrument.id
+        );
         customerName = "Verifica interna";
         instrumentName = selectedInternalInstrument.name;
         instrumentManufacturer = selectedInternalInstrument.manufacturer;
@@ -975,6 +988,7 @@ export default function TemperatureVerificationStarter({
         throw new Error(measurementError.message || "Errore durante il salvataggio delle rilevazioni.");
       }
 
+      await finishMeasurementCreation(insertedRecord.id);
       setSavedRecordId(insertedRecord.id);
       setSaveMessage("Verifica temperatura salvata correttamente.");
       router.refresh();
@@ -1015,19 +1029,24 @@ export default function TemperatureVerificationStarter({
             </label>
           )}
 
-
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">Tecnico</span>
-            <input
-              value={operatorName}
-              onChange={(event) => {
-                setOperatorName(event.target.value);
+          {isInternalVerification && (
+            <ViTestLocationSelect
+              value={viTestLocation}
+              onChange={(value) => {
+                setViTestLocation(value);
                 resetSaveState();
               }}
-              placeholder="Nome tecnico"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
             />
-          </label>
+          )}
+
+
+          <OperatorNameField
+            value={operatorName}
+            onChange={(value) => {
+              setOperatorName(value);
+              resetSaveState();
+            }}
+          />
           <label className="space-y-1">
             <span className="text-sm font-medium text-slate-700">Temperatura ambiente °C</span>
             <input

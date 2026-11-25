@@ -4,6 +4,8 @@ import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/lib/supabase";
 import { getReportDefaultsByModule } from "@/lib/report-defaults";
+import { isTechnicalProvisionalRecordNumber } from "@/lib/document-number";
+import { useAppUser } from "@/lib/app-user";
 
 type ReportDetailsInitialData = {
   id: string | null;
@@ -238,6 +240,7 @@ export default function CalibrationReportDetailsForm({
   reportStatus,
 }: CalibrationReportDetailsFormProps) {
   const router = useRouter();
+  const { profile } = useAppUser();
 
   const safeInitialData = initialData ?? buildEmptyInitialData(recordId);
   const currentReportStatus = reportStatus ?? "draft";
@@ -486,6 +489,11 @@ export default function CalibrationReportDetailsForm({
       .filter((technician): technician is Technician => Boolean(technician));
   }, [technicians, reviewerTechnicianIds]);
 
+  const selectableTechnicians = useMemo(() => {
+    if (profile.role === "master") return technicians;
+    return technicians.filter((technician) => technician.id === profile.technician_id);
+  }, [profile.role, profile.technician_id, technicians]);
+
   const completenessItems = useMemo<CompletenessItem[]>(() => {
     const testingSignaturesMissing = selectedTestingTechnicians.some(
       (technician) => !technician.signature_url
@@ -608,7 +616,7 @@ export default function CalibrationReportDetailsForm({
   useEffect(() => {
     loadSignatureData();
     loadTechnicalCompletenessData();
-  }, []);
+  }, [recordId, profile.role, profile.technician_id]);
 
   async function loadSignatureData() {
     setIsLoadingSignatures(true);
@@ -693,8 +701,13 @@ export default function CalibrationReportDetailsForm({
       signatures.find((signature) => signature.signature_role === "director")
         ?.technician_id ?? "";
 
-    setTestingTechnicianIds(testingIds);
-    setReviewerTechnicianIds(reviewerIds);
+    if (profile.role === "technician" && profile.technician_id) {
+      setTestingTechnicianIds([profile.technician_id]);
+      setReviewerTechnicianIds([profile.technician_id]);
+    } else {
+      setTestingTechnicianIds(testingIds);
+      setReviewerTechnicianIds(reviewerIds);
+    }
     setDirectorTechnicianId(savedDirectorId || defaultDirectorId || "");
 
     setIsLoadingSignatures(false);
@@ -1136,6 +1149,11 @@ export default function CalibrationReportDetailsForm({
     currentIds: string[],
     setter: React.Dispatch<React.SetStateAction<string[]>>
   ) {
+    if (profile.role === "technician") {
+      if (profile.technician_id) setter([profile.technician_id]);
+      return;
+    }
+
     setter((current) => {
       if (current.includes(technicianId)) {
         return current.filter((id) => id !== technicianId);
@@ -1368,6 +1386,20 @@ export default function CalibrationReportDetailsForm({
         throw new Error("Inserisci l’oggetto dei lavori.");
       }
 
+      if (profile.role === "technician") {
+        if (!profile.technician_id) {
+          throw new Error("Profilo TECNICO non associato a un nominativo.");
+        }
+        if (
+          testingTechnicianIds.length !== 1 ||
+          testingTechnicianIds[0] !== profile.technician_id ||
+          reviewerTechnicianIds.length !== 1 ||
+          reviewerTechnicianIds[0] !== profile.technician_id
+        ) {
+          throw new Error("Il profilo TECNICO può firmare solamente con il proprio nominativo.");
+        }
+      }
+
       if (testingTechnicianIds.length === 0) {
         throw new Error("Seleziona almeno un tecnico addetto alle prove.");
       }
@@ -1433,6 +1465,29 @@ export default function CalibrationReportDetailsForm({
 
       if (error) {
         throw new Error(error.message);
+      }
+
+      if (mainReportNumber.trim()) {
+        const { data: currentRecord, error: currentRecordError } = await supabase
+          .from("calibration_records")
+          .select("record_number")
+          .eq("id", recordId)
+          .maybeSingle();
+
+        if (currentRecordError) {
+          throw new Error(currentRecordError.message);
+        }
+
+        if (isTechnicalProvisionalRecordNumber(currentRecord?.record_number)) {
+          const { error: clearRecordNumberError } = await supabase
+            .from("calibration_records")
+            .update({ record_number: null })
+            .eq("id", recordId);
+
+          if (clearRecordNumberError) {
+            throw new Error(clearRecordNumberError.message);
+          }
+        }
       }
 
       const { error: deleteSignaturesError } = await supabase
@@ -1961,12 +2016,12 @@ export default function CalibrationReportDetailsForm({
             <div className="mt-3 space-y-2">
               {isLoadingSignatures ? (
                 <p className="text-sm text-slate-500">Caricamento tecnici...</p>
-              ) : technicians.length === 0 ? (
+              ) : selectableTechnicians.length === 0 ? (
                 <p className="text-sm text-slate-500">
                   Nessun tecnico attivo. Inseriscili in “Tecnici e firme”.
                 </p>
               ) : (
-                technicians.map((technician) => (
+                selectableTechnicians.map((technician) => (
                   <label
                     key={technician.id}
                     className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-3 text-sm"
@@ -1981,7 +2036,8 @@ export default function CalibrationReportDetailsForm({
                           setTestingTechnicianIds
                         )
                       }
-                      className="mt-1 h-4 w-4"
+                      disabled={profile.role === "technician"}
+                      className="mt-1 h-4 w-4 disabled:cursor-not-allowed"
                     />
                     <span>
                       <span className="font-medium text-slate-900">
@@ -2007,12 +2063,12 @@ export default function CalibrationReportDetailsForm({
             <div className="mt-3 space-y-2">
               {isLoadingSignatures ? (
                 <p className="text-sm text-slate-500">Caricamento tecnici...</p>
-              ) : technicians.length === 0 ? (
+              ) : selectableTechnicians.length === 0 ? (
                 <p className="text-sm text-slate-500">
                   Nessun tecnico attivo. Inseriscili in “Tecnici e firme”.
                 </p>
               ) : (
-                technicians.map((technician) => (
+                selectableTechnicians.map((technician) => (
                   <label
                     key={technician.id}
                     className="flex items-start gap-3 rounded-xl border border-slate-200 bg-white p-3 text-sm"
@@ -2027,7 +2083,8 @@ export default function CalibrationReportDetailsForm({
                           setReviewerTechnicianIds
                         )
                       }
-                      className="mt-1 h-4 w-4"
+                      disabled={profile.role === "technician"}
+                      className="mt-1 h-4 w-4 disabled:cursor-not-allowed"
                     />
                     <span>
                       <span className="font-medium text-slate-900">

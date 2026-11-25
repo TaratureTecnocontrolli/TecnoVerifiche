@@ -3,7 +3,10 @@
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
 import AppShell from "@/components/AppShell";
+import RemoveTestReportButton from "@/components/RemoveTestReportButton";
 import { supabase } from "@/lib/supabase";
+import { isViOnlyMode } from "@/lib/app-mode";
+import { resolveDocumentNumber } from "@/lib/document-number";
 
 type GenericRecord = Record<string, any>;
 
@@ -234,10 +237,10 @@ function getInstrumentLabel(row: VerificationRow) {
 }
 
 function getRecordNumber(row: VerificationRow) {
-  return (
-    row.details?.main_report_number ||
-    row.record.record_number ||
-    "SENZA NUMERO"
+  return resolveDocumentNumber(
+    row.details?.main_report_number,
+    row.record.record_number,
+    "BOZZA"
   );
 }
 
@@ -344,20 +347,26 @@ export default function VerifichePage() {
     };
   }, []);
 
+  const visibleRows = useMemo(() => {
+    return isViOnlyMode
+      ? rows.filter((row) => getVerificationScope(row) === "VI")
+      : rows;
+  }, [rows]);
+
   const filteredRows = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
 
-    return rows
+    return visibleRows
       .filter((row) => matchesSearch(row, normalizedQuery))
       .filter((row) => {
         if (scopeFilter === "tutti") return true;
         return getVerificationScope(row) === scopeFilter;
       });
-  }, [query, rows, scopeFilter]);
+  }, [query, scopeFilter, visibleRows]);
 
-  const total = rows.length;
-  const vtCount = rows.filter((row) => getVerificationScope(row) === "VT").length;
-  const viCount = rows.filter((row) => getVerificationScope(row) === "VI").length;
+  const total = visibleRows.length;
+  const vtCount = visibleRows.filter((row) => getVerificationScope(row) === "VT").length;
+  const viCount = visibleRows.filter((row) => getVerificationScope(row) === "VI").length;
 
   return (
     <AppShell>
@@ -371,8 +380,9 @@ export default function VerifichePage() {
               Verifiche elaborate
             </h1>
             <p className="mt-2 max-w-3xl text-slate-600">
-              Elenco completo delle verifiche VT e VI. Da qui accedi a misure,
-              dati rapporto, rapporto finale e rapportino interno.
+              {isViOnlyMode
+                ? "Elenco delle Verifiche Interne. Da qui accedi a misure, firme e rapportino tecnico."
+                : "Elenco completo delle verifiche VT e VI. Da qui accedi a misure, dati rapporto, rapporto finale e rapportino interno."}
             </p>
           </div>
 
@@ -390,35 +400,37 @@ export default function VerifichePage() {
           </div>
         )}
 
-        <section className="grid gap-3 md:grid-cols-3">
+        <section className={"grid gap-3 " + (isViOnlyMode ? "md:grid-cols-2" : "md:grid-cols-3")}>
           <SummaryCard label="Totali" value={total} />
-          <SummaryCard label="VT" value={vtCount} tone="emerald" />
+          {!isViOnlyMode && <SummaryCard label="VT" value={vtCount} tone="emerald" />}
           <SummaryCard label="VI" value={viCount} tone="sky" />
         </section>
 
         <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-          <div className="grid gap-3 md:grid-cols-[1fr_180px]">
+          <div className={"grid gap-3 " + (isViOnlyMode ? "" : "md:grid-cols-[1fr_180px]")}>
             <input
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Cerca per cliente, strumento, numero, tecnico..."
+              placeholder="Cerca per strumento, numero, tecnico..."
               className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
             />
 
-            <select
-              value={scopeFilter}
-              onChange={(event) => setScopeFilter(event.target.value)}
-              className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
-            >
-              <option value="tutti">Tutte</option>
-              <option value="VT">Solo VT</option>
-              <option value="VI">Solo VI</option>
-            </select>
+            {!isViOnlyMode && (
+              <select
+                value={scopeFilter}
+                onChange={(event) => setScopeFilter(event.target.value)}
+                className="w-full rounded-xl border border-slate-300 bg-white px-3 py-2 text-sm"
+              >
+                <option value="tutti">Tutte</option>
+                <option value="VT">Solo VT</option>
+                <option value="VI">Solo VI</option>
+              </select>
+            )}
           </div>
         </section>
 
         <section className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
-          <div className="hidden xl:block">
+          <div className="hidden xl:block tc-sticky-table" tabIndex={0} role="region" aria-label="Archivio scorrevole">
             <table className="w-full table-fixed text-sm">
               <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
                 <tr>
@@ -504,7 +516,7 @@ export default function VerifichePage() {
                         </td>
 
                         <td className="px-3 py-3 align-top">
-                          <div className="flex justify-end gap-2">
+                          <div className="flex flex-wrap justify-end gap-2">
                             <Link
                               href={getMeasuresHref(row)}
                               className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs font-bold text-slate-700 hover:bg-slate-50"
@@ -532,6 +544,7 @@ export default function VerifichePage() {
                             >
                               {isVI ? "Rapportino" : "Rapporto"}
                             </Link>
+                            {isVI && <RemoveTestReportButton previouslyIssued={row.record.report_status==="issued"} id={row.record.id} label={getRecordNumber(row)} onRemoved={(id)=>setRows(old=>old.filter(x=>x.record.id!==id))}/>}
                           </div>
                         </td>
                       </tr>
@@ -603,6 +616,7 @@ export default function VerifichePage() {
                       >
                         {isVI ? "Rapportino" : "Rapporto"}
                       </Link>
+                      {isVI && <RemoveTestReportButton previouslyIssued={row.record.report_status==="issued"} id={row.record.id} label={getRecordNumber(row)} onRemoved={(id)=>setRows(old=>old.filter(x=>x.record.id!==id))}/>}
                     </div>
                   </article>
                 );

@@ -2,17 +2,22 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
+import { SuiteIcon } from "@/components/SuiteIcon";
 import AppShell from "@/components/AppShell";
 import { supabase } from "@/lib/supabase";
+import { useAppUser } from "@/lib/app-user";
 
 type CalibrationRecord = {
   id: string;
   status: string | null;
   report_status: string | null;
+  verification_scope: string | null;
 };
 
 type ReferenceInstrument = {
   id: string;
+  name: string | null;
+  internal_code: string | null;
   status: string | null;
   certificate_expiry: string | null;
   certificate_file_url: string | null;
@@ -26,175 +31,40 @@ type DashboardState = {
 };
 
 function daysToExpiry(date: string | null) {
-  if (!date) {
-    return null;
-  }
-
+  if (!date) return null;
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-
   const expiry = new Date(date);
   expiry.setHours(0, 0, 0, 0);
-
-  const differenceMs = expiry.getTime() - today.getTime();
-
-  return Math.ceil(differenceMs / (1000 * 60 * 60 * 24));
+  return Math.ceil((expiry.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 }
 
-function isReferenceInstrumentExpiring(instrument: ReferenceInstrument) {
-  if (instrument.status === "out_of_service") {
-    return false;
-  }
-
-  const days = daysToExpiry(instrument.certificate_expiry);
-
-  if (days === null) {
-    return false;
-  }
-
-  return days >= 0 && days <= 30;
+function formatDateLabel(days: number | null) {
+  if (days === null) return "Senza data";
+  if (days < 0) return "Scaduto";
+  if (days === 0) return "Scade oggi";
+  if (days === 1) return "Scade domani";
+  return `Scade tra ${days} gg`;
 }
 
-function isReferenceInstrumentExpired(instrument: ReferenceInstrument) {
-  if (instrument.status === "out_of_service") {
-    return false;
-  }
-
-  const days = daysToExpiry(instrument.certificate_expiry);
-
-  if (days === null) {
-    return false;
-  }
-
-  return days < 0;
-}
-
-function StatCard({
-  href,
-  label,
-  value,
-  description,
-  tone = "slate",
-}: {
-  href: string;
-  label: string;
-  value: number;
-  description: string;
-  tone?: "slate" | "emerald" | "amber" | "red" | "orange" | "blue";
+function KpiCard({title, value, subtitle, tone, href, icon}: {
+  title: string; value: string | number; subtitle: string;
+  tone: "slate" | "green" | "amber" | "red"; href: string; icon: string;
 }) {
-  const styles = {
-    slate: "border-slate-200 bg-white text-slate-950",
-    emerald: "border-emerald-200 bg-emerald-50 text-emerald-950",
-    amber: "border-amber-200 bg-amber-50 text-amber-950",
-    red: "border-red-200 bg-red-50 text-red-950",
-    orange: "border-orange-200 bg-orange-50 text-orange-950",
-    blue: "border-blue-200 bg-blue-50 text-blue-950",
-  };
-
-  return (
-    <Link
-      href={href}
-      className={
-        "group rounded-2xl border p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md " +
-        styles[tone]
-      }
-    >
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <p className="text-xs font-black uppercase tracking-wide opacity-70">
-            {label}
-          </p>
-          <p className="mt-2 text-4xl font-black tracking-tight">{value}</p>
-        </div>
-
-        <span className="rounded-full bg-white/70 px-2.5 py-1 text-xs font-bold opacity-80 transition group-hover:opacity-100">
-          Apri
-        </span>
-      </div>
-
-      <p className="mt-3 text-sm leading-5 opacity-75">{description}</p>
-    </Link>
-  );
+  return <Link href={href} className="tc-kpi">
+    <span className={"tc-kpi-icon tc-tone-" + tone}><SuiteIcon icon={icon} /></span>
+    <div className="min-w-0"><p className="tc-kpi-value">{value}</p><p className="tc-kpi-title">{title}</p><p className="tc-kpi-description">{subtitle}</p></div>
+    <span className="tc-kpi-arrow"><SuiteIcon icon="arrow" /></span>
+  </Link>;
 }
 
-function QuickActionCard({
-  href,
-  kicker,
-  title,
-  description,
-  primary = false,
-}: {
-  href: string;
-  kicker: string;
-  title: string;
-  description: string;
-  primary?: boolean;
-}) {
-  return (
-    <Link
-      href={href}
-      className={
-        "group rounded-2xl border p-6 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md " +
-        (primary
-          ? "border-slate-900 bg-slate-950 text-white"
-          : "border-slate-200 bg-white text-slate-950")
-      }
-    >
-      <p
-        className={
-          "text-xs font-black uppercase tracking-wide " +
-          (primary ? "text-slate-300" : "text-slate-500")
-        }
-      >
-        {kicker}
-      </p>
-
-      <h2 className="mt-2 text-xl font-black">{title}</h2>
-
-      <p
-        className={
-          "mt-2 text-sm leading-6 " +
-          (primary ? "text-slate-300" : "text-slate-600")
-        }
-      >
-        {description}
-      </p>
-
-      <div
-        className={
-          "mt-5 inline-flex rounded-xl px-4 py-2 text-sm font-bold transition " +
-          (primary
-            ? "bg-white text-slate-950 group-hover:bg-slate-100"
-            : "bg-slate-100 text-slate-800 group-hover:bg-slate-200")
-        }
-      >
-        Vai →
-      </div>
-    </Link>
-  );
+function SectionCard({title, icon, children}: {title: string; icon: string; children: React.ReactNode}) {
+  return <section className="tc-dashboard-panel"><h2 className="tc-section-heading"><SuiteIcon icon={icon} />{title}</h2>{children}</section>;
 }
 
-function RegistryCard({
-  href,
-  title,
-  description,
-}: {
-  href: string;
-  title: string;
-  description: string;
-}) {
-  return (
-    <Link
-      href={href}
-      className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:-translate-y-0.5 hover:shadow-md"
-    >
-      <h2 className="text-lg font-black text-slate-950">{title}</h2>
-      <p className="mt-2 text-sm leading-5 text-slate-600">{description}</p>
-    </Link>
-  );
-}
-
-export default function HomePage() {
+function HomeContent() {
+  const { profile } = useAppUser();
+  const isMaster = profile.role === "master";
   const [state, setState] = useState<DashboardState>({
     records: [],
     referenceInstruments: [],
@@ -206,15 +76,12 @@ export default function HomePage() {
     let isMounted = true;
 
     async function loadDashboardData() {
-      setState((currentState) => ({
-        ...currentState,
-        isLoading: true,
-        error: "",
-      }));
+      setState((currentState) => ({ ...currentState, isLoading: true, error: "" }));
 
       const { data: recordsData, error: recordsError } = await supabase
         .from("calibration_records")
-        .select("id, status, report_status");
+        .select("id, status, report_status, verification_scope")
+        .eq("verification_scope", "VI");
 
       if (recordsError) {
         if (isMounted) {
@@ -225,14 +92,12 @@ export default function HomePage() {
             error: "Errore caricamento verifiche: " + recordsError.message,
           });
         }
-
         return;
       }
 
-      const { data: referenceInstrumentsData, error: referenceError } =
-        await supabase
-          .from("reference_instruments")
-          .select("id, status, certificate_expiry, certificate_file_url");
+      const { data: referenceInstrumentsData, error: referenceError } = await supabase
+        .from("reference_instruments")
+        .select("id, name, internal_code, status, certificate_expiry, certificate_file_url");
 
       if (referenceError) {
         if (isMounted) {
@@ -240,20 +105,16 @@ export default function HomePage() {
             records: (recordsData ?? []) as CalibrationRecord[],
             referenceInstruments: [],
             isLoading: false,
-            error:
-              "Errore caricamento strumenti campione: " +
-              referenceError.message,
+            error: "Errore caricamento strumenti campione: " + referenceError.message,
           });
         }
-
         return;
       }
 
       if (isMounted) {
         setState({
           records: (recordsData ?? []) as CalibrationRecord[],
-          referenceInstruments:
-            (referenceInstrumentsData ?? []) as ReferenceInstrument[],
+          referenceInstruments: (referenceInstrumentsData ?? []) as ReferenceInstrument[],
           isLoading: false,
           error: "",
         });
@@ -261,245 +122,97 @@ export default function HomePage() {
     }
 
     void loadDashboardData();
-
     return () => {
       isMounted = false;
     };
   }, []);
 
   const stats = useMemo(() => {
-    const records = state.records;
-    const referenceInstruments = state.referenceInstruments;
-
-    const draftRecords = records.filter((record) => {
-      return (
-        record.status === "draft" ||
+    const draftRecords = state.records.filter(
+      (record) =>
+        record.report_status !== "issued" && (record.status === "draft" ||
         record.report_status === "draft" ||
-        record.report_status === "reopened"
-      );
-    }).length;
-
-    const issuedReports = records.filter((record) => {
-      return record.report_status === "issued";
-    }).length;
-
-    const readyReports = records.filter((record) => {
-      return record.report_status === "ready";
-    }).length;
-
-    const expiringReferences = referenceInstruments.filter(
-      isReferenceInstrumentExpiring
+        record.report_status === "reopened")
     ).length;
 
-    const expiredReferences = referenceInstruments.filter(
-      isReferenceInstrumentExpired
-    ).length;
+    const readyReports = state.records.filter((record) => record.report_status === "ready").length;
+    const issuedReports = state.records.filter((record) => record.report_status === "issued").length;
 
-    const missingCertificateFiles = referenceInstruments.filter(
-      (instrument) => !instrument.certificate_file_url
-    ).length;
+    const referenceSummaries = state.referenceInstruments.map((instrument) => ({
+      ...instrument,
+      days: daysToExpiry(instrument.certificate_expiry),
+    }));
+
+    const expiringReferences = referenceSummaries.filter(
+      (item) => item.status !== "out_of_service" && item.days !== null && item.days >= 0 && item.days <= 30
+    );
+
+    const expiredReferences = referenceSummaries.filter(
+      (item) => item.status !== "out_of_service" && item.days !== null && item.days < 0
+    );
+
+    const upcoming = [...expiringReferences]
+      .sort((a, b) => (a.days ?? 999) - (b.days ?? 999))
+      .slice(0, 4);
+
+    const chart = [
+      { label: "0–30 gg", min: 0, max: 30 },
+      { label: "31–60 gg", min: 31, max: 60 },
+      { label: "61–90 gg", min: 61, max: 90 },
+    ].map(({label, min, max}) => ({ label, value: referenceSummaries.filter(
+      (item) => item.status !== "out_of_service" && item.days !== null && item.days >= min && item.days <= max
+    ).length }));
 
     return {
-      totalRecords: records.length,
+      totalRecords: state.records.length,
       draftRecords,
-      issuedReports,
       readyReports,
-      expiringReferences,
-      expiredReferences,
-      missingCertificateFiles,
+      issuedReports,
+      expiringReferences: expiringReferences.length,
+      expiredReferences: expiredReferences.length,
+      upcoming,
+      chart,
     };
   }, [state.records, state.referenceInstruments]);
 
+  const maxChartValue = Math.max(...stats.chart.map((item) => item.value), 1);
+
+  const display = (value: number) => state.isLoading || state.error ? "—" : value;
+  const actions: {href: string; icon: string; label: string; primary?: boolean}[] = [
+    {href: "/nuova-verifica", icon: "plus", label: "Nuova verifica interna", primary: true},
+    {href: "/verifiche", icon: "checklist", label: "Archivio verifiche"},
+    {href: "/strumenti-interni", icon: "tool", label: "Strumenti interni"},
+    {href: "/strumenti-campione", icon: "calendar", label: "Campioni e LAT"},
+    {href: "/rapporti", icon: "report", label: "Rapportini VI"},
+    ...(isMaster ? [{href: "/registro-attivita", icon: "activity", label: "Registro attività"}] : []),
+  ];
   return (
-    <AppShell>
-      <div className="space-y-8">
-        {state.error && (
-          <section className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm font-semibold text-red-900">
-            {state.error}
-          </section>
-        )}
-
-        <section className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
-          <div className="grid gap-0 lg:grid-cols-[1.4fr_0.8fr]">
-            <div className="p-7 lg:p-8">
-              <p className="text-sm font-black uppercase tracking-wide text-slate-500">
-                Gestionale interno
-              </p>
-
-              <h1 className="mt-3 text-4xl font-black tracking-tight text-slate-950">
-                TecnoVerifiche
-              </h1>
-
-              <p className="mt-4 max-w-3xl text-base leading-7 text-slate-600">
-                Software interno per gestione verifiche di taratura,
-                elaborazione risultati, misure, foto, rapporti finali,
-                rapportini VI e tracciabilità tecnica.
-              </p>
-
-              <div className="mt-6 flex flex-wrap gap-3">
-                <Link
-                  href="/nuova-verifica"
-                  className="rounded-xl bg-slate-950 px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-slate-800"
-                >
-                  Nuova verifica
-                </Link>
-
-                <Link
-                  href="/verifiche"
-                  className="rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-bold text-slate-800 transition hover:bg-slate-50"
-                >
-                  Verifiche aperte
-                </Link>
-
-                <Link
-                  href="/rapporti"
-                  className="rounded-xl border border-slate-300 bg-white px-5 py-3 text-sm font-bold text-slate-800 transition hover:bg-slate-50"
-                >
-                  Archivio rapporti
-                </Link>
-              </div>
-            </div>
-
-            <div className="border-t border-slate-200 bg-slate-950 p-7 text-white lg:border-l lg:border-t-0 lg:p-8">
-              <p className="text-xs font-black uppercase tracking-wide text-slate-400">
-                Stato archivio
-              </p>
-
-              <p className="mt-4 text-5xl font-black">
-                {state.isLoading ? "..." : stats.totalRecords}
-              </p>
-              <p className="mt-2 text-sm text-slate-300">
-                verifiche totali registrate nel gestionale
-              </p>
-
-              <div className="mt-6 grid grid-cols-2 gap-3 text-sm">
-                <div className="rounded-2xl bg-white/10 p-4">
-                  <p className="text-slate-400">Pronte</p>
-                  <p className="mt-1 text-2xl font-black">
-                    {state.isLoading ? "..." : stats.readyReports}
-                  </p>
-                </div>
-
-                <div className="rounded-2xl bg-white/10 p-4">
-                  <p className="text-slate-400">Emesse</p>
-                  <p className="mt-1 text-2xl font-black">
-                    {state.isLoading ? "..." : stats.issuedReports}
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-5">
-          <StatCard
-            href="/verifiche"
-            label="Bozze / da correggere"
-            value={state.isLoading ? 0 : stats.draftRecords}
-            description="Verifiche da completare o rapporti riaperti."
-            tone="slate"
-          />
-
-          <StatCard
-            href="/rapporti"
-            label="Rapporti emessi"
-            value={state.isLoading ? 0 : stats.issuedReports}
-            description="Documenti considerati ufficialmente emessi."
-            tone="emerald"
-          />
-
-          <StatCard
-            href="/strumenti-campione"
-            label="Campioni in scadenza"
-            value={state.isLoading ? 0 : stats.expiringReferences}
-            description="Certificati in scadenza entro 30 giorni."
-            tone="amber"
-          />
-
-          <StatCard
-            href="/strumenti-campione"
-            label="Campioni scaduti"
-            value={state.isLoading ? 0 : stats.expiredReferences}
-            description="Campioni da verificare prima dell'utilizzo."
-            tone="red"
-          />
-
-          <StatCard
-            href="/strumenti-campione"
-            label="Certificati mancanti"
-            value={state.isLoading ? 0 : stats.missingCertificateFiles}
-            description="Strumenti senza file certificato allegato."
-            tone="orange"
-          />
-        </section>
-
-        <section>
-          <div className="mb-4 flex flex-col justify-between gap-2 md:flex-row md:items-end">
-            <div>
-              <p className="text-sm font-black uppercase tracking-wide text-slate-500">
-                Azioni rapide
-              </p>
-              <h2 className="mt-1 text-2xl font-black text-slate-950">
-                Lavoro operativo
-              </h2>
-            </div>
-          </div>
-
-          <div className="grid gap-5 md:grid-cols-2">
-            <QuickActionCard
-              href="/nuova-verifica"
-              kicker="Avvio guidato"
-              title="Nuova verifica"
-              description="Scegli il modulo corretto e compila dati tecnici, misure, foto e rapporti."
-              primary
-            />
-
-            <QuickActionCard
-              href="/verifiche"
-              kicker="Lavorazioni"
-              title="Verifiche elaborate"
-              description="Riprendi verifiche in bozza, completa misure, controlla rapporti e rapportini."
-            />
-          </div>
-        </section>
-
-        <section>
-          <div className="mb-4">
-            <p className="text-sm font-black uppercase tracking-wide text-slate-500">
-              Anagrafiche e configurazioni
-            </p>
-            <h2 className="mt-1 text-2xl font-black text-slate-950">
-              Archivi principali
-            </h2>
-          </div>
-
-          <div className="grid gap-5 md:grid-cols-2 lg:grid-cols-4">
-            <RegistryCard
-              href="/clienti"
-              title="Clienti"
-              description="Anagrafiche, numero cliente, sedi e riferimenti."
-            />
-
-            <RegistryCard
-              href="/strumenti-cliente"
-              title="Strumenti cliente"
-              description="Strumenti da verificare, dati tecnici e matricole."
-            />
-
-            <RegistryCard
-              href="/strumenti-campione"
-              title="Strumenti campione"
-              description="Campioni, certificati, scadenze e stato operativo."
-            />
-
-            <RegistryCard
-              href="/tecnici-firme"
-              title="Tecnici e firme"
-              description="Firme digitalizzate e direttore di laboratorio."
-            />
-          </div>
-        </section>
+    <div className="tc-dashboard">
+      <div className="tc-dashboard-title"><div><p className="tc-eyebrow">METROLOGIA / OPERATIVO</p><h1>Dashboard</h1><p>Verifiche interne, rapportini e certificati LAT.</p></div><Link href="/nuova-verifica" className="tc-action tc-action-primary"><SuiteIcon icon="plus" /> Nuova VI</Link></div>
+      {state.error && <div role="alert" className="rounded-xl border border-red-200 bg-red-50 p-4 text-sm text-red-900">{state.error}</div>}
+      <div className="tc-kpi-grid">
+        <KpiCard title="Strumenti campione" value={display(state.referenceInstruments.length)} subtitle="Archivio campioni" tone="slate" href="/strumenti-campione" icon="gauge" />
+        <KpiCard title="VI da completare" value={display(stats.draftRecords)} subtitle="Bozze o riaperture" tone="green" href="/verifiche" icon="checklist" />
+        <KpiCard title="LAT in scadenza" value={display(stats.expiringReferences)} subtitle="Entro 30 giorni" tone="amber" href="/strumenti-campione" icon="calendar" />
+        <KpiCard title="Rapportini emessi" value={display(stats.issuedReports)} subtitle="Documenti ufficiali" tone="red" href="/rapporti" icon="report" />
       </div>
-    </AppShell>
+      <div className="tc-dashboard-grid">
+        <SectionCard title="Scadenze LAT · prossimi 90 giorni" icon="chart">
+          {state.isLoading || state.error ? <p className="tc-empty">{state.isLoading ? "Caricamento dati…" : "Dati non disponibili"}</p> : <div className="tc-chart" role="img" aria-label={stats.chart.map(x=>x.label+": "+x.value).join(", ")}>
+            {stats.chart.map((item,index)=><div className="tc-chart-column" key={item.label}><div className="tc-chart-track"><span>{item.value}</span><div className={"tc-chart-bar tc-chart-bar-"+index} style={{height: `${item.value/maxChartValue*112}px`}} /></div><span className="tc-chart-label">{item.label}</span></div>)}
+          </div>}
+          <div className="tc-section-footer"><span className="text-sm text-slate-600">Campioni scaduti: <strong className={stats.expiredReferences ? "text-red-700" : ""}>{display(stats.expiredReferences)}</strong></span><Link href="/strumenti-campione">Archivio campioni <SuiteIcon icon="arrow" /></Link></div>
+        </SectionCard>
+        <SectionCard title="Prossime scadenze" icon="calendar">
+          {state.isLoading || state.error ? <p className="tc-empty">{state.isLoading ? "Caricamento dati…" : "Dati non disponibili"}</p> : stats.upcoming.length===0 ? <p className="tc-empty">Nessun certificato in scadenza entro 30 giorni.</p> : <div className="tc-expiry-list">{stats.upcoming.map(item=><Link key={item.id} href={`/strumenti-campione/${item.id}`}><span className="tc-expiry-icon"><SuiteIcon icon="calendar" /></span><span className="min-w-0 flex-1"><strong>{item.name || `Campione ${item.id.slice(0,8).toUpperCase()}`}{item.internal_code ? ` · ${item.internal_code}` : ""}</strong><small>{item.certificate_expiry ? new Date(item.certificate_expiry).toLocaleDateString("it-IT", {timeZone:"UTC"}) : "—"}</small></span><span className="tc-expiry-badge">{formatDateLabel(item.days)}</span></Link>)}</div>}
+          <div className="tc-section-footer"><span className="text-sm text-slate-600">Rapportini pronti: <strong>{display(stats.readyReports)}</strong></span><Link href="/rapporti">Rapportini <SuiteIcon icon="arrow" /></Link></div>
+        </SectionCard>
+      </div>
+      <SectionCard title="Azioni rapide" icon="activity"><div className="tc-quick-actions">{actions.map(action=><Link key={action.href} href={action.href} className={"tc-action "+(action.primary ? "tc-action-primary" : "")}><SuiteIcon icon={action.icon} />{action.label}</Link>)}</div></SectionCard>
+    </div>
   );
+}
+
+export default function HomePage() {
+  return <AppShell><HomeContent /></AppShell>;
 }

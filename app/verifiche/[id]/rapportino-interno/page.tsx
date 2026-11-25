@@ -1,11 +1,13 @@
 import Link from "next/link";
+import { notFound } from "next/navigation";
 import AppShell from "@/components/AppShell";
 import ReportPrintButton from "@/components/ReportPrintButton";
-import ReportStatusActions from "@/components/ReportStatusActions";
-import InternalReportSignaturesForm, { InternalReportSignaturePreview } from "@/components/InternalReportSignaturesForm";
-import InternalReportNumberForm from "@/components/InternalReportNumberForm";
+import ViReportWorkflow, { type ViWorkflow } from "@/components/ViReportWorkflow";
+import { InternalReportSignaturePreview, InternalReportTechnicianPreview } from "@/components/InternalReportSignaturesForm";
 import TemperatureErrorChart, { type TemperatureErrorMeasurement } from "@/components/TemperatureErrorChart";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
+import { resolveDocumentNumber } from "@/lib/document-number";
+import { isScopeAllowed } from "@/lib/app-mode";
 import {
   calculateTorqueMetricsFromReadings,
   massKgFromTorque,
@@ -13,6 +15,7 @@ import {
   readTorqueProcedureSettings,
   TORQUE_ACCURACY_LIMIT_PERCENT,
 } from "@/lib/torque-calculations";
+import { snapshotMeasurementSummary } from "@/lib/internal-instrument-snapshot";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -100,6 +103,7 @@ type CalibrationMeasurement = {
 
 type SignatureRow = {
   id?: string;
+  technician_id?: string | null;
   signature_role?: string | null;
   display_name?: string | null;
   signature_url_snapshot?: string | null;
@@ -363,14 +367,22 @@ function massPointLabel(scale: CalibrationScale, index: number) {
   return String(index + 1);
 }
 
-function DataCell({ label, value }: { label: string; value: unknown }) {
+function DataCell({ label, value }: { label: string; value: React.ReactNode }) {
+  const renderedValue =
+    typeof value === "string" ||
+    typeof value === "number" ||
+    value === null ||
+    value === undefined
+      ? textValue(value)
+      : value;
+
   return (
     <>
       <td className="border border-slate-300 bg-slate-100/75 px-1 py-[1px] font-bold text-slate-950">
         {label}
       </td>
       <td className="border border-slate-300 bg-white/55 px-1 py-[1px] text-slate-950">
-        {textValue(value)}
+        {renderedValue}
       </td>
     </>
   );
@@ -747,6 +759,183 @@ function GenericMeasurementsTable({
   );
 }
 
+
+function CompactAccuracyErrorChart({
+  measurements,
+  unit,
+}: {
+  measurements: CalibrationMeasurement[];
+  unit: string;
+}) {
+  const points = measurements
+    .map((measurement, index) => {
+      const xValue = measurement.applied_value ?? measurement.nominal_value;
+      const yValue = measurement.accuracy_error_percent;
+
+      if (
+        xValue === null ||
+        xValue === undefined ||
+        !Number.isFinite(xValue) ||
+        yValue === null ||
+        yValue === undefined ||
+        !Number.isFinite(yValue)
+      ) {
+        return null;
+      }
+
+      return {
+        id: measurement.id,
+        order: Number(measurement.point_order ?? index + 1),
+        xValue,
+        yValue,
+      };
+    })
+    .filter(
+      (
+        point
+      ): point is {
+        id: string;
+        order: number;
+        xValue: number;
+        yValue: number;
+      } => point !== null
+    )
+    .sort((a, b) => a.order - b.order);
+
+  if (points.length === 0) {
+    return null;
+  }
+
+  const width = 680;
+  const height = 130;
+  const left = 44;
+  const right = 16;
+  const top = 14;
+  const bottom = 30;
+  const plotWidth = width - left - right;
+  const plotHeight = height - top - bottom;
+  const maxAbsY = Math.max(1, ...points.map((point) => Math.abs(point.yValue)));
+
+  const xScale = (index: number) =>
+    points.length === 1
+      ? left + plotWidth / 2
+      : left + (plotWidth * index) / (points.length - 1);
+
+  const yScale = (value: number) =>
+    top + ((maxAbsY - value) / (maxAbsY * 2)) * plotHeight;
+
+  const zeroY = yScale(0);
+  const polyline = points
+    .map((point, index) => `${xScale(index)},${yScale(point.yValue)}`)
+    .join(" ");
+
+  return (
+    <div className="mt-2 break-inside-avoid border border-slate-300 bg-white/55 px-2 py-1.5">
+      <div className="mb-0.5 text-[7.3px] font-bold text-slate-950">
+        Grafico errore di accuratezza (%)
+      </div>
+      <svg
+        viewBox={`0 0 ${width} ${height}`}
+        className="block h-[118px] w-full"
+        role="img"
+        aria-label="Grafico errore di accuratezza percentuale"
+      >
+        <line
+          x1={left}
+          y1={top}
+          x2={left}
+          y2={height - bottom}
+          stroke="#94a3b8"
+          strokeWidth="1"
+        />
+        <line
+          x1={left}
+          y1={height - bottom}
+          x2={width - right}
+          y2={height - bottom}
+          stroke="#94a3b8"
+          strokeWidth="1"
+        />
+        <line
+          x1={left}
+          y1={zeroY}
+          x2={width - right}
+          y2={zeroY}
+          stroke="#64748b"
+          strokeWidth="1"
+          strokeDasharray="4 3"
+        />
+
+        <text x={left - 6} y={top + 3} textAnchor="end" fontSize="7" fill="#475569">
+          +{formatNumber(maxAbsY, 2)}%
+        </text>
+        <text x={left - 6} y={zeroY + 2.5} textAnchor="end" fontSize="7" fill="#475569">
+          0%
+        </text>
+        <text
+          x={left - 6}
+          y={height - bottom + 2.5}
+          textAnchor="end"
+          fontSize="7"
+          fill="#475569"
+        >
+          -{formatNumber(maxAbsY, 2)}%
+        </text>
+
+        <polyline
+          points={polyline}
+          fill="none"
+          stroke="#b45309"
+          strokeWidth="2"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+
+        {points.map((point, index) => {
+          const x = xScale(index);
+          const y = yScale(point.yValue);
+          const valueLabelY = point.yValue >= 0 ? y - 6 : y + 11;
+
+          return (
+            <g key={point.id}>
+              <circle cx={x} cy={y} r="2.6" fill="#b45309" />
+              <text
+                x={x}
+                y={valueLabelY}
+                textAnchor="middle"
+                fontSize="6.7"
+                fontWeight="700"
+                fill="#1e293b"
+              >
+                {formatNumber(point.yValue, 3)}%
+              </text>
+              <text
+                x={x}
+                y={height - 15}
+                textAnchor="middle"
+                fontSize="6.7"
+                fill="#334155"
+              >
+                {formatNumber(point.xValue, 2)}
+              </text>
+            </g>
+          );
+        })}
+
+        <text
+          x={left + plotWidth / 2}
+          y={height - 3}
+          textAnchor="middle"
+          fontSize="6.7"
+          fill="#475569"
+        >
+          Punto di applicazione{unit ? ` (${unit})` : ""}
+        </text>
+      </svg>
+    </div>
+  );
+}
+
 function SclerometricTable({ measurements }: { measurements: CalibrationMeasurement[] }) {
   const firstNominal = measurements.find((measurement) => measurement.nominal_value !== null)?.nominal_value ?? 80;
   const lowerLimit = firstNominal - 3;
@@ -998,6 +1187,11 @@ function ScaleCompactBlock({
             )}
           />
         </div>
+      ) : !isJack(record) && !isTemperature(record) ? (
+        <CompactAccuracyErrorChart
+          measurements={measurements}
+          unit={measurementUnit}
+        />
       ) : null}
     </div>
   );
@@ -1022,17 +1216,21 @@ function SinglePageReport({
   signatures: SignatureRow[];
   reportNumber: string;
 }) {
+  const instrumentMeasurements = snapshotMeasurementSummary(verifiedInstrument);
+
   return (
     <PageShell reportNumber={reportNumber}>
       <div className="mt-12 border border-slate-900 bg-slate-700/65 px-2 py-[2px] text-center text-[8.5px] font-black uppercase tracking-wide text-slate-950">
         Verifica interna del {formatDate(record.verification_date)}
       </div>
 
-      <h1 className="mt-2 text-center text-[13px] font-black uppercase tracking-wide">
-        Rapportino tecnico interno
-      </h1>
+      <div className="mt-2 flex items-center justify-between gap-3 border-b border-slate-300 pb-1">
+        <h1 className="min-w-0 text-[20px] font-black uppercase tracking-wide">Rapportino tecnico interno</h1>
+        <div className="max-w-[48%] break-words text-right text-[20px] font-black leading-tight text-blue-800">{reportNumber}</div>
+      </div>
 
-      <p className="mt-0.5 text-center text-[8.5px] font-bold">
+      {record.report_status !== "issued" && <p className="text-center text-[9px] font-black uppercase text-slate-900">BOZZA – NON EMESSO</p>}
+      <p className="mt-0.5 text-aside text-[10px] font-bold">
         VI - Verifica interna - {modeLabel(record)}
       </p>
 
@@ -1054,7 +1252,15 @@ function SinglePageReport({
             <DataCell label="Luogo prove" value={record.location ?? details?.site_description} />
           </tr>
           <tr>
-            <DataCell label="Tecnico" value={record.operator_name ?? details?.technician_name} />
+            <DataCell
+              label="Tecnico"
+              value={
+                <InternalReportTechnicianPreview
+                  recordId={record.id}
+                  initialName={details?.technician_name ?? record.operator_name}
+                />
+              }
+            />
             <DataCell label="Output" value="Rapportino tecnico VI" />
           </tr>
         </tbody>
@@ -1070,23 +1276,49 @@ function SinglePageReport({
         </thead>
         <tbody>
           <tr>
-            <DataCell label="Strumento" value={verifiedInstrument.instrument_name ?? verifiedInstrument.name} />
-            <DataCell label="Codice interno" value={verifiedInstrument.internal_code} />
+            <DataCell label="Strumento" value={textValue(verifiedInstrument.instrument_name ?? verifiedInstrument.name)} />
+            <DataCell label="Codice interno" value={textValue(verifiedInstrument.internal_code)} />
           </tr>
           <tr>
-            <DataCell label="Costruttore" value={verifiedInstrument.manufacturer} />
-            <DataCell label="Modello" value={verifiedInstrument.model} />
+            <DataCell label="Costruttore" value={textValue(verifiedInstrument.manufacturer)} />
+            <DataCell label="Modello" value={textValue(verifiedInstrument.model)} />
           </tr>
           <tr>
-            <DataCell label="Matricola" value={verifiedInstrument.serial_number} />
-            <DataCell label="Campo/fondo scala" value={verifiedInstrument.measurement_range ?? verifiedInstrument.range} />
+            <DataCell label="Matricola" value={textValue(verifiedInstrument.serial_number)} />
+            <DataCell label="Campo/fondo scala" value={textValue(verifiedInstrument.measurement_range ?? verifiedInstrument.range)} />
           </tr>
           <tr>
-            <DataCell label="Reparto" value={verifiedInstrument.department} />
-            <DataCell label="Ubicazione" value={verifiedInstrument.location} />
+            <DataCell label="Reparto" value={textValue(verifiedInstrument.department)} />
+            <DataCell label="Ubicazione" value={textValue(verifiedInstrument.location)} />
           </tr>
         </tbody>
       </table>
+
+      {instrumentMeasurements.length > 0 && (
+        <table className="mt-1.5 w-full border-collapse text-[6.8px]">
+          <thead>
+            <tr className="bg-slate-100/80 text-left">
+              <th className="border border-slate-300 px-1 py-[1px]">Grandezza</th>
+              <th className="border border-slate-300 px-1 py-[1px]">Unità</th>
+              <th className="border border-slate-300 px-1 py-[1px]">Campo</th>
+              <th className="border border-slate-300 px-1 py-[1px]">Risoluzione</th>
+            </tr>
+          </thead>
+          <tbody>
+            {instrumentMeasurements.map((measurement, index) => (
+              <tr key={`${measurement.measurement_quantity}-${index}`}>
+                <td className="border border-slate-300 px-1 py-[1px] font-semibold">
+                  {measurement.measurement_quantity}
+                  {measurement.is_primary ? " (principale)" : ""}
+                </td>
+                <td className="border border-slate-300 px-1 py-[1px]">{measurement.unit || "-"}</td>
+                <td className="border border-slate-300 px-1 py-[1px]">{measurement.measurement_range || "-"}</td>
+                <td className="border border-slate-300 px-1 py-[1px]">{measurement.resolution || "-"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
 
       <div className="mt-2">
         {scalePlans.length === 0 ? (
@@ -1121,13 +1353,13 @@ function SinglePageReport({
               | "testing_technician"
               | "reviewer"
               | "director",
-            technician_id: null,
+            technician_id: signature.technician_id ?? null,
             display_name: textValue(signature.display_name),
             signature_url_snapshot: signature.signature_url_snapshot ?? null,
             sort_order: Number(signature.sort_order ?? index + 1),
           }))}
         fallbackTestingName={record.operator_name || details?.technician_name}
-        fallbackReviewerName={details?.reviewer_name}
+        fallbackReviewerName={record.report_status === "issued" ? details?.reviewer_name : null}
         fallbackDirectorName="Cardone"
       />
     </PageShell>
@@ -1198,6 +1430,14 @@ const { data: recordData, error: recordError } = await supabase
 
   const record = recordData as CalibrationRecord;
 
+  if (!isScopeAllowed("VI") || record.verification_scope !== "VI") {
+    notFound();
+  }
+
+  const { data: workflowData, error: workflowError } = await supabase.rpc("tv12_workflow", { p_record_id: id });
+  if (workflowError || !workflowData) return <AppShell><div className="rounded-xl bg-red-50 p-4 text-red-900">Impossibile caricare il workflow VI: {workflowError?.message ?? "dati mancanti"}. Verifica la migrazione REV.12.</div></AppShell>;
+  const workflow = workflowData as ViWorkflow;
+
   const { data: detailsData } = await supabase
     .from("calibration_report_details")
     .select(
@@ -1264,9 +1504,9 @@ const { data: recordData, error: recordError } = await supabase
     .eq("calibration_record_id", id)
     .order("point_order", { ascending: true });
 
-  const { data: signaturesData } = await supabase
+  const { data: signaturesData, error: signaturesError } = await supabase
     .from("calibration_report_signatures")
-    .select("id, signature_role, display_name, signature_url_snapshot, sort_order")
+    .select("id, signature_role, technician_id, display_name, signature_url_snapshot, sort_order")
     .eq("calibration_record_id", id)
     .order("signature_role", { ascending: true })
     .order("sort_order", { ascending: true });
@@ -1297,15 +1537,30 @@ const { data: recordData, error: recordError } = await supabase
   const details = detailsData as CalibrationReportDetails | null;
   const scales = (scalesData ?? []) as CalibrationScale[];
   const measurements = (measurementsData ?? []) as CalibrationMeasurement[];
-  const signatures = (signaturesData ?? []) as SignatureRow[];
+  if (signaturesError) return <AppShell><div className="rounded-xl bg-red-50 p-4 text-red-900">Errore lettura firme: {signaturesError.message}</div></AppShell>;
+  const storedSignatures = (signaturesData ?? []) as SignatureRow[];
+  const signatures: SignatureRow[] = record.report_status === "issued" ? storedSignatures : [
+    ...workflow.participants.map((participant, index) => {
+      const stored = storedSignatures.find(row => row.signature_role === "testing_technician" && row.technician_id === participant.id);
+      return { id: stored?.id ?? participant.id, technician_id: participant.id, signature_role: "testing_technician", display_name: participant.name, signature_url_snapshot: participant.confirmedAt ? stored?.signature_url_snapshot ?? null : null, sort_order: index + 1 };
+    }),
+    ...storedSignatures.filter(row => row.signature_role === "testing_technician" && !row.technician_id).map(row => ({ ...row, signature_url_snapshot: null })),
+    ...(workflow.editorName ? [{ signature_role: "reviewer", display_name: workflow.editorName, signature_url_snapshot: null }] : []),
+    { signature_role: "director", display_name: workflow.directorName ?? "Cardone", signature_url_snapshot: null },
+  ];
 
   const internalInstrument = asObject(internalInstrumentData);
-  const verifiedInstrument =
-    Object.keys(internalInstrument).length > 0
-      ? internalInstrument
-      : asObject(record.customer_instrument_snapshot);
+  const verificationInstrumentSnapshot = asObject(record.customer_instrument_snapshot);
+  const verifiedInstrument = {
+    ...internalInstrument,
+    ...verificationInstrumentSnapshot,
+  };
   const referenceSnapshot = asObject(record.reference_instrument_snapshot);
-  const reportNumber = details?.main_report_number || record.record_number || "SENZA_NUMERO";
+  const reportNumber = resolveDocumentNumber(
+    details?.main_report_number,
+    record.record_number,
+    "BOZZA"
+  );
   const reportFileName =
     "Rapportino_VI_" +
     safeFileNameSegment(reportNumber, "Senza_numero") +
@@ -1373,32 +1628,11 @@ const { data: recordData, error: recordError } = await supabase
           <ReportPrintButton fileName={reportFileName} />
         </div>
 
-        <ReportStatusActions
-          recordId={id}
-          initialStatus={record.report_status || "draft"}
-          issuedAt={record.issued_at}
-          reopenedAt={record.reopened_at}
-          documentLabel="rapportino VI"
-        />
-
-        <InternalReportNumberForm
-          recordId={id}
-          initialReportNumber={details?.main_report_number ?? ""}
-          fallbackRecordNumber={record.record_number}
-        />
-
-        {record.verification_scope !== "VI" && (
-          <div className="print-hidden rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
-            Attenzione: questa verifica non risulta marcata come VI. Il flusso
-            corretto per VT è il rapporto finale completo.
-          </div>
-        )}
-
-        <InternalReportSignaturesForm recordId={id} />
+        <ViReportWorkflow recordId={id} workflow={workflow} />
 
         <SinglePageReport
           record={record}
-          details={details}
+          details={record.report_status === "issued" || !details ? details : { ...details, technician_name: workflow.participants.map(p => p.name).join(", ") || record.operator_name, reviewer_name: workflow.editorName }}
           verifiedInstrument={verifiedInstrument}
           scalePlans={printableScalePlans}
           signatures={signatures}

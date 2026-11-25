@@ -1,9 +1,12 @@
 "use client";
 
+import ViTestLocationSelect, { isViTestLocation } from "@/components/ViTestLocationSelect";
+
 import Link from "next/link";
 import SimpleAccuracyChart from "@/components/SimpleAccuracyChart";
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
+import { finishMeasurementCreation } from "@/lib/use-record-edit-permission";
 import { combineReferenceInstrumentNames } from "@/lib/report-defaults";
 import {
   calculateTorqueMassPoint,
@@ -17,6 +20,8 @@ import ReferenceInstrumentMultiSelect, {
   getEffectiveReferenceInstrumentStatus,
   isReferenceInstrumentBlocked,
 } from "@/components/ReferenceInstrumentMultiSelect";
+import OperatorNameField from "@/components/OperatorNameField";
+import { attachInternalInstrumentMeasurements } from "@/lib/internal-instrument-snapshot";
 
 type VerificationScope = "VT" | "VI";
 
@@ -766,8 +771,8 @@ export default function TorqueVerificationStarter({
         throw new Error("Seleziona lo strumento interno da verificare.");
       }
 
-      if (!verificationLocation.trim()) {
-        throw new Error("Inserisci il luogo della verifica interna.");
+      if (!isViTestLocation(verificationLocation)) {
+        throw new Error("Seleziona il laboratorio in cui è stata eseguita la verifica.");
       }
 
       if (selectedInternalInstrument.status !== "active") {
@@ -852,8 +857,10 @@ export default function TorqueVerificationStarter({
           throw new Error("Seleziona lo strumento interno da verificare.");
         }
 
-        instrumentSnapshot = buildInternalInstrumentSnapshot(
-          selectedInternalInstrument
+        instrumentSnapshot = await attachInternalInstrumentMeasurements(
+          supabase,
+          buildInternalInstrumentSnapshot(selectedInternalInstrument),
+          selectedInternalInstrument.id
         );
         instrumentName = selectedInternalInstrument.name;
         location = verificationLocation.trim();
@@ -885,13 +892,10 @@ export default function TorqueVerificationStarter({
         .eq("code", "TORQUE")
         .maybeSingle();
 
-      const recordNumber =
-        "TRQ-" + String(new Date().getFullYear()) + "-" + String(Date.now());
-
       const { data: insertedRecord, error: insertError } = await supabase
         .from("calibration_records")
         .insert({
-          record_number: recordNumber,
+          record_number: null,
           calibration_type_id: calibrationType?.id ?? null,
           mode: "dinamometria",
           verification_module: "TORQUE",
@@ -1054,14 +1058,13 @@ export default function TorqueVerificationStarter({
         );
       }
 
+      await finishMeasurementCreation(insertedRecord.id);
       setSavedRecordId(insertedRecord.id);
-      setSavedRecordNumber(recordNumber);
+      setSavedRecordNumber(null);
       setSaveMessage(
-        "Verifica dinamometrica salvata correttamente con numero " +
-          recordNumber +
-          ". Data " +
+        "Verifica dinamometrica salvata correttamente come bozza. Data " +
           todayItalianDateLabel() +
-          "."
+          ". Il numero definitivo verrà associato allo stesso record."
       );
     } catch (error) {
       const message =
@@ -1101,18 +1104,13 @@ export default function TorqueVerificationStarter({
           )}
 
 
-          <label className="space-y-1">
-            <span className="text-sm font-medium text-slate-700">Tecnico</span>
-            <input
-              value={operatorName}
-              onChange={(event) => {
-                setOperatorName(event.target.value);
-                resetSaveState();
-              }}
-              placeholder="Nome tecnico"
-              className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-            />
-          </label>
+          <OperatorNameField
+            value={operatorName}
+            onChange={(value) => {
+              setOperatorName(value);
+              resetSaveState();
+            }}
+          />
 
           <label className="space-y-1">
             <span className="text-sm font-medium text-slate-700">
@@ -1447,20 +1445,13 @@ export default function TorqueVerificationStarter({
               </select>
             </label>
 
-            <label className="space-y-1">
-              <span className="text-sm font-medium text-slate-700">
-                Luogo verifica *
-              </span>
-              <input
-                value={verificationLocation}
-                onChange={(event) => {
-                  setVerificationLocation(event.target.value);
-                  resetSaveState();
-                }}
-                placeholder="Es. Laboratorio Bologna"
-                className="w-full rounded-xl border border-slate-300 px-3 py-2 text-sm"
-              />
-            </label>
+            <ViTestLocationSelect
+              value={verificationLocation}
+              onChange={(value) => {
+                setVerificationLocation(value);
+                resetSaveState();
+              }}
+            />
           </div>
 
           {selectedInternalInstrument && (
@@ -1813,12 +1804,7 @@ export default function TorqueVerificationStarter({
         </div>
       )}
 
-      <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
-        <strong>Nota tecnica:</strong> calcolo secondo PTS13: punto di verifica = massa teorica × g × L;
-        lettura di ciascun ciclo = massa applicata × g × L; scostamento = media - punto di verifica;
-        errore accuratezza % = scostamento / punto di verifica × 100; ripetibilità % =
-        (max - min) / media × 100. Conformità: |errore accuratezza| ≤ 3%.
-      </div>
+      
     </div>
   );
 }
