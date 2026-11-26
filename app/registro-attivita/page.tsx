@@ -3,7 +3,6 @@ import AppShell from "@/components/AppShell";
 import AuditRegister, { type AuditRow } from "@/components/AuditRegister";
 import { isViOnlyMode } from "@/lib/app-mode";
 import { createServerSupabaseClient } from "@/lib/supabase-server";
-import { createAdminSupabaseClient } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
 export const revalidate = 0;
@@ -38,34 +37,21 @@ export default async function RegistroAttivitaPage(){
    const part=(data??[]) as Log[];logs.push(...part);if(part.length<limit)break;
  }
  const actors=new Map<string,{name:string;role:string}>();const records=new Map<string,string>();const reportNumbers=new Map<string,string>();
- const actorIds=[...new Set(logs.map(x=>x.created_by).filter((x):x is string=>typeof x==="string"&&uuid.test(x)))];
+ const actorIds=[...new Set(logs.map(x=>x.created_by).filter((x):x is string=>typeof x==="string"&&uuid.test(x)).map(x=>x.toLowerCase()))];
  const recordIds=[...new Set(logs.filter(x=>x.entity_type==="calibration_record"||x.entity_type==="internal_report").map(x=>x.entity_id).filter((x):x is string=>typeof x==="string"&&uuid.test(x)))];
- // The authenticated role has no SELECT grant on user_profiles. Only after
- // the server-side MASTER check above, use the existing server-only admin
- // client for a minimal, read-only lookup of users present in this audit.
- // Never use the privileged client to load audit events or verification data.
+ // The database RPC checks MASTER independently of the server-side guard.
+ // It returns only names/roles for requested IDs actually present in audit_logs.
  if(actorIds.length){
-   try{
-     const admin=createAdminSupabaseClient();
-     for(const ids of batches(actorIds)){
-       const {data,error}=await admin.from("user_profiles").select("id,full_name,email,role,technician_id").in("id",ids);
+   for(const ids of batches(actorIds)){
+     try{
+       const {data,error}=await supabase.rpc("tv_audit_actor_names_rev155",{p_actor_ids:ids});
        if(error){lookupWarning=true;continue;}
-       const techIds=[...new Set((data??[]).map(x=>x.technician_id).filter((x):x is string=>typeof x==="string"&&uuid.test(x)))];
-       const techNames=new Map<string,string>();
-       for(const technicianIds of batches(techIds)){
-         const {data:tech,error:techError}=await admin.from("calibration_technicians").select("id,full_name").in("id",technicianIds);
-         if(techError){lookupWarning=true;continue;}
-         for(const t of tech??[])if(typeof t.full_name==="string"&&t.full_name.trim())techNames.set(t.id,t.full_name.trim());
+       for(const entry of (data??[]) as {actor_id:string;actor_name:string|null;actor_role:string|null}[]){
+         if(entry.actor_name?.trim())actors.set(entry.actor_id.toLowerCase(),{name:entry.actor_name.trim(),role:entry.actor_role==="master"?"MASTER":entry.actor_role==="technician"?"TECNICO":entry.actor_role||""});
        }
-       for(const p of data??[]){
-         const name=techNames.get(p.technician_id) || (typeof p.full_name==="string"?p.full_name.trim():"") || (typeof p.email==="string"?p.email.trim():"");
-         if(name)actors.set(p.id,{name,role:p.role==="master"?"MASTER":p.role==="technician"?"TECNICO":p.role||""});
-       }
+     }catch{
+       lookupWarning=true;
      }
-   }catch{
-     // Missing server credentials or a failed lookup must not suppress the
-     // original actor ID or expose privileged credentials to the browser.
-     lookupWarning=true;
    }
    if(actorIds.some(id=>!actors.has(id)))lookupWarning=true;
  }
@@ -84,7 +70,7 @@ export default async function RegistroAttivitaPage(){
  for(const log of logs)if(log.action==="vi12_remove_test"&&log.entity_id&&recordedNumber(log))removedNumbers.set(log.entity_id,recordedNumber(log));
  const today=dayFormat.format(new Date(cutoff));
  const rows:AuditRow[]=logs.map(log=>{
-   const id=log.entity_id??"";const actor=actors.get(log.created_by??"");const original=recordedNumber(log)||removedNumbers.get(id)||"";const current=reportNumbers.get(id)||records.get(id)||"";
+   const id=log.entity_id??"";const actor=actors.get((log.created_by??"").toLowerCase());const original=recordedNumber(log)||removedNumbers.get(id)||"";const current=reportNumbers.get(id)||records.get(id)||"";
    return {id:log.id,date:dateFormat.format(new Date(log.created_at)),entity:log.entity_type==="calibration_record"?"Verifica":log.entity_type==="internal_report"?"Rapportino VI":log.entity_type,entityId:id,reference:original||current||"—",referenceCurrent:!original&&!!current,action:(labels[log.action]??log.action)+(log.action==="vi12_remove_test"&&typeof log.new_data?.reason==="string"?" · "+log.new_data.reason:log.action==="metrology_bulk_period"?` · ${log.new_data?.kind??""} ${log.new_data?.activity??""} ${log.new_data?.months??""} mesi · ${log.new_data?.updated??0} aggiornati`:""),actionCode:log.action,previous:status(log.old_data),next:status(log.new_data),actor:actor?.name||(log.created_by&&uuid.test(log.created_by)?"Utente non identificato":log.created_by)||"—",actorId:log.created_by??"",role:actor?.role??"",today:dayFormat.format(new Date(log.created_at))===today};
  });
  return <AppShell><AuditRegister rows={rows} snapshot={dateFormat.format(new Date(cutoff))} scope={isViOnlyMode?"Eventi VI e configurazioni metrologiche (REV.12 e successive)":"Eventi applicativi disponibili"} error={errorMessage} lookupWarning={lookupWarning}/></AppShell>;

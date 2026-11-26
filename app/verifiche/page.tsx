@@ -436,7 +436,9 @@ export default function VerifichePage() {
                 <tr>
                   <th className="w-[140px] px-3 py-3">N. documento</th>
                   <th className="w-[85px] px-3 py-3">Tipo</th>
-                  <th className="w-[210px] px-3 py-3">Cliente / interno</th>
+                  {!isViOnlyMode && (
+                    <th className="w-[210px] px-3 py-3">Cliente / interno</th>
+                  )}
                   <th className="px-3 py-3">Strumento</th>
                   <th className="w-[120px] px-3 py-3">Data</th>
                   <th className="w-[115px] px-3 py-3">Stato</th>
@@ -447,13 +449,13 @@ export default function VerifichePage() {
               <tbody className="divide-y divide-slate-100">
                 {isLoading ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                    <td colSpan={isViOnlyMode ? 6 : 7} className="px-4 py-8 text-center text-slate-500">
                       Caricamento verifiche...
                     </td>
                   </tr>
                 ) : filteredRows.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-4 py-8 text-center text-slate-500">
+                    <td colSpan={isViOnlyMode ? 6 : 7} className="px-4 py-8 text-center text-slate-500">
                       Nessuna verifica trovata.
                     </td>
                   </tr>
@@ -485,14 +487,16 @@ export default function VerifichePage() {
                           </span>
                         </td>
 
-                        <td className="px-3 py-3 align-top">
-                          <p className="truncate font-semibold text-slate-900">
-                            {getCustomerLabel(row)}
-                          </p>
-                          <p className="mt-1 truncate text-xs text-slate-500">
-                            {textValue(row.details?.site_description ?? row.record.location)}
-                          </p>
-                        </td>
+                        {!isViOnlyMode && (
+                          <td className="px-3 py-3 align-top">
+                            <p className="truncate font-semibold text-slate-900">
+                              {getCustomerLabel(row)}
+                            </p>
+                            <p className="mt-1 truncate text-xs text-slate-500">
+                              {textValue(row.details?.site_description ?? row.record.location)}
+                            </p>
+                          </td>
+                        )}
 
                         <td className="px-3 py-3 align-top">
                           <p className="truncate text-slate-800">
@@ -592,9 +596,11 @@ export default function VerifichePage() {
                       </span>
                     </div>
 
-                    <p className="mt-3 font-semibold text-slate-900">
-                      {getCustomerLabel(row)}
-                    </p>
+                    {!isViOnlyMode && (
+                      <p className="mt-3 font-semibold text-slate-900">
+                        {getCustomerLabel(row)}
+                      </p>
+                    )}
                     <p className="mt-1 text-sm text-slate-600">
                       {getInstrumentLabel(row)}
                     </p>
